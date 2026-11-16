@@ -1,7 +1,7 @@
 //! The background host: `logit --host` owns the Claude chats and the terminals so they outlive
 //! the window. It serves newline-delimited JSON on a Unix socket in the profile's data dir.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -15,11 +15,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::chat::{claude_args, spawn_claude};
+use crate::servers::{self, Config};
 use crate::{pty, store};
 
 /// Bumped by hand whenever a message or behaviour changes incompatibly. `hello`, `list` and
 /// `shutdown` keep their shape in every version, so any app can always talk that much.
-pub const HOST_PROTOCOL: u32 = 3;
+pub const HOST_PROTOCOL: u32 = 4;
 
 /// How long an `ask` waits for a window to answer.
 const ASK_WAIT: Duration = Duration::from_secs(60);
@@ -72,6 +73,29 @@ pub enum Request {
         ask_id: u64,
         result: Value,
     },
+    /// Starts a workspace's dev servers (`apps`, or every app not optional), answering at
+    /// once with the slot and the URLs to come.
+    ServersStart {
+        workspace_id: String,
+        project_id: String,
+        cwd: String,
+        #[serde(default)]
+        apps: Option<Vec<String>>,
+    },
+    /// Stops a workspace's dev servers (`apps`, or all of them), once they are gone.
+    ServersStop {
+        workspace_id: String,
+        #[serde(default)]
+        apps: Option<Vec<String>>,
+    },
+    /// Every workspace's dev servers.
+    ServersList,
+    /// The end of an app's output (`app` "prepare" for the prepare step).
+    ServersLogs {
+        workspace_id: String,
+        app: String,
+        lines: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +119,9 @@ pub struct TermStart {
     pub title: String,
     /// Opaque to the host; the app marks its setup script `"setup"`.
     pub tag: Option<String>,
+    /// Set on top of the shell's own environment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +274,8 @@ struct TermProc {
     output: TermBuffer,
     subs: Vec<UnixStream>,
     info: HostTerm,
+    /// The shell's pid: the root of the process tree a dev server stops.
+    pid: Option<u32>,
 }
 
 struct State {
@@ -260,6 +289,8 @@ struct State {
     /// The windows' presence connections, written to for `ask`.
     window_streams: Vec<UnixStream>,
     asks: HashMap<u64, mpsc::Sender<Value>>,
+    /// Dev servers, by workspace id.
+    servers: HashMap<String, ServerRun>,
 }
 
 type Shared = Arc<Mutex<State>>;
@@ -309,6 +340,7 @@ pub fn serve(sock: &Path) -> std::io::Result<()> {
         last_window_left: Instant::now(),
         window_streams: Vec::new(),
         asks: HashMap::new(),
+        servers: HashMap::new(),
     }));
     let accepting = state.clone();
     let path = sock.to_path_buf();
@@ -460,7 +492,39 @@ fn handle(state: &Shared, sock: &Path, stream: UnixStream) -> std::io::Result<()
                     .and_then(|to| to.send(result).map_err(|e| e.to_string())),
             )
         }
+        Request::ServersStart {
+            workspace_id,
+            project_id,
+            cwd,
+            apps,
+        } => answer_with(
+            &stream,
+            servers_start(state, &workspace_id, &project_id, &cwd, apps.as_deref()),
+        ),
+        Request::ServersStop { workspace_id, apps } => {
+            servers_stop(state, &workspace_id, apps.as_deref());
+            reply(&stream, Ok(()))
+        }
+        Request::ServersList => writeln!(
+            &stream,
+            "{}",
+            serde_json::json!({ "runs": servers_list(state) })
+        ),
+        Request::ServersLogs {
+            workspace_id,
+            app,
+            lines,
+        } => answer_with(
+            &stream,
+            servers_logs(state, &workspace_id, &app, lines)
+                .map(|text| serde_json::json!({ "text": text })),
+        ),
     }
+}
+
+fn answer_with(mut out: &UnixStream, result: Result<Value, String>) -> std::io::Result<()> {
+    let v = result.unwrap_or_else(|e| serde_json::json!({ "error": e }));
+    writeln!(out, "{v}")
 }
 
 fn peek(state: &Shared) -> Vec<HostChat> {
@@ -666,57 +730,10 @@ fn term_open(
     mut stream: UnixStream,
 ) -> std::io::Result<()> {
     let mut s = lock(state);
-    let gone = s.terms.get(&id).is_none_or(|t| t.info.ended);
-    if let Some(start) = start.filter(|_| gone) {
-        let spawned = pty::spawn(&start.cwd, start.cols, start.rows, start.command.as_deref());
-        let (master, mut child, mut reader, writer) = match spawned {
-            Ok(spawned) => spawned,
-            Err(e) => return writeln!(stream, "{}", serde_json::json!({ "error": e })),
-        };
-        let killer = child.clone_killer();
-        s.serial += 1;
-        let serial = s.serial;
-        let (st, tid) = (state.clone(), id.clone());
-        std::thread::spawn(move || {
-            let mut buf = vec![0u8; 16 * 1024];
-            let mut carry: Vec<u8> = Vec::new();
-            while let Ok(n) = reader.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                carry.extend_from_slice(&buf[..n]);
-                let cut = pty::utf8_cut(&carry);
-                let text = String::from_utf8_lossy(&carry[..cut]).into_owned();
-                carry.drain(..cut);
-                if !text.is_empty() {
-                    term_out(&st, &tid, serial, &text);
-                }
-            }
-            let code = child.wait().ok().map(|status| status.exit_code());
-            term_exit(&st, &tid, serial, code);
-        });
-        let info = HostTerm {
-            id: id.clone(),
-            workspace_id: start.workspace_id,
-            cwd: start.cwd,
-            title: start.title,
-            command: start.command,
-            tag: start.tag,
-            ended: false,
-            code: None,
-        };
-        s.terms.insert(
-            id.clone(),
-            TermProc {
-                serial,
-                master,
-                writer,
-                killer,
-                output: TermBuffer::default(),
-                subs: Vec::new(),
-                info,
-            },
-        );
+    if let Some(start) = start {
+        if let Err(e) = term_spawn(state, &mut s, &id, start) {
+            return writeln!(stream, "{}", serde_json::json!({ "error": e }));
+        }
     }
     let Some(term) = s.terms.get_mut(&id) else {
         return writeln!(stream, r#"{{"exit":null}}"#);
@@ -732,6 +749,67 @@ fn term_open(
     } else {
         term.subs.push(stream);
     }
+    Ok(())
+}
+
+/// Starts terminal `id` unless one runs under that id already.
+fn term_spawn(state: &Shared, s: &mut State, id: &str, start: TermStart) -> Result<(), String> {
+    if s.terms.get(id).is_some_and(|t| !t.info.ended) {
+        return Ok(());
+    }
+    let (master, mut child, mut reader, writer) = pty::spawn(
+        &start.cwd,
+        start.cols,
+        start.rows,
+        start.command.as_deref(),
+        &start.env,
+    )?;
+    let killer = child.clone_killer();
+    let pid = child.process_id();
+    s.serial += 1;
+    let serial = s.serial;
+    let (st, tid) = (state.clone(), id.to_string());
+    std::thread::spawn(move || {
+        let mut buf = vec![0u8; 16 * 1024];
+        let mut carry: Vec<u8> = Vec::new();
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            carry.extend_from_slice(&buf[..n]);
+            let cut = pty::utf8_cut(&carry);
+            let text = String::from_utf8_lossy(&carry[..cut]).into_owned();
+            carry.drain(..cut);
+            if !text.is_empty() {
+                term_out(&st, &tid, serial, &text);
+            }
+        }
+        let code = child.wait().ok().map(|status| status.exit_code());
+        term_exit(&st, &tid, serial, code);
+    });
+    let info = HostTerm {
+        id: id.to_string(),
+        workspace_id: start.workspace_id,
+        cwd: start.cwd,
+        title: start.title,
+        command: start.command,
+        tag: start.tag,
+        ended: false,
+        code: None,
+    };
+    s.terms.insert(
+        id.to_string(),
+        TermProc {
+            serial,
+            master,
+            writer,
+            killer,
+            output: TermBuffer::default(),
+            subs: Vec::new(),
+            info,
+            pid,
+        },
+    );
     Ok(())
 }
 
@@ -754,6 +832,11 @@ fn term_exit(state: &Shared, id: &str, serial: u64, code: Option<u32>) {
     };
     term.info.ended = true;
     term.info.code = code;
+    let tail = servers::tail(&term.output.contents(), LOG_TAIL);
+    server_exited(&mut s, id, code, tail);
+    let Some(term) = s.terms.get_mut(id) else {
+        return;
+    };
     // Kept, listed as ended, until a window has seen the exit: a setup script records it so.
     if broadcast(
         &mut term.subs,
@@ -761,6 +844,504 @@ fn term_exit(state: &Shared, id: &str, serial: u64, code: Option<u32>) {
     ) {
         s.terms.remove(id);
     }
+}
+
+// Dev servers: each workspace's apps on its own slot, run as terminals of the host.
+
+/// How many lines of output a failure quotes.
+const LOG_TAIL: usize = 30;
+const PORT_POLL: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AppStatus {
+    /// Waiting for `prepare`, or for another workspace of the project to finish booting.
+    Queued,
+    /// Running, its port not open yet.
+    Starting,
+    Ready,
+    Failed,
+    Stopped,
+}
+
+struct AppRun {
+    status: AppStatus,
+    started: Option<Instant>,
+    /// Why it failed, with the end of its output.
+    detail: Option<String>,
+}
+
+struct ServerRun {
+    project_id: String,
+    cwd: String,
+    slot: u16,
+    config: Config,
+    /// None while `prepare` runs or has not run; its exit code once it ended.
+    prepare: Option<Option<u32>>,
+    preparing: bool,
+    prepare_tail: String,
+    /// Bumped by every start and full stop: a boot thread of an older one gives up.
+    generation: u64,
+    apps: BTreeMap<String, AppRun>,
+}
+
+fn term_id(workspace: &str, app: &str) -> String {
+    format!("srv-{workspace}-{app}")
+}
+
+fn busy(status: AppStatus) -> bool {
+    matches!(
+        status,
+        AppStatus::Queued | AppStatus::Starting | AppStatus::Ready
+    )
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub name: String,
+    pub port: Option<u16>,
+    pub url: Option<String>,
+    pub status: AppStatus,
+    pub detail: Option<String>,
+    pub term: String,
+    pub optional: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunInfo {
+    pub workspace_id: String,
+    pub project_id: String,
+    pub cwd: String,
+    pub slot: u16,
+    pub preparing: bool,
+    pub prepare_term: Option<String>,
+    pub apps: Vec<AppInfo>,
+}
+
+fn run_info(workspace: &str, run: &ServerRun) -> RunInfo {
+    let ports = run.config.ports(run.slot);
+    RunInfo {
+        workspace_id: workspace.into(),
+        project_id: run.project_id.clone(),
+        cwd: run.cwd.clone(),
+        slot: run.slot,
+        preparing: run.preparing,
+        prepare_term: run
+            .config
+            .prepare
+            .as_ref()
+            .map(|_| term_id(workspace, "prepare")),
+        apps: run
+            .config
+            .apps
+            .iter()
+            .map(|a| {
+                let r = run.apps.get(&a.name);
+                let port = ports.get(&a.name).copied();
+                AppInfo {
+                    name: a.name.clone(),
+                    port,
+                    url: port.map(servers::url),
+                    status: r.map_or(AppStatus::Stopped, |r| r.status),
+                    detail: r.and_then(|r| r.detail.clone()),
+                    term: term_id(workspace, &a.name),
+                    optional: a.optional,
+                }
+            })
+            .collect(),
+    }
+}
+
+fn servers_list(state: &Shared) -> Vec<RunInfo> {
+    let s = lock(state);
+    let mut runs: Vec<RunInfo> = s.servers.iter().map(|(w, r)| run_info(w, r)).collect();
+    runs.sort_by_key(|r| r.slot);
+    runs
+}
+
+/// One lock per project: a single workspace prepares and boots at a time.
+fn project_gate(project: &str) -> Arc<Mutex<()>> {
+    static GATES: Mutex<BTreeMap<String, Arc<Mutex<()>>>> = Mutex::new(BTreeMap::new());
+    let mut gates = GATES.lock().unwrap_or_else(|e| e.into_inner());
+    gates.entry(project.to_string()).or_default().clone()
+}
+
+/// A slot whose ports no other run holds and nothing listens on, reserved under `workspace`.
+fn reserve_slot(
+    state: &Shared,
+    workspace: &str,
+    project: &str,
+    cwd: &str,
+    config: &Config,
+) -> Result<u16, String> {
+    for slot in servers::SLOTS {
+        let ports: HashSet<u16> = config.ports(slot).into_values().collect();
+        {
+            let mut s = lock(state);
+            let held = s.servers.iter().any(|(w, r)| {
+                w != workspace
+                    && (r.project_id == project && r.slot == slot
+                        || r.config.ports(r.slot).values().any(|p| ports.contains(p)))
+            });
+            if held {
+                continue;
+            }
+            s.servers.insert(
+                workspace.to_string(),
+                ServerRun {
+                    project_id: project.into(),
+                    cwd: cwd.into(),
+                    slot,
+                    config: config.clone(),
+                    prepare: None,
+                    preparing: false,
+                    prepare_tail: String::new(),
+                    generation: 0,
+                    apps: BTreeMap::new(),
+                },
+            );
+        }
+        // Probed outside the lock; the reservation keeps a concurrent start off this slot.
+        if !ports.iter().any(|p| servers::port_busy(*p)) {
+            return Ok(slot);
+        }
+        lock(state).servers.remove(workspace);
+    }
+    Err("no free slot (1..9): stop another workspace's servers first.".into())
+}
+
+fn servers_start(
+    state: &Shared,
+    workspace: &str,
+    project: &str,
+    cwd: &str,
+    apps: Option<&[String]>,
+) -> Result<Value, String> {
+    if !Path::new(cwd).is_absolute() || !Path::new(cwd).is_dir() {
+        return Err(format!("not a worktree folder: {cwd:?}"));
+    }
+    let (config, _) = servers::load(project, cwd)?
+        .ok_or("this project declares no dev servers (Settings, or .logit/servers.json)")?;
+    let names = config.pick(apps)?;
+    let known = lock(state).servers.contains_key(workspace);
+    if !known {
+        reserve_slot(state, workspace, project, cwd, &config)?;
+    }
+    let (generation, todo) = {
+        let mut s = lock(state);
+        let run = s
+            .servers
+            .get_mut(workspace)
+            .ok_or("the servers were stopped meanwhile")?;
+        let nothing_runs = !run.apps.values().any(|a| busy(a.status));
+        if nothing_runs {
+            // Idle: the config may have changed since; the slot stays.
+            run.config = config.clone();
+        }
+        let todo: Vec<String> = names
+            .into_iter()
+            .filter(|n| !run.apps.get(n).is_some_and(|a| busy(a.status)))
+            .collect();
+        for n in &todo {
+            run.apps.insert(
+                n.clone(),
+                AppRun {
+                    status: AppStatus::Queued,
+                    started: None,
+                    detail: None,
+                },
+            );
+        }
+        run.generation += 1;
+        (run.generation, todo)
+    };
+    if !todo.is_empty() {
+        let (st, w, p) = (state.clone(), workspace.to_string(), project.to_string());
+        std::thread::spawn(move || boot(&st, &w, &p, generation, &todo));
+    }
+    let s = lock(state);
+    let run = s.servers.get(workspace).ok_or("stopped meanwhile")?;
+    serde_json::to_value(run_info(workspace, run)).map_err(|e| e.to_string())
+}
+
+/// What a boot step sees of its run: None once it was stopped or restarted.
+fn current<'a>(s: &'a mut State, workspace: &str, generation: u64) -> Option<&'a mut ServerRun> {
+    s.servers
+        .get_mut(workspace)
+        .filter(|r| r.generation == generation)
+}
+
+fn fail_queued(state: &Shared, workspace: &str, apps: &[String], detail: &str) {
+    let mut s = lock(state);
+    if let Some(run) = s.servers.get_mut(workspace) {
+        for n in apps {
+            if let Some(a) = run
+                .apps
+                .get_mut(n)
+                .filter(|a| a.status == AppStatus::Queued)
+            {
+                a.status = AppStatus::Failed;
+                a.detail = Some(detail.to_string());
+            }
+        }
+    }
+}
+
+fn server_start(
+    workspace: &str,
+    cwd: &str,
+    name: &str,
+    command: String,
+    env: Vec<(String, String)>,
+) -> TermStart {
+    TermStart {
+        cwd: cwd.into(),
+        cols: 120,
+        rows: 30,
+        command: Some(command),
+        workspace_id: workspace.into(),
+        title: name.into(),
+        tag: Some(format!("server:{name}")),
+        env,
+    }
+}
+
+/// Prepares then starts `apps`, then waits for their ports, holding the project's gate.
+fn boot(state: &Shared, workspace: &str, project: &str, generation: u64, apps: &[String]) {
+    let gate = project_gate(project);
+    let _gate = gate.lock().unwrap_or_else(|e| e.into_inner());
+    let Some((config, cwd, slot)) = ({
+        let mut s = lock(state);
+        current(&mut s, workspace, generation).map(|r| (r.config.clone(), r.cwd.clone(), r.slot))
+    }) else {
+        return;
+    };
+
+    if let Some(prepare) = &config.prepare {
+        let id = term_id(workspace, "prepare");
+        let spawned = servers::fill(prepare, slot, &config.ports(slot), None).and_then(|cmd| {
+            let env = servers::env_for(&config, slot, None)?;
+            let mut s = lock(state);
+            let run = current(&mut s, workspace, generation).ok_or("stopped")?;
+            run.prepare = None;
+            run.preparing = true;
+            term_spawn(
+                state,
+                &mut s,
+                &id,
+                server_start(workspace, &cwd, "prepare", cmd, env),
+            )
+        });
+        if let Err(e) = spawned {
+            return fail_queued(state, workspace, apps, &format!("prepare: {e}"));
+        }
+        let code = loop {
+            std::thread::sleep(PORT_POLL / 2);
+            let mut s = lock(state);
+            let Some(run) = current(&mut s, workspace, generation) else {
+                return;
+            };
+            if let Some(code) = run.prepare {
+                run.preparing = false;
+                break (code, run.prepare_tail.clone());
+            }
+        };
+        if code.0 != Some(0) {
+            let detail = format!(
+                "prepare failed (exit {}):\n{}",
+                code.0.map_or("?".into(), |c| c.to_string()),
+                code.1
+            );
+            return fail_queued(state, workspace, apps, &detail);
+        }
+    }
+
+    for name in apps {
+        let Some(app) = config.app(name) else {
+            continue;
+        };
+        let made = servers::fill(&app.command, slot, &config.ports(slot), Some(name))
+            .and_then(|cmd| Ok((cmd, servers::env_for(&config, slot, Some(app))?)));
+        let mut s = lock(state);
+        let spawned = made.and_then(|(cmd, env)| {
+            current(&mut s, workspace, generation).ok_or("stopped")?;
+            term_spawn(
+                state,
+                &mut s,
+                &term_id(workspace, name),
+                server_start(workspace, &cwd, name, cmd, env),
+            )
+        });
+        let Some(run) = current(&mut s, workspace, generation) else {
+            return;
+        };
+        let Some(a) = run
+            .apps
+            .get_mut(name)
+            .filter(|a| a.status == AppStatus::Queued)
+        else {
+            continue;
+        };
+        match spawned {
+            Ok(()) if app.port.is_none() => a.status = AppStatus::Ready,
+            Ok(()) => {
+                a.status = AppStatus::Starting;
+                a.started = Some(Instant::now());
+            }
+            Err(e) => {
+                a.status = AppStatus::Failed;
+                a.detail = Some(e);
+            }
+        }
+    }
+
+    // Ports, probed outside the lock.
+    let ports = config.ports(slot);
+    loop {
+        let waiting: Vec<(String, u16, Instant)> = {
+            let mut s = lock(state);
+            let Some(run) = current(&mut s, workspace, generation) else {
+                return;
+            };
+            run.apps
+                .iter()
+                .filter(|(n, a)| a.status == AppStatus::Starting && apps.contains(n))
+                .filter_map(|(n, a)| Some((n.clone(), *ports.get(n)?, a.started?)))
+                .collect()
+        };
+        if waiting.is_empty() {
+            return;
+        }
+        for (name, port, started) in waiting {
+            let timeout = config
+                .app(&name)
+                .and_then(|a| a.timeout)
+                .unwrap_or(servers::DEFAULT_TIMEOUT);
+            let up = servers::port_busy(port);
+            let mut s = lock(state);
+            let tail = s
+                .terms
+                .get(&term_id(workspace, &name))
+                .map(|t| servers::tail(&t.output.contents(), LOG_TAIL))
+                .unwrap_or_default();
+            let Some(run) = current(&mut s, workspace, generation) else {
+                return;
+            };
+            let Some(a) = run
+                .apps
+                .get_mut(&name)
+                .filter(|a| a.status == AppStatus::Starting)
+            else {
+                continue;
+            };
+            if up {
+                a.status = AppStatus::Ready;
+            } else if started.elapsed() > Duration::from_secs(timeout) {
+                a.status = AppStatus::Failed;
+                a.detail = Some(format!("port {port} not open after {timeout} s:\n{tail}"));
+            }
+        }
+        std::thread::sleep(PORT_POLL);
+    }
+}
+
+/// A server terminal ended: its app failed unless it was being stopped.
+fn server_exited(s: &mut State, term: &str, code: Option<u32>, tail: String) {
+    for (w, run) in s.servers.iter_mut() {
+        if term == term_id(w, "prepare") {
+            run.prepare = Some(code);
+            run.prepare_tail = tail;
+            return;
+        }
+        let Some(name) = run
+            .config
+            .apps
+            .iter()
+            .map(|a| a.name.clone())
+            .find(|n| term == term_id(w, n))
+        else {
+            continue;
+        };
+        if let Some(a) = run.apps.get_mut(&name).filter(|a| busy(a.status)) {
+            a.status = AppStatus::Failed;
+            let code = code.map_or("?".into(), |c| c.to_string());
+            a.detail = Some(format!("exited (code {code}):\n{tail}"));
+        }
+        return;
+    }
+}
+
+/// Stops `apps` (all when None, and forgets the run): only the process trees the host started.
+fn servers_stop(state: &Shared, workspace: &str, apps: Option<&[String]>) {
+    let (pids, terms) = {
+        let mut s = lock(state);
+        let st = &mut *s;
+        let Some(run) = st.servers.get_mut(workspace) else {
+            return;
+        };
+        let mut names: Vec<String> = match apps {
+            Some(a) if !a.is_empty() => a.to_vec(),
+            _ => {
+                run.generation += 1;
+                let mut all: Vec<String> = run.config.apps.iter().map(|a| a.name.clone()).collect();
+                all.push("prepare".into());
+                all
+            }
+        };
+        names.dedup();
+        for n in &names {
+            if let Some(a) = run.apps.get_mut(n) {
+                a.status = AppStatus::Stopped;
+                a.detail = None;
+            }
+        }
+        let terms: Vec<String> = names.iter().map(|n| term_id(workspace, n)).collect();
+        let pids: Vec<u32> = terms
+            .iter()
+            .filter_map(|t| st.terms.get(t).filter(|t| !t.info.ended)?.pid)
+            .collect();
+        (pids, terms)
+    };
+    servers::stop_trees(&pids);
+    let mut s = lock(state);
+    for t in &terms {
+        if let Some(mut term) = s.terms.remove(t) {
+            let _ = term.killer.kill();
+            broadcast(
+                &mut term.subs,
+                &serde_json::json!({ "exit": term.info.code }).to_string(),
+            );
+        }
+    }
+    if apps.is_none_or(|a| a.is_empty()) {
+        s.servers.remove(workspace);
+    }
+}
+
+fn servers_logs(
+    state: &Shared,
+    workspace: &str,
+    app: &str,
+    lines: usize,
+) -> Result<String, String> {
+    let s = lock(state);
+    if let Some(t) = s.terms.get(&term_id(workspace, app)) {
+        return Ok(servers::tail(&t.output.contents(), lines.clamp(1, 2000)));
+    }
+    let run = s
+        .servers
+        .get(workspace)
+        .ok_or("no dev servers run in this workspace")?;
+    if app == "prepare" {
+        return Ok(run.prepare_tail.clone());
+    }
+    Ok(run
+        .apps
+        .get(app)
+        .and_then(|a| a.detail.clone())
+        .unwrap_or_else(|| format!("{app} has no output (not started)")))
 }
 
 #[cfg(test)]
@@ -968,5 +1549,72 @@ mod tests {
             request(&sock, r#"{"op":"hello"}"#)["protocol"],
             HOST_PROTOCOL
         );
+    }
+
+    fn servers_dir(name: &str, base: u16) -> String {
+        let dir = std::env::temp_dir().join(format!("logit-srv-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".logit")).unwrap();
+        let config = format!(
+            r#"{{"prepare":"echo prepared","apps":[{{"name":"web","port":{base},"command":"exec python3 -m http.server ${{port}} --bind 127.0.0.1","env":{{"EMPTY":""}},"timeout":20}}]}}"#
+        );
+        std::fs::write(dir.join(".logit/servers.json"), config).unwrap();
+        dir.to_string_lossy().into_owned()
+    }
+
+    fn app_status(sock: &std::path::Path, ws: &str) -> Option<(u16, String)> {
+        let list = request(sock, r#"{"op":"servers_list"}"#);
+        let run = list["runs"]
+            .as_array()?
+            .iter()
+            .find(|r| r["workspaceId"] == ws)?
+            .clone();
+        Some((
+            run["apps"][0]["port"].as_u64()? as u16,
+            run["apps"][0]["status"].as_str()?.into(),
+        ))
+    }
+
+    fn wait_ready(sock: &std::path::Path, ws: &str) -> u16 {
+        for _ in 0..200 {
+            if let Some((port, status)) = app_status(sock, ws) {
+                assert_ne!(
+                    status,
+                    "failed",
+                    "{}",
+                    request(sock, r#"{"op":"servers_list"}"#)
+                );
+                if status == "ready" {
+                    return port;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("{ws} never got ready");
+    }
+
+    #[test]
+    fn two_workspaces_get_their_own_ports_and_stopping_frees_them() {
+        let sock = temp_sock();
+        spawn_serve(&sock);
+        let base = 47_310;
+        let (a, b) = (servers_dir("a", base), servers_dir("b", base));
+        for (ws, cwd) in [("wa", &a), ("wb", &b)] {
+            let r = request(
+                &sock,
+                &format!(
+                    r#"{{"op":"servers_start","workspace_id":"{ws}","project_id":"p","cwd":"{cwd}"}}"#
+                ),
+            );
+            assert!(r["slot"].as_u64().unwrap() >= 1, "{r}");
+        }
+        let (pa, pb) = (wait_ready(&sock, "wa"), wait_ready(&sock, "wb"));
+        assert_ne!(pa, pb);
+        assert!(pa > base && pb > base, "slot 0 is never used");
+        request(&sock, r#"{"op":"servers_stop","workspace_id":"wa"}"#);
+        assert!(!servers::port_busy(pa));
+        assert!(servers::port_busy(pb));
+        assert!(app_status(&sock, "wa").is_none());
+        request(&sock, r#"{"op":"servers_stop","workspace_id":"wb"}"#);
+        assert!(!servers::port_busy(pb));
     }
 }

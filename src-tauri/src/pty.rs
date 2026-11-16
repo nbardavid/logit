@@ -31,7 +31,13 @@ type Spawned = (
 );
 
 /// The user's login shell in `cwd`, or `command` run by it (a setup script), on a new pty.
-pub fn spawn(cwd: &str, cols: u16, rows: u16, command: Option<&str>) -> Result<Spawned, String> {
+pub fn spawn(
+    cwd: &str,
+    cols: u16,
+    rows: u16,
+    command: Option<&str>,
+    env: &[(String, String)],
+) -> Result<Spawned, String> {
     let pair = native_pty_system()
         .openpty(size(cols, rows))
         .map_err(|e| e.to_string())?;
@@ -42,6 +48,8 @@ pub fn spawn(cwd: &str, cols: u16, rows: u16, command: Option<&str>) -> Result<S
             // Interactive too (`-i`): the shell reads ~/.zshrc, where tools put themselves on
             // the PATH (bun, nvm…), so a command finds what the user's terminal finds.
             cmd.args(["-l", "-i", "-c", command]);
+            // oh-my-zsh would stop a command on its "update?" prompt, waiting for nobody.
+            cmd.env("DISABLE_AUTO_UPDATE", "true");
             cmd
         }
         None => CommandBuilder::new_default_prog(),
@@ -53,6 +61,9 @@ pub fn spawn(cwd: &str, cols: u16, rows: u16, command: Option<&str>) -> Result<S
         if key == "CLAUDECODE" || key.starts_with("CLAUDE_CODE_") {
             cmd.env_remove(key);
         }
+    }
+    for (key, value) in env {
+        cmd.env(key, value);
     }
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // The master reads EOF only once every slave end is closed: ours goes now.
@@ -69,7 +80,7 @@ mod tests {
     #[test]
     fn a_command_runs_on_the_pty_and_reports_its_exit() {
         let (_master, mut child, mut reader, _writer) =
-            spawn("/tmp", 80, 24, Some("echo logit-pty; exit 3")).unwrap();
+            spawn("/tmp", 80, 24, Some("echo logit-pty; exit 3"), &[]).unwrap();
         let mut out = String::new();
         let _ = reader.read_to_string(&mut out);
         assert!(out.contains("logit-pty"), "{out:?}");

@@ -126,5 +126,10 @@ export function useArtifacts(o: Options) {
   /** The chat an artifact came from, by its title ('' when unknown). */
   const chatOf = (a: Artifact) => o.catalog.chats.find((c) => c.id === a.chatId)?.title ?? ''
 
-  return { chatOf, close, published, setView, setViewOf, tabs, view }
+  /** A page that is not an artifact (a dev server), opened in the workspace on screen. */
+  const openPage = (url: string, title: string) => {
+    if (id !== undefined) published(id, '', { title, toolId: '', url }, true)
+  }
+
+  return { chatOf, close, openPage, published, setView, setViewOf, tabs, view }
 }

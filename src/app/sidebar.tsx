@@ -20,6 +20,7 @@ import type { FileChange } from './use-git'
 import { useReorder } from './reorder'
 import { StatusDot } from './status-dot'
 import { RenameField } from './tab-bar'
+import { useServerPort } from './use-servers'
 
 export interface DiffStat {
   add: number
@@ -444,6 +445,8 @@ function WorkspaceRow(
   const facts = workspaceFacts(ws, props.chats ?? [])
   const renaming = ws.id === props.renamingId
   const word = colourWord(ws.path)
+  // Its dev servers' first port while they run: which slot it holds.
+  const port = useServerPort(ws.id)
   const title = ws.name === word ? (facts.task ?? ws.name) : ws.name
 
   const menu = (e: MouseEvent) => {
@@ -529,6 +532,15 @@ function WorkspaceRow(
                 <span className="flex items-center gap-1 @max-[240px]:hidden">
                   <span>{word}</span>
                   <span aria-hidden="true">·</span>
+                </span>
+              )}
+              {port !== null && (
+                <span className="text-foreground/70 font-mono">
+                  :{port}
+                  <span className="text-faint" aria-hidden="true">
+                    {' '}
+                    ·
+                  </span>
                 </span>
               )}
               {status}

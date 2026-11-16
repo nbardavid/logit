@@ -22,6 +22,8 @@ const POLL: Duration = Duration::from_secs(2);
 const STARTING: Duration = Duration::from_secs(30);
 /// How much of an answer `wait_for` quotes.
 const EXCERPT: usize = 1500;
+const SERVERS_WAIT: u64 = 120;
+const SERVERS_MAX_WAIT: u64 = 300;
 
 /// Serves MCP on stdin/stdout until stdin closes.
 pub fn run(chat: String) {
@@ -68,10 +70,14 @@ working on the prompt), then wait_for them and read their answers with chat_read
 workspace_stop interrupts one. The workspaces this chat creates leave the sidebar and show as a \
 tree in this workspace's Agents tab, so give each a prompt that names its feature. \
 Each workspace has a colour (e.g. amber), then a name Claude gives it from its first \
-prompt; tools take either.";
+prompt; tools take either. \
+This workspace's dev servers (the project's declared apps, on ports of their own so they never \
+touch the user's own dev servers): servers_start, then servers_wait until they are ready, \
+servers_status for their URLs, servers_logs when one fails, servers_stop when done.";
 
 fn tools() -> Value {
     let workspace = json!({ "type": "string", "description": "A workspace's colour (e.g. amber), name or id." });
+    let apps = json!({ "type": "array", "items": { "type": "string" }, "description": "App names, as the project declares them." });
     json!([
         {
             "name": "where_am_i",
@@ -132,6 +138,47 @@ fn tools() -> Value {
             },
         },
         {
+            "name": "servers_start",
+            "description": "Starts this workspace's dev servers: `apps` by name, or every app the project does not mark optional. Answers at once with the slot and each app's planned URL; follow with servers_wait. Apps already running are left as they are.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "apps": apps },
+            },
+        },
+        {
+            "name": "servers_wait",
+            "description": format!("Waits until this workspace's dev servers (`apps`, default all started ones) are ready or failed, or `timeout_s` passes (default {SERVERS_WAIT}, at most {SERVERS_MAX_WAIT}; call again to keep waiting). Returns each app's status and URL, with the end of its log when it failed."),
+            "inputSchema": {
+                "type": "object",
+                "properties": { "apps": apps, "timeout_s": { "type": "integer" } },
+            },
+        },
+        {
+            "name": "servers_status",
+            "description": "This workspace's dev servers: slot, and each app's status (queued, starting, ready, failed, stopped), port and URL.",
+            "inputSchema": { "type": "object", "properties": {} },
+        },
+        {
+            "name": "servers_logs",
+            "description": "The end of one dev server's output in this workspace (`app` \"prepare\" for the prepare step).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "app": { "type": "string" },
+                    "lines": { "type": "integer", "description": "Default 80." },
+                },
+                "required": ["app"],
+            },
+        },
+        {
+            "name": "servers_stop",
+            "description": "Stops this workspace's dev servers (`apps`, or all of them). Only what logit started here is stopped.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "apps": apps },
+            },
+        },
+        {
             "name": "chat_send",
             "description": "Sends a follow-up prompt to the agent of any workspace of this project, including ones the user opened. The user sees it in that chat.",
             "inputSchema": {
@@ -156,6 +203,11 @@ fn call(chat: &str, params: &Value) -> Value {
         "wait_for" => wait_for(args),
         "chat_send" => chat_send(chat, args),
         "workspace_stop" => workspace_stop(chat, args),
+        "servers_start" => servers_start(args),
+        "servers_wait" => servers_wait(args),
+        "servers_status" => servers_status().map(|v| v.to_string()),
+        "servers_logs" => servers_logs(args),
+        "servers_stop" => servers_stop(args),
         other => Err(format!("no tool {other}")),
     };
     match result {
@@ -564,6 +616,99 @@ fn tail(text: &str, max: usize) -> String {
     format!("…{cut}")
 }
 
+// Dev servers, run by the host.
+
+fn app_names(args: &Value) -> Option<Vec<String>> {
+    args["apps"].as_array().map(|a| {
+        a.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect()
+    })
+}
+
+fn servers_start(args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let w = &h.workspace;
+    let run = ask_host(&json!({
+        "op": "servers_start",
+        "workspace_id": w.id,
+        "project_id": w.project_id,
+        "cwd": w.path,
+        "apps": app_names(args),
+    }))?;
+    Ok(run.to_string())
+}
+
+/// This workspace's run, as the host lists it; Null when nothing runs.
+fn servers_status() -> Result<Value, String> {
+    let h = here()?;
+    let runs = ask_host(&json!({ "op": "servers_list" }))?;
+    Ok(runs["runs"]
+        .as_array()
+        .and_then(|r| {
+            r.iter()
+                .find(|r| r["workspaceId"] == h.workspace.id.as_str())
+        })
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
+fn servers_wait(args: &Value) -> Result<String, String> {
+    let timeout = args["timeout_s"]
+        .as_u64()
+        .unwrap_or(SERVERS_WAIT)
+        .min(SERVERS_MAX_WAIT);
+    let names = app_names(args).filter(|n| !n.is_empty());
+    let deadline = Instant::now() + Duration::from_secs(timeout);
+    loop {
+        let run = servers_status()?;
+        if run.is_null() {
+            return Err("no dev servers run in this workspace: call servers_start".into());
+        }
+        let watched: Vec<&Value> = run["apps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|a| match &names {
+                Some(n) => n.iter().any(|n| a["name"] == n.as_str()),
+                None => a["status"] != "stopped",
+            })
+            .collect();
+        let pending = watched
+            .iter()
+            .any(|a| a["status"] == "queued" || a["status"] == "starting");
+        if !pending || Instant::now() >= deadline {
+            let mut out = run.clone();
+            out["timedOut"] = pending.into();
+            return Ok(out.to_string());
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
+fn servers_logs(args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let app = args["app"].as_str().ok_or("app is required")?;
+    let lines = args["lines"].as_u64().unwrap_or(80) as usize;
+    let v = ask_host(&json!({
+        "op": "servers_logs",
+        "workspace_id": h.workspace.id,
+        "app": app,
+        "lines": lines,
+    }))?;
+    Ok(v["text"].as_str().unwrap_or_default().to_string())
+}
+
+fn servers_stop(args: &Value) -> Result<String, String> {
+    let h = here()?;
+    ask_host(&json!({
+        "op": "servers_stop",
+        "workspace_id": h.workspace.id,
+        "apps": app_names(args),
+    }))?;
+    Ok("stopped".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +757,11 @@ mod tests {
                 "chat_read",
                 "wait_for",
                 "workspace_stop",
+                "servers_start",
+                "servers_wait",
+                "servers_status",
+                "servers_logs",
+                "servers_stop",
                 "chat_send"
             ]
         );
