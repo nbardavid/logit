@@ -38,7 +38,7 @@ import { TerminalView } from './app/terminal-view'
 import { type Attention, AttentionToast, errorText, type Notice, NoticeToast } from './app/toast'
 import { TopBar } from './app/top-bar'
 import { UpdateButton, useUpdate } from './app/update-button'
-import { type AgentAsk, useAgentAsks } from './app/use-agent-asks'
+import { type AgentAsk, followUp, useAgentAsks } from './app/use-agent-asks'
 import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, turnsEnded, useChats } from './app/use-chats'
@@ -446,13 +446,10 @@ export function App() {
   /** An agent's ask (logit's MCP): a workspace as the composer makes one, or a follow-up. */
   agentAsk.current = async (ask: AgentAsk) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
-    if (ask.op === 'chat_send' || ask.op === 'chat_stop') {
-      if (!chats.chats.some((c) => c.record.id === ask.chatId))
-        throw new Error('That chat is closed.')
-      if (ask.op === 'chat_stop') chats.interrupt(ask.chatId)
-      else chats.send(ask.chatId, ask.text)
-      return {}
-    }
+    if (ask.op !== 'workspace_create')
+      return followUp(ask, chats, catalog.workspaces, async (w, force) =>
+        leaveInPieces(w.id, async () => deleteWorkspace(w, force), markRemoving)
+      )
     const taken = nameCandidates(namesIn(ask.projectId))
     const w = await store.createWorkspace(
       ask.projectId,

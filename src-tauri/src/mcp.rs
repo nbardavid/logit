@@ -67,7 +67,8 @@ const INSTRUCTIONS: &str = "logit runs this chat in a workspace: a git worktree 
 shown in the user's sidebar. Other workspaces of the same project each run their own Claude. \
 To split work, start workspaces with workspace_create (each gets its own branch and an agent \
 working on the prompt), then wait_for them and read their answers with chat_read; \
-workspace_stop interrupts one. The workspaces this chat creates leave the sidebar and show as a \
+workspace_stop interrupts one, workspace_remove cleans one up once its work is merged or \
+dropped. The workspaces this chat creates leave the sidebar and show as a \
 tree in this workspace's Agents tab, so give each a prompt that names its feature. \
 Each workspace has a colour (e.g. amber), then a name Claude gives it from its first \
 prompt; tools take either. \
@@ -134,6 +135,18 @@ fn tools() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": { "workspace": workspace },
+                "required": ["workspace"],
+            },
+        },
+        {
+            "name": "workspace_remove",
+            "description": "Deletes a workspace this chat created, as the user's Delete workspace does: its tabs close, its dev servers stop and its worktree folder is removed. Its branch stays. Refused when the worktree holds uncommitted changes, unless `force` (which discards them).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace": workspace,
+                    "force": { "type": "boolean", "description": "Discard uncommitted changes (default false)." },
+                },
                 "required": ["workspace"],
             },
         },
@@ -207,6 +220,7 @@ fn call(chat: &str, params: &Value) -> Value {
         "wait_for" => wait_for(args),
         "chat_send" => chat_send(chat, args),
         "workspace_stop" => workspace_stop(chat, args),
+        "workspace_remove" => workspace_remove(chat, args),
         "servers_start" => servers_start(args),
         "servers_wait" => servers_wait(args),
         "servers_status" => servers_status().map(|v| v.to_string()),
@@ -580,6 +594,26 @@ fn workspace_stop(chat: &str, args: &Value) -> Result<String, String> {
     })
 }
 
+fn workspace_remove(chat: &str, args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let w = h.find(args["workspace"].as_str().unwrap_or_default())?;
+    if w.id == h.workspace.id {
+        return Err("that is this chat's own workspace".into());
+    }
+    if w.parent_chat.as_deref() != Some(chat) {
+        return Err(format!("{} was not created by this chat", w.name));
+    }
+    ask_host(&json!({ "op": "ask", "ask": {
+        "op": "workspace_remove",
+        "workspaceId": w.id,
+        "force": args["force"].as_bool().unwrap_or(false),
+    }}))?;
+    Ok(format!(
+        "Removed {}: its worktree is gone, its branch {} stays.",
+        w.name, w.branch
+    ))
+}
+
 /// What a workspace changed: its uncommitted lines (`git diff HEAD --shortstat`) and how
 /// many commits it has past its base.
 fn work_of(w: &Workspace) -> Value {
@@ -761,6 +795,7 @@ mod tests {
                 "chat_read",
                 "wait_for",
                 "workspace_stop",
+                "workspace_remove",
                 "servers_start",
                 "servers_wait",
                 "servers_status",
