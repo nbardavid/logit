@@ -1,14 +1,15 @@
-// The workspace's dock, wired: the project's setup script, run command and dev servers, and
+// The workspace's dock, wired: the project's setup script and dev servers, and
 // the actions that run them in the dock's terminals.
 import { invoke } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { useEffect, useState } from 'react'
 
 import type { Workspace } from '../model/catalog'
 import type { useTerminals } from './use-terminals'
 
 import { PreviewButton } from './preview-button'
+import { SERVERS_PROMPT as serversPrompt } from './prompts'
 import { declaredApps, ServersPane } from './servers-pane'
-import { useRunCommand } from './use-run-command'
 import {
   isRunning,
   lastApps,
@@ -32,15 +33,14 @@ interface Props {
   runSetup: (w: Workspace) => Promise<unknown>
   /** Opens a chat asking Claude to write the setup script at `script`. */
   onWriteSetup: (script: string) => void
-  /** Opens a server's page in the panel's browser. */
-  onOpenUrl: (url: string, title: string) => void
+  /** Opens a chat in the workspace with this prompt. */
+  onAskAgent: (prompt: string) => void
 }
 
 export function Dock({ fail, hostReady, onBlocked, terminals, ws, ...props }: Props) {
   // The workspace's dock terminals (setup, run, quick ones, servers' output).
   const terms = terminals.tabs.filter((t) => t.workspaceId === ws.id && isDockTag(t.tag))
   const setup = useSetup(ws.projectId)
-  const run = useRunCommand(ws.projectId)
   const servers = useServersConfig(ws.projectId, ws.path)
   const declared = servers.text !== null && servers.text.trim() !== ''
   const serverRuns = useServerRuns(hostReady)
@@ -118,38 +118,16 @@ export function Dock({ fail, hostReady, onBlocked, terminals, ws, ...props }: Pr
     }
   }
 
-  const stop = () => {
-    for (const t of terms) if (t.tag === 'run') terminals.close(t.id)
-  }
-
-  /** The project's run command here; a run already going is stopped first. */
-  const runApp = () => {
-    if (!hostReady) return onBlocked("Couldn't run the app")
-    if (run.command === null || run.command === '') return
-    stop()
-    terminals.create({
-      command: run.command,
-      cwd: ws.path,
-      tag: 'run',
-      title: 'Run',
-      workspaceId: ws.id,
-    })
-  }
-
   return (
     <WorkspaceDock
       workspace={ws}
       projectName={props.projectName}
       setup={setup.status}
-      runCommand={run.command}
       terms={terms}
       attach={terminals.attach}
       onSetupRun={() => void setupAction('run')}
       onSetupEdit={() => void setupAction('edit')}
       onSetupAgent={() => void setupAction('chat')}
-      onSaveRunCommand={(c) => void run.save(c).catch(fail("Couldn't save the run command"))}
-      onRun={runApp}
-      onStop={stop}
       onNewTerminal={() => {
         if (!hostReady) onBlocked("Couldn't open a terminal")
         else terminals.create({ cwd: ws.path, tag: 'dock', workspaceId: ws.id })
@@ -167,7 +145,7 @@ export function Dock({ fail, hostReady, onBlocked, terminals, ws, ...props }: Pr
         declared && (
           <PreviewButton
             run={serverRun}
-            onOpen={(_ws, url, title) => props.onOpenUrl(url, title)}
+            onOpen={(_ws, url) => void openUrl(url).catch(fail("Couldn't open the browser"))}
           />
         )
       }
@@ -182,7 +160,8 @@ export function Dock({ fail, hostReady, onBlocked, terminals, ws, ...props }: Pr
           attach={terminals.attach}
           onStart={startApps}
           onStop={stopApps}
-          onOpen={props.onOpenUrl}
+          onOpen={(url) => void openUrl(url).catch(fail("Couldn't open the browser"))}
+          onAsk={() => props.onAskAgent(serversPrompt(servers.config?.projectPath ?? ''))}
           onSave={servers.save}
         />
       }

@@ -10,3 +10,8 @@ export const SETUP_PROMPT = (script: string) =>
   'copied from the main checkout, caches. Replace the stub; keep `#!/usr/bin/env bash` and ' +
   '`set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit ' +
   'non-zero on failure. Do not run it.'
+
+/** What the Servers pane's "Ask agent" sends; the format is in servers_start's description. */
+export const SERVERS_PROMPT = (file: string) =>
+  `Declare this project's dev servers for logit in ${file} (format: see servers_start). ` +
+  'Then start them, check they come up, and stop them.'

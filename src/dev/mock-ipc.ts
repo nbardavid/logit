@@ -136,7 +136,6 @@ const resumes = new Map<string, string | null>()
 const startModels = new Map<string, string>()
 const terms = new Map<string, Channel>()
 /** Each project's run command, once set here. */
-const runCommands = new Map<string, string>()
 const RUN_OUTPUT =
   '$ bun run dev\r\n\r\n  \x1b[32mVITE\x1b[0m v7.1.2  ready in 412 ms\r\n\r\n  ➜  Local:   \x1b[36mhttp://localhost:1420/\x1b[0m\r\n'
 const unknown = new Set<string>()
@@ -570,13 +569,6 @@ function handle(cmd: string, args: Args): unknown {
       return BRANCHES
     case 'claude_sessions':
       return SESSIONS
-    case 'run_command':
-      return (
-        runCommands.get(str(args.projectId)) ?? (args.projectId === 'p-logit' ? 'bun run dev' : '')
-      )
-    case 'set_run_command':
-      runCommands.set(str(args.projectId), str(args.command).trim())
-      return null
     case 'setup_status':
       return { exists: args.projectId === 'p-logit', path: '.logit/setup.sh' }
     case 'ensure_setup_script':

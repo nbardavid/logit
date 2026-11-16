@@ -247,6 +247,8 @@ pub struct ConfigFiles {
     /// The repo's file in this worktree, when there is one: it wins.
     pub repo: Option<String>,
     pub repo_path: String,
+    /// Where the project's setting lives (outside the repo, for every workspace).
+    pub project_path: String,
 }
 
 /// The servers a project declares, both places, for Settings and the dock.
@@ -258,8 +260,10 @@ pub fn servers_config(project_id: String, cwd: String) -> Result<ConfigFiles, St
         Err(e) => Err(e.to_string()),
     };
     let repo = repo_path(&cwd);
+    let project = project_path(&project_id)?;
     Ok(ConfigFiles {
-        project: read(project_path(&project_id)?)?.unwrap_or_default(),
+        project: read(project.clone())?.unwrap_or_default(),
+        project_path: project.to_string_lossy().into_owned(),
         repo: read(repo.clone())?,
         repo_path: repo.to_string_lossy().into_owned(),
     })

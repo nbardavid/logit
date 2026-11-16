@@ -72,6 +72,8 @@ interface Props {
   onStart: (apps?: string[]) => void
   onStop: (apps?: string[]) => void
   onOpen: (url: string, name: string) => void
+  /** Asks the workspace's agent to declare the servers. */
+  onAsk: () => void
   onSave: (text: string) => Promise<void>
 }
 
@@ -79,16 +81,35 @@ export function ServersPane(props: Props) {
   const { config, run, text } = props
   const [editing, setEditing] = useState(false)
   if (config === null) return null
-  if (editing || text === null || text.trim() === '') {
+  const declaredText = text !== null && text.trim() !== ''
+  if (editing) {
     return (
       <ConfigEditor
         config={config}
-        onCancel={text !== null && text.trim() !== '' ? () => setEditing(false) : undefined}
+        onCancel={() => setEditing(false)}
         onSave={async (t) => {
           await props.onSave(t)
           setEditing(false)
         }}
       />
+    )
+  }
+  if (!declaredText) {
+    return (
+      <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-xs">
+        <span className="max-w-[300px]">
+          Run this project&apos;s dev servers here, each workspace on its own ports, beside your
+          own. The agent can read how the repo starts its apps and declare them for you.
+        </span>
+        <span className="flex gap-1.5">
+          <Button type="button" size="sm" onClick={props.onAsk}>
+            Ask agent
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            Write it myself
+          </Button>
+        </span>
+      </div>
     )
   }
   const declared = declaredApps(text)
@@ -226,7 +247,7 @@ function Row(p: {
           type="button"
           className="text-muted-foreground hover:text-foreground truncate font-mono text-[11px] transition-colors duration-120"
           onClick={p.onOpen}
-          data-tip="Open in the panel"
+          data-tip="Open in your browser"
           data-tip-side="top"
         >
           {p.url.replace(/^http:\/\//, '')}
@@ -288,7 +309,7 @@ function IconAction(p: { label: string; onClick: () => void; children: React.Rea
 function ConfigEditor(p: {
   config: ServersConfig
   onSave: (text: string) => Promise<void>
-  onCancel: (() => void) | undefined
+  onCancel: () => void
 }) {
   const [draft, setDraft] = useState(p.config.project === '' ? EXAMPLE : p.config.project)
   const [error, setError] = useState<string | null>(null)
@@ -323,7 +344,7 @@ function ConfigEditor(p: {
           if (e.key === 'Enter' && e.metaKey) {
             e.preventDefault()
             save()
-          } else if (e.key === 'Escape' && p.onCancel) {
+          } else if (e.key === 'Escape') {
             e.stopPropagation()
             p.onCancel()
           }
@@ -333,11 +354,9 @@ function ConfigEditor(p: {
         <Button type="submit" size="sm">
           Save
         </Button>
-        {p.onCancel && (
-          <Button type="button" variant="secondary" size="sm" onClick={p.onCancel}>
-            Cancel
-          </Button>
-        )}
+        <Button type="button" variant="secondary" size="sm" onClick={p.onCancel}>
+          Cancel
+        </Button>
         <span className={cn('truncate text-xs', error === null ? 'text-faint' : 'text-critical')}>
           {error ?? '⌘Enter saves. Esc cancels.'}
         </span>

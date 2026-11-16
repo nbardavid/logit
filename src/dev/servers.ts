@@ -41,6 +41,7 @@ export function serversAnswer(cmd: string, args: Record<string, unknown>): unkno
     case 'servers_config':
       return {
         project: configs.get(s('projectId')) ?? '',
+        projectPath: `~/.local/share/logit/projects/${s('projectId')}/servers.json`,
         repo: null,
         repoPath: `${s('cwd')}/.logit/servers.json`,
       }

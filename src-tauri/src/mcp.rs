@@ -139,7 +139,11 @@ fn tools() -> Value {
         },
         {
             "name": "servers_start",
-            "description": "Starts this workspace's dev servers: `apps` by name, or every app the project does not mark optional. Answers at once with the slot and each app's planned URL; follow with servers_wait. Apps already running are left as they are.",
+            "description": "Starts this workspace's dev servers: `apps` by name, or every app the project does not mark optional. Answers at once with the slot and each app's planned URL; follow with servers_wait. Apps already running are left as they are. \
+    The project declares them in its setting file (or .logit/servers.json in the repo, which wins), JSON: \
+    {\"prepare\": \"<optional, runs first; keep it fast when up to date>\", \"env\": {...}, \"apps\": [{\"name\": \"api\", \"port\": 3400, \"command\": \"...\", \"env\": {\"PORT\": \"${port}\"}, \"optional\": false, \"timeout\": 300}]}. \
+    Each app runs on its base port + the workspace's slot (1-9) and must listen on ${port}; use ${url.<app>} and ${port.<app>} to link apps, and pick base ports away from the repo's defaults. \
+    In env, turn off what reaches the outside world from a dev copy (mails, crons, payments, publishing); empty values are allowed.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "apps": apps },

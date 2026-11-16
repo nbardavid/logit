@@ -32,6 +32,8 @@ export interface ServersConfig {
   /** The repo's `.logit/servers.json` in this worktree: it wins. */
   repo: string | null
   repoPath: string
+  /** Where the project's setting lives, outside the repo. */
+  projectPath: string
 }
 
 const POLL_MS = 1000
@@ -84,6 +86,7 @@ export function useServersConfig(projectId: string, cwd: string) {
   const load = useCallback(async () => {
     const c = await invoke<ServersConfig>('servers_config', { cwd, projectId }).catch(() => ({
       project: '',
+      projectPath: '',
       repo: null,
       repoPath: `${cwd}/.logit/servers.json`,
     }))

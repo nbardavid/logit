@@ -1022,7 +1022,7 @@ export function App() {
                           fail={fail}
                           runSetup={runSetup}
                           onWriteSetup={(script) => newChat(ws, SETUP_PROMPT(script))}
-                          onOpenUrl={artifacts.openPage}
+                          onAskAgent={(prompt) => newChat(ws, prompt)}
                         />
                       ),
                     }
