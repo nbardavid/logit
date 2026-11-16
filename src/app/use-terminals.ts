@@ -104,6 +104,16 @@ export function useTerminals() {
     entry.term.dispose()
   }, [])
 
+  /** Takes a tab out of the window only: its process in the host keeps running. */
+  const forget = useCallback((id: string) => {
+    const entry = live.current.get(id)
+    live.current.delete(id)
+    setTabs((list) => list.filter((t) => t.id !== id))
+    if (!entry) return
+    entry.unfollow()
+    entry.term.dispose()
+  }, [])
+
   const open = useCallback(
     ({ command, exited, id, onExit, start, tag, title, workspaceId }: Opening) => {
       const term = new Terminal({
@@ -246,7 +256,7 @@ export function useTerminals() {
   )
 
   return useMemo(
-    () => ({ attach, close, closeWorkspace, create, reattach, rename, tabs }),
-    [attach, close, closeWorkspace, create, reattach, rename, tabs]
+    () => ({ attach, close, closeWorkspace, create, forget, reattach, rename, tabs }),
+    [attach, close, closeWorkspace, create, forget, reattach, rename, tabs]
   )
 }

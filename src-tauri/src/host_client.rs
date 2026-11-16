@@ -306,6 +306,33 @@ pub fn term_kill(id: String) -> Result<(), String> {
     call(&Request::TermKill { id }).map(drop)
 }
 
+// Dev servers.
+
+#[tauri::command(async)]
+pub fn servers_start(
+    workspace_id: String,
+    project_id: String,
+    cwd: String,
+    apps: Option<Vec<String>>,
+) -> Result<Value, String> {
+    call(&Request::ServersStart {
+        workspace_id,
+        project_id,
+        cwd,
+        apps,
+    })
+}
+
+#[tauri::command(async)]
+pub fn servers_stop(workspace_id: String, apps: Option<Vec<String>>) -> Result<(), String> {
+    call(&Request::ServersStop { workspace_id, apps }).map(|_| ())
+}
+
+#[tauri::command(async)]
+pub fn servers_list() -> Result<Value, String> {
+    Ok(call(&Request::ServersList)?["runs"].take())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

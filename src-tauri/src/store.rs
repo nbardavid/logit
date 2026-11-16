@@ -891,6 +891,14 @@ const SETUP_STUB: &str = "#!/usr/bin/env bash\n\
 set -euo pipefail\n\n\
 echo \"nothing to do yet — edit this script\"\n";
 
+/// A project's own folder in the data dir (its setup script, run command, servers).
+pub fn project_dir(project_id: &str) -> Result<PathBuf, String> {
+    setup_path(project_id)?
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "bad project id".into())
+}
+
 fn setup_path(project_id: &str) -> Result<PathBuf, String> {
     if project_id.is_empty() || project_id.contains(['/', '\\']) || project_id.starts_with('.') {
         return Err("bad project id".into());

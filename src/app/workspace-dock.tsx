@@ -18,7 +18,14 @@ import { TerminalView } from './terminal-view'
 /** The terminals the dock owns, by tag: the main tab bar leaves them out. */
 export const DOCK_TAGS: ReadonlySet<string> = new Set(['setup', 'run', 'dock'])
 
-type Pane = 'setup' | 'run' | (string & {})
+/** A dev server's output (`server:<app>`), shown in the dock's Servers pane. */
+export const isServerTag = (tag: string | undefined) => tag?.startsWith('server:') === true
+
+/** Whether the dock, not the main tab bar, shows a terminal with this tag. */
+export const isDockTag = (tag: string | undefined) =>
+  tag !== undefined && (DOCK_TAGS.has(tag) || isServerTag(tag))
+
+type Pane = 'setup' | 'run' | 'servers' | (string & {})
 
 interface Props {
   workspace: Workspace
@@ -37,6 +44,16 @@ interface Props {
   onStop: () => void
   onNewTerminal: () => void
   onCloseTerminal: (id: string) => void
+  /** The Servers pane, once the project's declaration has loaded. */
+  servers: React.ReactNode
+  /** Whether the project declares dev servers: the bar's button starts them instead of Run. */
+  serversDeclared: boolean
+  serversRunning: boolean
+  serversBusy: boolean
+  onServersStart: () => void
+  onServersStop: () => void
+  /** Opens the servers that answer in the panel; nothing while none does. */
+  preview: React.ReactNode
 }
 
 function setupState(run: Workspace['setup'], running: boolean) {
@@ -53,7 +70,8 @@ const TAB =
 export function WorkspaceDock(props: Props) {
   const { runCommand, setup, terms, workspace } = props
   const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<Pane>('setup')
+  // null: the default pane, Servers or Run, until the user picks one.
+  const [pane, setPane] = useState<Pane | null>(null)
   // The terminal takes the keyboard only when the user picked it, never when a run shows itself.
   const [picked, setPicked] = useState(false)
   const setupTerm = terms.findLast((t) => t.tag === 'setup')
@@ -67,14 +85,25 @@ export function WorkspaceDock(props: Props) {
     for (const t of terms) {
       if (seen.current.has(t.id)) continue
       seen.current.add(t.id)
+      if (isServerTag(t.tag)) continue
       setPane(t.tag === 'dock' ? t.id : (t.tag as Pane))
       setOpen(true)
       setPicked(t.tag === 'dock')
     }
   }, [terms])
-  // A closed terminal's pane falls back to Run.
+  const hasCommand = runCommand !== null && runCommand !== ''
+  // Declared servers take Run's place; a run still going keeps its tab until it ends.
+  const showRun = !props.serversDeclared || running
+  // A closed terminal's pane falls back to Servers (or Run).
+  const fallback: Pane = props.serversDeclared || !showRun ? 'servers' : 'run'
   const shown: Pane =
-    pane === 'setup' || pane === 'run' || quick.some((t) => t.id === pane) ? pane : 'run'
+    pane !== null &&
+    (pane === 'setup' ||
+      pane === 'servers' ||
+      (pane === 'run' && showRun) ||
+      quick.some((t) => t.id === pane))
+      ? pane
+      : fallback
 
   const show = (next: Pane) => {
     setPicked(true)
@@ -84,11 +113,74 @@ export function WorkspaceDock(props: Props) {
   }
 
   const s = setupState(workspace.setup, setupTerm !== undefined && setupTerm.exited === undefined)
-  const hasCommand = runCommand !== null && runCommand !== ''
   let term: TerminalTab | undefined
   if (shown === 'setup') term = setupTerm
   else if (shown === 'run') term = runTerm
   else term = quick.find((t) => t.id === shown)
+
+  /** The bar's one action: the dev servers when declared, else the run command. */
+  const barButton = () => {
+    if (running || !props.serversDeclared) {
+      if (running)
+        return (
+          <Button type="button" variant="outline" size="xs" onClick={props.onStop}>
+            <SquareIcon className="size-2.5 fill-current" />
+            Stop
+          </Button>
+        )
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => (hasCommand ? props.onRun() : show('run'))}
+          data-tip={hasCommand ? runCommand : 'Set the command that starts the app'}
+          data-tip-side="top"
+          data-tip-align="end"
+        >
+          <PlayIcon className="size-3 fill-current" />
+          Run
+        </Button>
+      )
+    }
+    if (props.serversRunning)
+      return (
+        <Button type="button" variant="outline" size="xs" onClick={props.onServersStop}>
+          <SquareIcon className="size-2.5 fill-current" />
+          Stop
+        </Button>
+      )
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        onClick={() => {
+          props.onServersStart()
+          show('servers')
+        }}
+        data-tip="Start this workspace's dev servers"
+        data-tip-side="top"
+        data-tip-align="end"
+      >
+        <PlayIcon className="size-3 fill-current" />
+        Start
+      </Button>
+    )
+  }
+
+  let body: React.ReactNode = null
+  if (open && shown === 'servers') body = props.servers
+  else if (open && term)
+    body = (
+      <TerminalView
+        key={term.id}
+        tabId={term.id}
+        attach={props.attach}
+        focus={picked}
+        className="px-3 pt-2 pb-2"
+      />
+    )
 
   return (
     <div className="flex flex-none flex-col border-t">
@@ -111,9 +203,15 @@ export function WorkspaceDock(props: Props) {
           <DockTab label="Setup" on={open && shown === 'setup'} onClick={() => show('setup')}>
             {setup?.exists === true && <Dot tone={s.dot} />}
           </DockTab>
-          <DockTab label="Run" on={open && shown === 'run'} onClick={() => show('run')}>
-            {running && <Dot tone="working" />}
+          <DockTab label="Servers" on={open && shown === 'servers'} onClick={() => show('servers')}>
+            {props.serversBusy && <Dot tone="working" />}
+            {!props.serversBusy && props.serversRunning && <Dot tone="done" />}
           </DockTab>
+          {showRun && (
+            <DockTab label="Run" on={open && shown === 'run'} onClick={() => show('run')}>
+              {running && <Dot tone="working" />}
+            </DockTab>
+          )}
           {quick.map((t, i) => (
             <DockTab
               key={t.id}
@@ -134,26 +232,9 @@ export function WorkspaceDock(props: Props) {
             <PlusIcon className="size-3.5" />
           </button>
         </div>
-        <span className="flex flex-none items-center">
-          {running ? (
-            <Button type="button" variant="outline" size="xs" onClick={props.onStop}>
-              <SquareIcon className="size-2.5 fill-current" />
-              Stop
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => (hasCommand ? props.onRun() : show('run'))}
-              data-tip={hasCommand ? runCommand : 'Set the command that starts the app'}
-              data-tip-side="top"
-              data-tip-align="end"
-            >
-              <PlayIcon className="size-3 fill-current" />
-              Run
-            </Button>
-          )}
+        <span className="flex flex-none items-center gap-1">
+          {props.preview}
+          {barButton()}
         </span>
       </div>
       {/* Opens by its height (grid rows 0fr → 1fr), so nothing jumps; inert while shut. */}
@@ -166,15 +247,7 @@ export function WorkspaceDock(props: Props) {
       >
         <div className="min-h-0 overflow-hidden">
           <div className="flex h-[280px] flex-col border-t">
-            {open && term ? (
-              <TerminalView
-                key={term.id}
-                tabId={term.id}
-                attach={props.attach}
-                focus={picked}
-                className="px-3 pt-2 pb-2"
-              />
-            ) : (
+            {body ?? (
               <Empty>
                 {shown === 'setup' && (
                   <SetupEmpty {...props} exists={setup?.exists === true} said={s.said} />

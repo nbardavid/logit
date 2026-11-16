@@ -55,6 +55,7 @@ import {
 import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
 import { KID_HOST_CHATS, withKids } from './orchestra'
+import { SERVER_OUTPUT, serversAnswer } from './servers'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
 interface Channel {
@@ -392,6 +393,7 @@ function setGitFlags(path: string, files: string[] | 'all', patch: Partial<FileC
 
 function handle(cmd: string, args: Args): unknown {
   const path = str(args.path)
+  if (cmd.startsWith('servers_') || cmd === 'set_servers_config') return serversAnswer(cmd, args)
   switch (cmd) {
     case 'catalog':
       return structuredClone(store)
@@ -457,7 +459,9 @@ function handle(cmd: string, args: Args): unknown {
       const channel = args.onData as Channel
       terms.set(str(args.id), channel)
       const start = args.start as { command?: string | null; tag?: string | null } | null
-      if (start?.tag === 'run') {
+      if (str(args.id).startsWith('srv-')) {
+        later(channel, [SERVER_OUTPUT])
+      } else if (start?.tag === 'run') {
         // A dev server: it says where it listens, and keeps running.
         later(channel, [RUN_OUTPUT])
       } else if (typeof start?.command === 'string') {

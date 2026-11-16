@@ -50,7 +50,7 @@ import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
 import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
-import { DOCK_TAGS } from './app/workspace-dock'
+import { isDockTag } from './app/workspace-dock'
 import { availableCommands } from './chat/commands'
 import { type ChatState, type Image, initialChat, toolSummary } from './chat/model'
 import {
@@ -223,8 +223,7 @@ export function App() {
   const wsChats = chats.chats.filter((c) => c.record.workspaceId === ws?.id)
   const wsAllTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id)
   // Setup, Run and the dock's own terminals live in the panel's dock, not in the tabs.
-  const dockTerms = wsAllTerms.filter((t) => t.tag !== undefined && DOCK_TAGS.has(t.tag))
-  const wsTerms = wsAllTerms.filter((t) => t.tag === undefined || !DOCK_TAGS.has(t.tag))
+  const wsTerms = wsAllTerms.filter((t) => !isDockTag(t.tag))
   const tabItems: (TabItem & { at: number })[] = [
     ...wsChats.map((c) => ({
       at: c.record.createdAt,
@@ -1017,13 +1016,13 @@ export function App() {
                         <Dock
                           ws={ws}
                           projectName={project?.name ?? ''}
-                          terms={dockTerms}
                           terminals={terminals}
                           hostReady={host.state.kind === 'ready'}
                           onBlocked={(title) => setNotice({ text: HOST_BLOCKED, title })}
                           fail={fail}
                           runSetup={runSetup}
                           onWriteSetup={(script) => newChat(ws, SETUP_PROMPT(script))}
+                          onOpenUrl={artifacts.openPage}
                         />
                       ),
                     }

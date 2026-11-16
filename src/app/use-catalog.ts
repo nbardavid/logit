@@ -8,6 +8,7 @@ import {
   type Project,
   type Workspace,
 } from '../model/catalog'
+import { stopServers } from './use-servers'
 
 export type CatalogStatus =
   | { kind: 'loading' }
@@ -97,10 +98,13 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
 
   const removeProject = useCallback(
     async (id: string) => {
+      // Its workspaces' dev servers stop with it: only what logit started there.
+      const owned = catalog.workspaces.filter((w) => w.projectId === id)
+      await Promise.all(owned.map(async (w) => stopServers(w.id).catch(() => {})))
       await invoke('project_remove', { id })
       await reload()
     },
-    [reload]
+    [catalog.workspaces, reload]
   )
 
   const createWorkspace = useCallback(
@@ -134,6 +138,7 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
 
   const removeWorkspace = useCallback(
     async (id: string, force: boolean) => {
+      await stopServers(id).catch(() => {})
       await invoke('workspace_remove', { force, id })
       await reload()
     },
@@ -152,6 +157,8 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
   /** Put aside (muted in the sidebar) or taken back up. */
   const pauseWorkspace = useCallback(
     async (id: string, paused: boolean) => {
+      // Put aside: its dev servers stop; they start again when asked.
+      if (paused) await stopServers(id).catch(() => {})
       await invoke('workspace_pause', { id, paused })
       await reload()
     },

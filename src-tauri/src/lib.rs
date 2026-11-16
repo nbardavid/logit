@@ -8,6 +8,7 @@ pub mod mcp;
 pub mod naming;
 pub mod pty;
 pub mod quota;
+pub mod servers;
 pub mod sessions;
 pub mod store;
 pub mod update;
@@ -154,6 +155,11 @@ pub fn run() {
             host_client::term_write,
             host_client::term_resize,
             host_client::term_kill,
+            host_client::servers_start,
+            host_client::servers_stop,
+            host_client::servers_list,
+            servers::servers_config,
+            servers::set_servers_config,
             chat::chat_history,
             chat::claude_models,
             sessions::claude_sessions,
