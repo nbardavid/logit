@@ -14,6 +14,14 @@ export function answerOf(q: Question, picked: string[], other: string): string {
   return [...picked, ...(typed ? [typed] : [])].join(', ')
 }
 
+/** Claude marks its pick with "(Recommended)" (or "(recommandé)") at the end of a label. */
+export function splitRecommended(label: string): { text: string; recommended: boolean } {
+  const m = /\s*\((recommended|recommandé)\)\s*$/i.exec(label)
+  return m
+    ? { recommended: true, text: label.slice(0, m.index) }
+    : { recommended: false, text: label }
+}
+
 const ROW =
   'flex w-full items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors duration-120 ease-out hover:bg-hover focus-visible:outline-2 focus-visible:outline-ring'
 
@@ -100,6 +108,7 @@ export function QuestionCard({
           <div className="mt-0.5 flex flex-col gap-1">
             {q.options.map((o) => {
               const on = picked[i]?.includes(o.label) === true
+              const { recommended, text } = splitRecommended(o.label)
               return (
                 <button
                   key={o.label}
@@ -113,7 +122,14 @@ export function QuestionCard({
                   onClick={() => pick(i, q, o.label)}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-sm font-medium text-ink">{o.label}</span>
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      {text}
+                      {recommended && (
+                        <span className="rounded-sm bg-active px-1.5 text-xs font-normal text-label">
+                          Recommended
+                        </span>
+                      )}
+                    </span>
                     {o.description !== '' && (
                       <span className="text-label text-sm">{o.description}</span>
                     )}
