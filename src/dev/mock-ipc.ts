@@ -54,6 +54,7 @@ import {
 } from './fixtures'
 import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
+import { KID_HOST_CHATS, withKids } from './orchestra'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
 interface Channel {
@@ -84,7 +85,9 @@ async function previewPicture(): Promise<ArrayBuffer> {
 }
 
 const flags = new URLSearchParams(location.search)
-const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
+const store: Catalog = flags.has('empty')
+  ? { chats: [], projects: [], workspaces: [] }
+  : withKids(catalog(), Date.now())
 // `?wallpaper=Kites` opens on that chat background.
 if (flags.has('wallpaper')) SETTINGS.settings['ui.wallpaper'] = flags.get('wallpaper')
 if (flags.has('merged'))
@@ -105,6 +108,7 @@ for (const c of store.chats) {
   if (ago !== undefined) Object.assign(c, { activeAt: Date.now() - ago })
 }
 const hostList = structuredClone(HOST_STATUS.list)
+hostList.chats.unshift(...KID_HOST_CHATS)
 if (flags.has('long')) {
   const long = longFixture()
   store.projects.push(long.project)

@@ -1,8 +1,8 @@
-// The right panel's views: Changes, Checks, and Artifacts (a page, or none yet).
+// The right panel's views: Agents, Changes, Checks, and Artifacts (a page, or none yet).
 import type { Artifact } from '../model/catalog'
 
 /** `artifacts` is the Artifacts tab with no page to show; `{ browser }` shows one. */
-export type PanelView = 'changes' | 'checks' | 'artifacts' | { browser: string }
+export type PanelView = 'agents' | 'changes' | 'checks' | 'artifacts' | { browser: string }
 
 export const isBrowser = (view: PanelView): view is { browser: string } => typeof view === 'object'
 
@@ -34,7 +34,7 @@ export function shownView(
   last: string | null
 ): PanelView {
   if (view === 'checks') return hasPr ? 'checks' : 'changes'
-  if (view === 'changes') return view
+  if (view === 'changes' || view === 'agents') return view
   const has = (url: string | null) => url !== null && tabs.some((a) => a.url === url)
   if (isBrowser(view) && has(view.browser)) return view
   if (last !== null && has(last)) return { browser: last }

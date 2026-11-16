@@ -15,8 +15,6 @@ use crate::host::HostChat;
 use crate::store::{self, Catalog, ChatRecord, Workspace};
 
 const SERVER: &str = "logit";
-/// How many workspaces one chat may create.
-const MAX_CREATED: usize = 5;
 const DEFAULT_WAIT: u64 = 600;
 const MAX_WAIT: u64 = 1800;
 const POLL: Duration = Duration::from_secs(2);
@@ -66,7 +64,9 @@ fn answer(chat: &str, msg: &Value) -> Option<Value> {
 const INSTRUCTIONS: &str = "logit runs this chat in a workspace: a git worktree of a project, \
 shown in the user's sidebar. Other workspaces of the same project each run their own Claude. \
 To split work, start workspaces with workspace_create (each gets its own branch and an agent \
-working on the prompt), then wait_for them and read their answers with chat_read. \
+working on the prompt), then wait_for them and read their answers with chat_read; \
+workspace_stop interrupts one. The workspaces this chat creates leave the sidebar and show as a \
+tree in this workspace's Agents tab, so give each a prompt that names its feature. \
 Each workspace has a colour (e.g. amber), then a name Claude gives it from its first \
 prompt; tools take either.";
 
@@ -80,12 +80,12 @@ fn tools() -> Value {
         },
         {
             "name": "list_workspaces",
-            "description": "The project's workspaces: name, task, branch, and their agent's state (working, waiting = blocked on a question for the user, idle = done or not started), and which ones this chat created.",
+            "description": "The project's workspaces: name, task, branch, their agent's state (working, waiting = blocked on a question for the user, idle = done or not started), their work (uncommitted lines, new untracked files, commits past the base; null when git can't tell), and which ones this chat created.",
             "inputSchema": { "type": "object", "properties": {} },
         },
         {
             "name": "workspace_create",
-            "description": format!("Starts a new workspace (a worktree on its own branch) with an agent working on `prompt`, as the user's New workspace does. It shows in the user's sidebar. The prompt must stand alone: that agent knows nothing of this conversation. At most {MAX_CREATED} per chat. Follow with wait_for."),
+            "description": format!("Starts a new workspace (a worktree on its own branch) with an agent working on `prompt`, as the user's New workspace does. It shows in this workspace's Agents tab. The prompt must stand alone: that agent knows nothing of this conversation. Follow with wait_for."),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -123,6 +123,15 @@ fn tools() -> Value {
             },
         },
         {
+            "name": "workspace_stop",
+            "description": "Interrupts the agent of a workspace this chat created, as the user's stop button does. Its worktree and branch stay; chat_send gets it going again.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "workspace": workspace },
+                "required": ["workspace"],
+            },
+        },
+        {
             "name": "chat_send",
             "description": "Sends a follow-up prompt to the agent of any workspace of this project, including ones the user opened. The user sees it in that chat.",
             "inputSchema": {
@@ -146,6 +155,7 @@ fn call(chat: &str, params: &Value) -> Value {
         "chat_read" => chat_read(args),
         "wait_for" => wait_for(args),
         "chat_send" => chat_send(chat, args),
+        "workspace_stop" => workspace_stop(chat, args),
         other => Err(format!("no tool {other}")),
     };
     match result {
@@ -301,6 +311,7 @@ fn list_workspaces(chat: &str) -> Result<String, String> {
                 "task": task,
                 "branch": w.branch,
                 "state": state_of(&h, &w.id, &chats),
+                "work": work_of(w),
                 "thisChat": w.id == h.workspace.id,
                 "createdByThisChat": w.parent_chat.as_deref() == Some(chat),
             })
@@ -315,17 +326,6 @@ fn workspace_create(chat: &str, args: &Value) -> Result<String, String> {
         return Err("give the new agent a prompt".into());
     }
     let h = here()?;
-    let created = h
-        .catalog
-        .workspaces
-        .iter()
-        .filter(|w| w.parent_chat.as_deref() == Some(chat))
-        .count();
-    if created >= MAX_CREATED {
-        return Err(format!(
-            "this chat already created {MAX_CREATED} workspaces, the most it may"
-        ));
-    }
     let made = ask_host(&json!({ "op": "ask", "ask": {
         "op": "workspace_create",
         "projectId": h.workspace.project_id,
@@ -467,7 +467,7 @@ fn wait_for(args: &Value) -> Result<String, String> {
                         .and_then(|ex| ex.last().map(|e| e.1.clone()))
                         .filter(|a| !a.is_empty())
                         .map(|a| tail(&a, EXCERPT));
-                    json!({ "workspace": w.name, "state": state, "lastAnswer": answer })
+                    json!({ "workspace": w.name, "state": state, "work": work_of(w), "lastAnswer": answer })
                 })
                 .collect();
             return Ok(json!({ "timedOut": !done, "workspaces": rows }).to_string());
@@ -496,6 +496,55 @@ fn chat_send(chat: &str, args: &Value) -> Result<String, String> {
         "Sent to {}: wait_for it, then chat_read it.",
         w.name
     ))
+}
+
+fn workspace_stop(chat: &str, args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let w = h.find(args["workspace"].as_str().unwrap_or_default())?;
+    if w.parent_chat.as_deref() != Some(chat) {
+        return Err(format!("{} was not created by this chat", w.name));
+    }
+    let live: HashSet<String> = peek()?
+        .into_iter()
+        .filter(|c| c.alive && (c.working || c.waiting))
+        .map(|c| c.id)
+        .collect();
+    let mut stopped = 0;
+    for c in h.chats_of(&w.id).iter().filter(|c| live.contains(&c.id)) {
+        ask_host(&json!({ "op": "ask", "ask": { "op": "chat_stop", "chatId": c.id } }))?;
+        stopped += 1;
+    }
+    Ok(if stopped == 0 {
+        format!("{}'s agent was not working.", w.name)
+    } else {
+        format!(
+            "Stopped {}: its worktree stays, chat_send resumes it.",
+            w.name
+        )
+    })
+}
+
+/// What a workspace changed: its uncommitted lines (`git diff HEAD --shortstat`) and how
+/// many commits it has past its base.
+fn work_of(w: &Workspace) -> Value {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&w.path)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let uncommitted = git(&["diff", "HEAD", "--shortstat"]).filter(|s| !s.is_empty());
+    let new_files = git(&["status", "--porcelain"])
+        .map_or(0, |out| out.lines().filter(|l| l.starts_with("??")).count());
+    let commits = Some(w.base.as_str())
+        .filter(|b| !b.is_empty())
+        .and_then(|b| git(&["rev-list", "--count", &format!("{b}..HEAD")]))
+        .and_then(|n| n.parse::<u64>().ok());
+    json!({ "uncommitted": uncommitted, "newFiles": new_files, "commits": commits })
 }
 
 fn now_ms() -> u64 {
@@ -562,6 +611,7 @@ mod tests {
                 "workspace_create",
                 "chat_read",
                 "wait_for",
+                "workspace_stop",
                 "chat_send"
             ]
         );

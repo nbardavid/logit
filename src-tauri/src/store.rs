@@ -47,6 +47,9 @@ pub struct Workspace {
     /// The chat whose agent created it (through logit's MCP), if one did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_chat: Option<String>,
+    /// That chat's workspace, kept at creation: the tree holds once the chat is closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_workspace: Option<String>,
     /// Put aside by the user: drawn muted until a message is sent in it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub paused: bool,
@@ -454,8 +457,12 @@ pub fn workspace_create(
     let (fetch, copy) = worktree_settings();
     let root = data_dir().join("worktrees").join(&project.id);
     let mut workspace = make_worktree(&project, &root, &names, &candidates, base, fetch, &copy)?;
-    workspace.parent_chat = parent_chat;
     edit(&store, |c| {
+        workspace.parent_workspace = parent_chat
+            .as_ref()
+            .and_then(|id| c.chats.iter().find(|ch| &ch.id == id))
+            .map(|ch| ch.workspace_id.clone());
+        workspace.parent_chat = parent_chat;
         c.workspaces.push(workspace.clone());
         Ok(workspace.clone())
     })
@@ -562,6 +569,7 @@ pub fn make_worktree(
         setup: None,
         artifacts: Vec::new(),
         parent_chat: None,
+        parent_workspace: None,
         paused: false,
     })
 }
@@ -1309,6 +1317,7 @@ mod tests {
                 setup: None,
                 artifacts: Vec::new(),
                 parent_chat: None,
+                parent_workspace: None,
                 paused: false,
             }],
             ..Catalog::default()

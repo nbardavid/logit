@@ -7,8 +7,10 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
+import { agentTree, kidsNote, signalsOf } from './app/agent-tree'
 import { notify, playChosenSound } from './app/attention'
 import { browserId } from './app/browser-tabs'
+import { readChatSettings, saveChatSettings } from './app/chat-settings'
 import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
@@ -54,13 +56,12 @@ import { type ChatState, type Image, initialChat, toolSummary } from './chat/mod
 import {
   chatFlags,
   type ChatSettings,
-  DEFAULT_CHAT,
   effortName,
   modelName,
   normalize,
   reportedModel,
 } from './model/agents'
-import { byProject, strongest, type Workspace } from './model/catalog'
+import { byProject, type Workspace } from './model/catalog'
 import { nameCandidates } from './model/names'
 
 // What a new tab can be, as in Conductor: a native Claude chat, or a shell.
@@ -68,8 +69,6 @@ const NEW_TAB: PickerItem[] = [
   { key: 'chat', label: 'Chat', meta: '⌘T' },
   { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
 ]
-
-const CHAT_SETTINGS = 'logit.chat'
 
 /** The chat an empty workspace offers: nothing runs until its first Enter. */
 const DRAFT: ChatState = { ...initialChat, status: 'idle' }
@@ -81,18 +80,6 @@ const QUIET =
 const EMPTY_TITLE = 'text-foreground text-lg'
 /** A key cap on the ink button. */
 const KBD_INK = 'text-white/60'
-
-function readChatSettings(): ChatSettings {
-  // A per-window convenience: storage may be empty or refused, the defaults then hold.
-  try {
-    const raw = localStorage.getItem(CHAT_SETTINGS)
-    return raw === null
-      ? DEFAULT_CHAT
-      : { ...DEFAULT_CHAT, ...(JSON.parse(raw) as Partial<ChatSettings>) }
-  } catch {
-    return DEFAULT_CHAT
-  }
-}
 
 const copy = (text: string) => void navigator.clipboard.writeText(text)
 
@@ -153,6 +140,11 @@ export function App() {
     () => byProject(withoutLeaving(catalog, removing)),
     [catalog, removing]
   )
+  // An agent's workspaces leave the sidebar for their parent's Agents tab.
+  const selectWs = (pid: string, wid: string | null) => {
+    setMode('normal')
+    store.select(pid, wid)
+  }
   const placeOf = (workspaceId: string) => {
     const w = catalog.workspaces.find((x) => x.id === workspaceId)
     const p = projects.find((x) => x.id === w?.projectId)
@@ -409,11 +401,7 @@ export function App() {
 
   const setSelection = (next: ChatSettings) => {
     setSelectionState(next)
-    try {
-      localStorage.setItem(CHAT_SETTINGS, JSON.stringify(next))
-    } catch {
-      // Remembering the choice is a convenience; chats then open on the defaults.
-    }
+    saveChatSettings(next)
   }
 
   const newChat = (w: Workspace, prompt?: string, images: readonly Image[] = []) => {
@@ -459,10 +447,11 @@ export function App() {
   /** An agent's ask (logit's MCP): a workspace as the composer makes one, or a follow-up. */
   agentAsk.current = async (ask: AgentAsk) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
-    if (ask.op === 'chat_send') {
+    if (ask.op === 'chat_send' || ask.op === 'chat_stop') {
       if (!chats.chats.some((c) => c.record.id === ask.chatId))
         throw new Error('That chat is closed.')
-      chats.send(ask.chatId, ask.text)
+      if (ask.op === 'chat_stop') chats.interrupt(ask.chatId)
+      else chats.send(ask.chatId, ask.text)
       return {}
     }
     const taken = nameCandidates(namesIn(ask.projectId))
@@ -508,6 +497,11 @@ export function App() {
     for (const c of chats.chats) if (c.record.workspaceId === w.id) chats.close(c.record.id)
   }
 
+  const renamed = (w: Workspace, name: string | null) => {
+    setRenamingWs(null)
+    if (name === null || name === w.name) return
+    store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
+  }
   const rowMenu = (row: RowMenu) => {
     const path = row.kind === 'project' ? row.project.path : row.workspace.path
     const items: MenuItem[] = []
@@ -550,7 +544,7 @@ export function App() {
           cautious: true,
           text: dirty
             ? `${w.name} has uncommitted changes. Deleting it discards them and removes its worktree folder. The branch ${w.branch} stays.`
-            : `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.`,
+            : `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.${kidsNote(catalog, w)}`,
           ...((signals[w.id] === 'working' || signals[w.id] === 'waiting') && {
             warning: ' · Claude is working',
           }),
@@ -583,8 +577,23 @@ export function App() {
     } else terminals.close(id)
   }
 
+  const signals = signalsOf(catalog.workspaces, chats.chats)
+  const tree = agentTree({
+    catalog,
+    chats: sidebarChats,
+    diffs,
+    menu: rowMenu,
+    onOpen: selectWs,
+    onRenamed: renamed,
+    projects,
+    renamingId: renamingWs,
+    setViewOf: artifacts.setViewOf,
+    signals,
+    workspaces,
+    ws,
+  })
   /** Every workspace, in sidebar order: ⌘1–9 and ⌥⌘↑/↓ go through it. */
-  const order = projects.flatMap((p) => workspaces[p.id] ?? [])
+  const order = projects.flatMap((p) => tree.lists[p.id] ?? [])
   keys.current = {
     attention: () => {
       if (attention === null || questionHere) return false
@@ -627,13 +636,6 @@ export function App() {
 
   const removal = { fail, hide: markRemoving, remove: deleteWorkspace }
   const cleanup = cleanupOf(ws, (changes?.length ?? 0) > 0, removal)
-
-  const signals: Record<string, ReturnType<typeof strongest>> = {}
-  for (const w of catalog.workspaces) {
-    signals[w.id] = strongest(
-      chats.chats.filter((c) => c.record.workspaceId === w.id).map(chatSignal)
-    )
-  }
 
   // What this workspace's Claude is doing, for the git panel's questions.
   const wsSignal = ws === undefined ? null : (signals[ws.id] ?? null)
@@ -838,16 +840,13 @@ export function App() {
       foot={<Quotas cache={quotas.cache} error={quotas.error} />}
       dock={layout.sideOpen && attentionToast}
       projects={projects}
-      workspaces={workspaces}
-      signals={signals}
+      workspaces={tree.lists}
+      signals={tree.signals}
       diffs={diffs}
       chats={sidebarChats}
       projectId={projectId}
-      workspaceId={ws?.id ?? null}
-      onSelect={(pid, wid) => {
-        setMode('normal')
-        store.select(pid, wid)
-      }}
+      workspaceId={tree.rootId}
+      onSelect={selectWs}
       onProjects={() => setOverlay('projects')}
       onNewProject={() => void newProject()}
       onNewWorkspace={setComposeIn}
@@ -855,11 +854,7 @@ export function App() {
       onReorder={store.reorder}
       renamingId={renamingWs}
       onRename={(w) => setRenamingWs(w.id)}
-      onRenamed={(w, name) => {
-        setRenamingWs(null)
-        if (name === null || name === w.name) return
-        store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
-      }}
+      onRenamed={renamed}
       onSettings={() => setSettingsOpen((open) => !open)}
       onHide={() => update({ sideOpen: false })}
     />
@@ -1007,6 +1002,7 @@ export function App() {
                   artifacts={artifacts}
                   panel={
                     ws && {
+                      agents: tree.agents,
                       branch: git.branch,
                       changes,
                       claude: claudeHere,

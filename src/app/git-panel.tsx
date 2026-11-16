@@ -62,6 +62,8 @@ export interface GitPanelProps {
   /** What the panel shows (`shownView`, so always one it can). */
   view: PanelView
   onView: (view: PanelView) => void
+  /** The Agents tab: how many workspaces sit under this one's tree, and the tree. */
+  agents: { count: number; tree: ReactNode }
   /** The body while a page is the view: its address bar and the page. */
   browser: ReactNode
 }
@@ -494,7 +496,8 @@ function Checks({ pr }: { pr: PullRequest }) {
 
 export function GitPanel(props: GitPanelProps) {
   const { changes, onOpenFile, path, pr, setup, width } = props
-  const shown = props.view
+  // No tree here: the Agents tab isn't either.
+  const shown = props.view === 'agents' && props.agents.count === 0 ? 'changes' : props.view
   const setView = props.onView
 
   const write = (failed: string, command: string, args: Record<string, unknown>) => {
@@ -543,6 +546,14 @@ export function GitPanel(props: GitPanelProps) {
         role="tablist"
         aria-label="Git view"
       >
+        {props.agents.count > 0 && (
+          <Tab
+            active={shown === 'agents'}
+            label="Agents"
+            count={props.agents.count}
+            onSelect={() => setView('agents')}
+          />
+        )}
         <Tab
           active={shown === 'changes'}
           label="Changes"
@@ -583,6 +594,7 @@ export function GitPanel(props: GitPanelProps) {
             {spinner}
           </div>
         )}
+        {shown === 'agents' && props.agents.tree}
         {shown === 'checks' && pr && <Checks pr={pr} />}
         {shown === 'artifacts' && (
           <Empty icon={GlobeIcon} text="Artifacts Claude publishes in this workspace show here." />

@@ -17,6 +17,7 @@ export type AgentAsk = { askId: number } & (
       parentChat: string
     }
   | { op: 'chat_send'; chatId: string; text: string }
+  | { op: 'chat_stop'; chatId: string }
 )
 
 type Handle = (ask: AgentAsk) => Promise<object>

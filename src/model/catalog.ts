@@ -21,6 +21,8 @@ export interface Workspace {
   artifacts?: Artifact[]
   /** The chat whose agent created it through logit's MCP server. */
   parentChat?: string
+  /** That chat's workspace, kept at creation: the tree holds once the chat is closed. */
+  parentWorkspace?: string
   /** Put aside by the user: muted in the sidebar until a message is sent in it. */
   paused?: boolean
 }
@@ -82,4 +84,50 @@ export function strongest(signals: readonly (Signal | null)[]): Signal | null {
 export function arrange<T extends { id: string }>(list: readonly T[], ids: readonly string[]): T[] {
   const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
   return list.toSorted((a, b) => rank(a.id) - rank(b.id))
+}
+
+/** The workspace a workspace was created from: the one holding the chat whose agent made it. */
+export function parentOf(catalog: Catalog, ws: Workspace): string | null {
+  const parent =
+    ws.parentWorkspace ?? catalog.chats.find((c) => c.id === ws.parentChat)?.workspaceId
+  // A deleted parent gives its children back to the sidebar.
+  return parent !== undefined && parent !== ws.id && catalog.workspaces.some((w) => w.id === parent)
+    ? parent
+    : null
+}
+
+/** Each workspace's children (made by an agent of one of its chats), in the catalog's order. */
+export function childrenOf(catalog: Catalog): Record<string, Workspace[]> {
+  const out: Record<string, Workspace[]> = {}
+  for (const ws of catalog.workspaces) {
+    const parent = parentOf(catalog, ws)
+    if (parent !== null) (out[parent] ??= []).push(ws)
+  }
+  return out
+}
+
+/** The sidebar's lists: a workspace made by another one's agent shows under it, not here. */
+export function withoutChildren(
+  lists: Record<string, Workspace[]>,
+  catalog: Catalog
+): Record<string, Workspace[]> {
+  return Object.fromEntries(
+    Object.entries(lists).map(([p, list]) => [p, list.filter((w) => parentOf(catalog, w) === null)])
+  )
+}
+
+/** Everything under `id`, at any depth. */
+export function descendants(children: Record<string, Workspace[]>, id: string): Workspace[] {
+  const out: Workspace[] = []
+  const seen = new Set([id])
+  const walk = (at: string) => {
+    for (const child of children[at] ?? []) {
+      if (seen.has(child.id)) continue
+      seen.add(child.id)
+      out.push(child)
+      walk(child.id)
+    }
+  }
+  walk(id)
+  return out
 }
