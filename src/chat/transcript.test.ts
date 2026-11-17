@@ -45,14 +45,14 @@ const shape = (items: Item[]) =>
   )
 
 describe('the collapse rule', () => {
-  test('answer last: the work before it folds into one row', () => {
+  test('every message stays out; the work between messages folds', () => {
     const turns = [
       user('u'),
       said('a1', [thinking('hm'), tool('Read'), text('looking')], false),
       said('a2', [tool('Edit'), tool('Bash'), text('Done.')]),
     ]
     const [ex] = exchanges(turns, false)
-    expect(shape(ex?.items ?? [])).toEqual(['G3', 'tool', 'G1', 'text'])
+    expect(shape(ex?.items ?? [])).toEqual(['G2', 'text', 'tool', 'G1', 'text'])
     expect(ex?.answer).toBe('Done.')
     expect(ex?.end).toMatchObject({ costUsd: 0.1 })
   })
@@ -122,12 +122,12 @@ describe('the collapse rule', () => {
     expect(ex?.answer).toBe('')
   })
 
-  test('live: everything folds (the live line names the newest tool) but the message after it', () => {
+  test('live: work folds (the live line names the newest tool); every message stays out', () => {
     const running: Block = { id: 'r', input: {}, json: '', kind: 'tool', name: 'Bash' }
     const turns = [user('u'), said('a', [tool('Read'), text('hm'), running], false)]
     const [ex] = exchanges(turns, true)
     expect(ex?.live).toBe(true)
-    expect(shape(ex?.items ?? [])).toEqual(['G3'])
+    expect(shape(ex?.items ?? [])).toEqual(['G1', 'text', 'G1'])
     const writing = [...turns.slice(0, 1), said('a', [tool('Read'), running, text('So')], false)]
     const [now] = exchanges(writing, true)
     expect(shape(now?.items ?? [])).toEqual(['G2', 'text'])
@@ -147,7 +147,7 @@ describe('the collapse rule', () => {
     ] satisfies Turn[]
     const [ex, note] = exchanges(turns, false)
     expect(ex?.live).toBe(true)
-    expect(shape(ex?.items ?? [])).toEqual(['G3'])
+    expect(shape(ex?.items ?? [])).toEqual(['text', 'G2'])
     expect(note?.live).toBe(false)
     // Waiting on a permission: live too, even with a result already in (a replayed answer).
     const asked: Block = { ...running, result: { isError: false, text: '' } }

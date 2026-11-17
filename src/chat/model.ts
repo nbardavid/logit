@@ -1024,6 +1024,7 @@ function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] 
     if (
       apart(k, i) ||
       standsApart(k.block) ||
+      k.block.kind === 'text' ||
       k.block.kind === 'output' ||
       k.block.kind === 'note'
     ) {
@@ -1036,16 +1037,12 @@ function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] 
 }
 
 /**
- * The collapse rule. Finished: the last message is the answer; what came before it folds
- * into one row above it, what came after (a stopped turn's tools) into one row below.
- * Live: everything folds as it goes (the live line says what the newest tool does), except
+ * The collapse rule. Every message Claude writes stays in the thread; the work between two
+ * messages (tools, thoughts) folds into one row. Live: the work folds as it goes (the live line says what the newest tool does), except
  * a tool whose permission is asked, and the message being written after it.
  */
 function itemsOf(blocks: Keyed[], live: boolean, asked: ReadonlySet<string>): Item[] {
-  if (!live) {
-    const answer = blocks.findLastIndex((k) => k.block.kind === 'text')
-    return fold(blocks, (_, i) => i === answer)
-  }
+  if (!live) return fold(blocks, () => false)
   const tool = blocks.findLastIndex((k) => k.block.kind === 'tool')
   const newest = blocks[tool]
   const tail = blocks.slice(tool + 1).filter((k) => k.block.kind === 'text')
