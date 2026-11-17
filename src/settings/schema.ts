@@ -2,10 +2,11 @@
 
 import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS, STATUS_LOADERS } from '../app/loaders'
 import {
-  DEFAULT_WALLPAPER,
+  NO_WALLPAPER,
   WALLPAPER_BLUR_SETTING,
   WALLPAPER_SETTING,
-  WALLPAPERS,
+  WALLPAPER_TEXT_BLUR_SETTING,
+  WALLPAPER_VEIL_SETTING,
 } from '../app/wallpapers'
 
 export type SettingValue = boolean | number | string
@@ -38,9 +39,9 @@ export type Row =
       options: string[]
       /**
        * `segmented` for a few short values on one scale, `menu` for a list, `loader` and
-       * `dots` for a loader picked from its animation, `tiles` for the backgrounds.
+       * `dots` for a loader picked from its animation.
        */
-      control: 'segmented' | 'menu' | 'loader' | 'dots' | 'tiles'
+      control: 'segmented' | 'menu' | 'loader' | 'dots'
     })
 
 export interface Group {
@@ -60,14 +61,8 @@ export const SECTIONS: Section[] = [
       {
         label: 'Background',
         rows: [
-          {
-            control: 'tiles',
-            fallback: DEFAULT_WALLPAPER,
-            id: WALLPAPER_SETTING,
-            kind: 'select',
-            label: 'Background',
-            options: [...WALLPAPERS],
-          },
+          // 'None' or the id of a file in the backgrounds folder: Background draws the tiles.
+          { fallback: NO_WALLPAPER, id: WALLPAPER_SETTING, kind: 'text', label: 'Background' },
           {
             control: 'slider',
             fallback: 0,
@@ -78,6 +73,30 @@ export const SECTIONS: Section[] = [
             min: 0,
             step: 2,
             unit: ' px',
+            zeroOff: true,
+          },
+          {
+            control: 'slider',
+            fallback: 28,
+            id: WALLPAPER_TEXT_BLUR_SETTING,
+            kind: 'number',
+            label: 'Behind the text',
+            max: 60,
+            min: 0,
+            step: 2,
+            unit: ' px',
+            zeroOff: true,
+          },
+          {
+            control: 'slider',
+            fallback: 40,
+            id: WALLPAPER_VEIL_SETTING,
+            kind: 'number',
+            label: 'White veil',
+            max: 90,
+            min: 0,
+            step: 5,
+            unit: '%',
             zeroOff: true,
           },
         ],

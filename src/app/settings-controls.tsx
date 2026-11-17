@@ -2,8 +2,8 @@
 // right edge, all driven by the keyboard.
 
 import { Slider as SliderPrimitive } from '@base-ui/react/slider'
-import { ChevronsUpDownIcon, ImagePlusIcon, MinusIcon, PlusIcon } from 'lucide-react'
-import { type KeyboardEvent, useEffect, useState } from 'react'
+import { ChevronsUpDownIcon, MinusIcon, PlusIcon, SparklesIcon } from 'lucide-react'
+import { type KeyboardEvent, type MouseEvent, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,10 +12,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 
 import { BrailleDots, BrailleSpinner } from './braille-spinner'
-import { useLoaderChoice } from './loader-choice'
 import { isLoader, type Loader, LOADER_LABELS } from './loaders'
-import { WallpaperCanvas } from './wallpaper'
-import { isWallpaper, type Wallpaper } from './wallpapers'
+import { SceneCanvas } from './wallpaper'
+import { NO_WALLPAPER, type SceneFile } from './wallpapers'
 
 /** The outline trigger a menu or picker opens from. */
 const triggerClass =
@@ -342,90 +341,79 @@ export function TextField({
   )
 }
 
+const tileFrame = cn(
+  'border-border bg-background relative aspect-[16/10] w-full overflow-hidden rounded-md border transition-[outline-color,border-color] duration-120 ease-out',
+  'outline-2 outline-offset-2 outline-transparent',
+  'group-hover/tile:border-line-strong group-aria-checked/tile:outline-foreground',
+  'group-focus-visible/tile:outline-[color-mix(in_srgb,var(--tan)_70%,transparent)]'
+)
+const tileClass =
+  'group/tile text-muted-foreground hover:text-foreground aria-checked:text-foreground flex min-w-0 flex-col gap-2 text-left transition-[color] duration-120 ease-out outline-none'
+
 /**
- * The chat backgrounds as tiles: None, the scenes, and the user's own picture. The Image tile
- * asks for a picture while it has none; with one, a click only selects it.
+ * The chat backgrounds as tiles: None, every scene in the backgrounds folder (right-click one
+ * to change or delete it), and Ask Claude, which opens a chat that makes a new one.
  */
 export function BackgroundTiles({
-  adding,
-  image,
-  onAdd,
+  onAsk,
   onChange,
-  options,
+  onMenu,
+  scenes,
   value,
 }: {
-  options: string[]
+  scenes: readonly SceneFile[]
+  /** 'None' or the picked scene's id. */
   value: string
-  /** The picked picture, as a data URL; '' while there is none. */
-  image: string
-  /** A picture is being read and scaled. */
-  adding: boolean
-  onAdd: () => void
-  onChange: (v: Wallpaper) => void
+  onChange: (id: string) => void
+  onMenu: (scene: SceneFile, e: MouseEvent) => void
+  /** Undefined while the backgrounds folder is unknown: Claude would not know where to write. */
+  onAsk?: () => void
 }) {
-  const names = options.filter(isWallpaper)
-  const { status } = useLoaderChoice()
-  const pick = (name: Wallpaper) => (name === 'Image' && image === '' ? onAdd() : onChange(name))
+  const ids = [NO_WALLPAPER, ...scenes.map((s) => s.id)]
   return (
     <div
       className="grid grid-cols-4 gap-3"
       role="radiogroup"
       aria-label="Background"
-      onKeyDown={(e) => {
-        // Arrows move between tiles that are ready; an empty Image tile is picked with Enter.
-        const ready = names.filter((n) => n !== 'Image' || image !== '')
-        arrowPick(e, ready, value, (v) => isWallpaper(v) && onChange(v))
-      }}
+      onKeyDown={(e) => arrowPick(e, ids, value, onChange)}
     >
-      {names.map((name) => {
-        const checked = value === name
-        let caption: string = name
-        if (name === 'Image' && adding) caption = 'Adding…'
-        else if (name === 'Image' && image === '') caption = 'Add image…'
+      {[undefined, ...scenes].map((scene) => {
+        const id = scene?.id ?? NO_WALLPAPER
+        const checked = value === id
         return (
           <button
             type="button"
-            key={name}
+            key={id}
             role="radio"
             aria-checked={checked}
             tabIndex={checked ? 0 : -1}
-            disabled={name === 'Image' && adding}
-            className="group/tile text-muted-foreground hover:text-foreground aria-checked:text-foreground flex flex-col gap-2 text-left transition-[color] duration-120 ease-out outline-none"
-            onClick={() => pick(name)}
+            className={tileClass}
+            onClick={() => onChange(id)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              if (scene) onMenu(scene, e)
+            }}
           >
-            <span
-              className={cn(
-                'border-border bg-background relative aspect-[16/10] w-full overflow-hidden rounded-md border transition-[outline-color,border-color] duration-120 ease-out',
-                'outline-2 outline-offset-2 outline-transparent',
-                'group-hover/tile:border-line-strong group-aria-checked/tile:outline-foreground',
-                'group-focus-visible/tile:outline-[color-mix(in_srgb,var(--tan)_70%,transparent)]',
-                name === 'Image' && image === '' && 'bg-chrome'
-              )}
-            >
-              {name !== 'None' && name !== 'Image' && (
-                <WallpaperCanvas name={name} cell={3} className="size-full" />
-              )}
-              {name === 'Image' && image !== '' && (
-                <img
-                  src={image}
-                  alt=""
-                  draggable={false}
-                  className={cn(
-                    'animate-in fade-in size-full object-cover duration-300',
-                    adding && 'opacity-40'
-                  )}
-                />
-              )}
-              {name === 'Image' && (image === '' || adding) && (
-                <span className="text-faint absolute inset-0 grid place-items-center">
-                  {adding ? <BrailleDots loader={status} /> : <ImagePlusIcon className="size-4" />}
-                </span>
+            <span className={tileFrame}>
+              {scene && (
+                <SceneCanvas key={scene.code} code={scene.code} cols={90} className="size-full" />
               )}
             </span>
-            <span className="text-xs font-medium">{caption}</span>
+            <span className="truncate text-xs font-medium">{scene?.name ?? 'None'}</span>
           </button>
         )
       })}
+      <button
+        type="button"
+        className={cn(tileClass, 'disabled:opacity-50')}
+        disabled={onAsk === undefined}
+        onClick={onAsk}
+      >
+        <span className={cn(tileFrame, 'bg-chrome text-faint grid place-items-center')}>
+          <SparklesIcon className="size-4" />
+        </span>
+        <span className="text-xs font-medium">Ask Claude…</span>
+      </button>
     </div>
   )
 }

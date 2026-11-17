@@ -1,7 +1,22 @@
 import { describe, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
 
-import { wallpaperFrom } from './wallpaper'
-import { flicker, hash, type Paint, SCENES, WALLPAPER_SETTING } from './wallpapers'
+import { flicker, hash, type Paint, pickedScene } from './wallpapers'
+
+/** The scenes seeded in every new backgrounds folder, compiled as the worker does. */
+const SEEDS = new URL('../../src-tauri/backgrounds/', import.meta.url)
+const seeds = readdirSync(SEEDS)
+  .filter((f) => f.endsWith('.js'))
+  .map((f) => {
+    const code = readFileSync(new URL(f, SEEDS), 'utf8')
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- as scene-worker.ts does
+    const run = new Function('p', 'hash', 'flicker', `'use strict';\n${code}`) as (
+      p: Paint,
+      h: typeof hash,
+      f: typeof flicker
+    ) => void
+    return [f, (p: Paint) => run(p, hash, flicker)] as const
+  })
 
 /** A Paint that records what a scene draws, by kind. */
 function recorder(cols: number, rows: number, t: number) {
@@ -30,7 +45,7 @@ function recorder(cols: number, rows: number, t: number) {
 }
 
 describe('scenes', () => {
-  for (const [name, scene] of Object.entries(SCENES))
+  for (const [name, scene] of seeds)
     test(`${name} draws a full frame at any size`, () => {
       for (const [cols, rows] of [
         [1, 1],
@@ -60,11 +75,13 @@ test('a glyph holds still between beats', () => {
   expect(flicker(set, 1, 2, 10)).toBe(flicker(set, 1, 2, 10.01))
 })
 
-test('the background setting falls back to None', () => {
-  expect(wallpaperFrom({})).toBe('None')
-  expect(wallpaperFrom({ [WALLPAPER_SETTING]: 'Nope' })).toBe('None')
-  expect(wallpaperFrom({ [WALLPAPER_SETTING]: 'Koi' })).toBe('Koi')
-  // Scenes that were dropped: whoever had one picked gets the plain chat back.
-  expect(wallpaperFrom({ [WALLPAPER_SETTING]: 'Tide' })).toBe('None')
-  expect(wallpaperFrom({ [WALLPAPER_SETTING]: 'Meadow' })).toBe('None')
+test('a pick names a scene by id, or by its old built-in name', () => {
+  const scenes = [
+    { code: '', id: 'kites', name: 'Kites' },
+    { code: '', id: 'koi', name: 'Koi' },
+  ]
+  expect(pickedScene(scenes, 'None')).toBeUndefined()
+  expect(pickedScene(scenes, 'koi')?.id).toBe('koi')
+  expect(pickedScene(scenes, 'Koi')?.id).toBe('koi')
+  expect(pickedScene(scenes, 'gone')).toBeUndefined()
 })

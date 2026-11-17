@@ -80,8 +80,13 @@ branding.
   it started (its `desktop/` history is kept).
 - **The look**: light, flat, white surfaces, system font, warm neutrals. Never a hatched or
   decorative background, except the chat background the user picks in Settings › Appearance:
-  original living scenes drawn in characters (`wallpapers.ts`), None by default. Dark mode is
-  not done yet.
+  living scenes drawn in characters, None by default. Dark mode is not done yet.
+- **Backgrounds are the user's files**, not built in: each is a `.js` in the profile's
+  `backgrounds/` folder (`backgrounds.rs`), run in a sandboxed worker. As many as they like;
+  "Ask Claude…" opens a chat that writes a new one (its `README.md` is the guide), a
+  right-click changes or deletes one. Kites and Koi are seeded once, deletable like any other.
+  No imported pictures. The scene's elements live on the sides; the text column is frosted
+  (its blur and white are settings).
 - **Layers: the scene is behind everything.** With a background on, it covers the whole
   window, and every surface sits on top of it: the chat pane is open to it (a light veil
   behind the text), everything around (sidebar, bars, panels, pages, terminals) is frosted

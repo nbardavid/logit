@@ -1,9 +1,8 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
-import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ArrowUpRightIcon, CopyIcon, PlayIcon, RotateCcwIcon } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -20,7 +19,9 @@ import {
 } from '../settings/schema'
 import { playSettingsSound } from './attention'
 import { previewCleanup } from './cleanup-effect'
+import { ContextMenu, type MenuState } from './context-menu'
 import { noteLoaderSetting } from './loader-choice'
+import { EDIT_BACKGROUND_PROMPT, NEW_BACKGROUND_PROMPT } from './prompts'
 import {
   BackgroundTiles,
   LoaderPicker,
@@ -34,15 +35,16 @@ import {
 import { currentPane, PANES, setPane, stepPane, usePane } from './settings-pane'
 import { DEFAULT_FONT, noteTerminalSetting } from './terminal-font'
 import { devBuild, type Update } from './update-button'
-import { noteWallpaperSetting, pictureUrl, useWallpaperState } from './wallpaper'
+import { deleteScene, noteWallpaperSetting, useWallpaperState } from './wallpaper'
 import {
+  NO_WALLPAPER,
+  pickedScene,
+  type SceneFile,
   WALLPAPER_BLUR_SETTING,
-  WALLPAPER_IMAGE_SETTING,
   WALLPAPER_SETTING,
-  WALLPAPERS,
+  WALLPAPER_TEXT_BLUR_SETTING,
+  WALLPAPER_VEIL_SETTING,
 } from './wallpapers'
-
-const PICTURE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'tif', 'tiff']
 
 type Stored = Record<string, SettingValue>
 
@@ -117,99 +119,75 @@ function Reveal({ children, open }: { open: boolean; children: ReactNode }) {
   )
 }
 
-/** Asks for a picture and returns it read and scaled, or null when the dialog was dismissed. */
-async function choosePicture(): Promise<string | null> {
-  const path = await openDialog({
-    filters: [{ extensions: PICTURE_TYPES, name: 'Pictures' }],
-    title: 'Choose a chat background',
-  })
-  if (typeof path !== 'string') return null
-  const bytes = await invoke<ArrayBuffer>('read_picture', { path })
-  return pictureUrl(new Blob([bytes]))
-}
-
-/** Appearance › Background: the tiles, the picked picture's actions, and the blur. */
+/** Appearance › Background: the tiles (a right-click changes or deletes a scene), and the blurs. */
 function Background({
+  onAsk,
   stored,
   write,
 }: {
   stored: Stored
   write: (id: string, value: SettingValue | null) => void
+  /** Opens a chat on this prompt, over Settings' close. */
+  onAsk: (prompt: string) => void
 }) {
-  const { image } = useWallpaperState()
-  const [adding, setAdding] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const name = String(effectiveValue(rowById(WALLPAPER_SETTING), stored[WALLPAPER_SETTING]))
-  const blurRow = rowById(WALLPAPER_BLUR_SETTING)
-  const blur = Number(effectiveValue(blurRow, stored[WALLPAPER_BLUR_SETTING]))
+  const { dir, error, picked, scenes } = useWallpaperState()
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const value = pickedScene(scenes, picked)?.id ?? NO_WALLPAPER
 
-  const add = async () => {
-    setError(null)
-    setAdding(true)
-    try {
-      const url = await choosePicture()
-      if (url === null) return
-      write(WALLPAPER_IMAGE_SETTING, url)
-      write(WALLPAPER_SETTING, 'Image')
-    } catch {
-      setError("Couldn't read that file. Try a PNG, JPEG, HEIC or WebP.")
-    } finally {
-      setAdding(false)
-    }
-  }
+  const sceneMenu = (scene: SceneFile, e: MouseEvent) =>
+    setMenu({
+      items: [
+        { label: 'Change with Claude…', run: () => onAsk(EDIT_BACKGROUND_PROMPT(dir, scene.id)) },
+        'separator',
+        {
+          confirm: { button: 'Delete', text: `Delete ${scene.name}? Its file goes for good.` },
+          danger: true,
+          label: 'Delete',
+          run: () => deleteScene(scene.id),
+        },
+      ],
+      x: e.clientX,
+      y: e.clientY,
+    })
 
   // No divide-y: the rows below slide in with their own top line.
   return (
     <div className="bg-background overflow-hidden rounded-lg border">
-      <div className="flex flex-col gap-3 px-4 pt-4 pb-3.5">
+      <div className="px-4 pt-4 pb-3.5">
         <BackgroundTiles
-          options={[...WALLPAPERS]}
-          value={name}
-          image={image}
-          adding={adding}
-          onAdd={() => void add()}
-          onChange={(v) => {
-            setError(null)
-            write(WALLPAPER_SETTING, v)
-          }}
+          scenes={scenes}
+          value={value}
+          onChange={(id) => write(WALLPAPER_SETTING, id)}
+          onMenu={sceneMenu}
+          onAsk={dir === '' ? undefined : () => onAsk(NEW_BACKGROUND_PROMPT(dir))}
         />
-        {error !== null && <span className={cn(fieldError, 'animate-in fade-in')}>{error}</span>}
+        {error !== null && (
+          <span className={cn(fieldError, 'animate-in fade-in mt-3 block')}>
+            {`Couldn't read the backgrounds folder: ${error}`}
+          </span>
+        )}
       </div>
-      <Reveal open={name === 'Image' && image !== ''}>
-        <div className={cn(rowClass, 'border-t')}>
-          <Label label="Your image" />
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                write(WALLPAPER_SETTING, null)
-                write(WALLPAPER_IMAGE_SETTING, null)
-              }}
-            >
-              Remove
-            </Button>
-            <Button variant="outline" size="sm" disabled={adding} onClick={() => void add()}>
-              Replace…
-            </Button>
-          </div>
-        </div>
-      </Reveal>
-      <Reveal open={name !== 'None'}>
-        <div className={cn(rowClass, 'border-t')}>
-          <Label label={blurRow.label} />
-          {blurRow.kind === 'number' && (
-            <Slider
-              label={blurRow.label}
-              value={blur}
-              min={blurRow.min}
-              max={blurRow.max}
-              step={blurRow.step}
-              format={(v) => (v === 0 ? 'Off' : `${v} px`)}
-              onCommit={(v) => write(blurRow.id, v)}
-            />
-          )}
-        </div>
+      {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
+      <Reveal open={value !== NO_WALLPAPER}>
+        {[WALLPAPER_BLUR_SETTING, WALLPAPER_TEXT_BLUR_SETTING, WALLPAPER_VEIL_SETTING].map((id) => {
+          const row = rowById(id)
+          if (row.kind !== 'number') return null
+          const unit = row.unit ?? ''
+          return (
+            <div key={id} className={cn(rowClass, 'border-t')}>
+              <Label label={row.label} />
+              <Slider
+                label={row.label}
+                value={Number(effectiveValue(row, stored[id]))}
+                min={row.min}
+                max={row.max}
+                step={row.step}
+                format={(v) => (v === 0 ? 'Off' : `${v}${unit}`)}
+                onCommit={(v) => write(id, v)}
+              />
+            </div>
+          )
+        })}
       </Reveal>
     </div>
   )
@@ -282,11 +260,13 @@ function Control({
 
 /** A pane made of the schema's groups. */
 function SectionPane({
+  onAsk,
   page,
   section,
   stored,
   write,
 }: {
+  onAsk: (prompt: string) => void
   section: Section
   stored: Stored
   write: (id: string, value: SettingValue | null) => void
@@ -305,7 +285,7 @@ function SectionPane({
         <section key={group.label}>
           <h2 className={groupTitle}>{group.label}</h2>
           {group.rows.some((r) => r.id === WALLPAPER_SETTING) ? (
-            <Background stored={stored} write={write} />
+            <Background stored={stored} write={write} onAsk={onAsk} />
           ) : (
             <div className={cardClass}>
               {group.rows.map((row) => {
@@ -546,12 +526,15 @@ function RestoreDefaults({ changed, onRestore }: { changed: number; onRestore: (
 /** Writes straight into settings.json; a new workspace reads it when it is made. */
 export function SettingsView({
   chats,
+  onAsk,
   onClose,
   onRestartHost,
   terminals,
   update,
 }: {
   onClose: () => void
+  /** Opens a chat on this prompt in the workspace on screen: Settings closes for it. */
+  onAsk: (prompt: string) => void
   /** The app's update, which About checks and installs. */
   update: Update
   onRestartHost: () => Promise<void>
@@ -632,7 +615,13 @@ export function SettingsView({
             >
               {error !== null && <div className={cn(fieldError, 'px-1')}>{error}</div>}
               {section !== undefined && stored !== null && (
-                <SectionPane section={section} stored={stored} write={write} page={page.current} />
+                <SectionPane
+                  section={section}
+                  stored={stored}
+                  write={write}
+                  page={page.current}
+                  onAsk={onAsk}
+                />
               )}
               {pane.id === 'host' && (
                 <HostPane chats={chats} terminals={terminals} onRestart={onRestartHost} />

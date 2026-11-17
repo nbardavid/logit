@@ -416,13 +416,13 @@ export function App() {
     selectTab(w.id, id)
     chats.send(id, PR_PROMPT)
   }
-  /** A chat (with the last model and effort picked) or a shell, in this workspace. */
-  const createTab = (kind: string) => {
+  /** A chat (with the last model and effort picked, on `prompt`) or a shell, in this workspace. */
+  const createTab = (kind: string, prompt?: string) => {
     setOverlay(null)
     if (ws === undefined) return
     if (host.state.kind !== 'ready') {
       setNotice({ text: HOST_BLOCKED, title: `Couldn't open a ${kind}` })
-    } else if (kind === 'chat') newChat(ws)
+    } else if (kind === 'chat') newChat(ws, prompt)
     else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
   }
 
@@ -1047,6 +1047,10 @@ export function App() {
           chats={chats.chats.filter((c) => c.state.status === 'working').length}
           terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
           onRestartHost={host.restart}
+          onAsk={(prompt) => {
+            setSettingsOpen(false)
+            createTab('chat', prompt)
+          }}
           update={appUpdate}
           onClose={() => setSettingsOpen(false)}
         />
