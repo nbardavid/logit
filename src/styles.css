@@ -579,16 +579,23 @@ body.resizing * {
   }
 }
 
-/* A chat background's veil: the scene stays whole at the sides and quiets behind the
-   column the text runs in, so the prose reads as on paper. */
+/* A chat background's veil: the scene stays sharp at the sides and goes to frost behind the
+   column the text runs in, fading in and out smoothly so there is no edge. */
 .wallpaper-veil {
-  background: linear-gradient(
+  --veil-mask: linear-gradient(
     90deg,
-    transparent calc(50% - 560px),
-    color-mix(in srgb, var(--background) 28%, transparent) calc(50% - 400px),
-    color-mix(in srgb, var(--background) 28%, transparent) calc(50% + 400px),
-    transparent calc(50% + 560px)
+    transparent calc(50% - 500px),
+    rgb(0 0 0 / 0.35) calc(50% - 420px),
+    #000 calc(50% - 330px),
+    #000 calc(50% + 330px),
+    rgb(0 0 0 / 0.35) calc(50% + 420px),
+    transparent calc(50% + 500px)
   );
+  background-color: color-mix(in srgb, var(--background) var(--veil-white, 40%), transparent);
+  -webkit-backdrop-filter: blur(var(--veil-blur, 28px)) saturate(1.4);
+  backdrop-filter: blur(var(--veil-blur, 28px)) saturate(1.4);
+  -webkit-mask-image: var(--veil-mask);
+  mask-image: var(--veil-mask);
 }
 
 /* Glass: with a chat background on, everything around the chat (sidebar, bars, panels,

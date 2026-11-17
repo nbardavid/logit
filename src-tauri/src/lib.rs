@@ -6,6 +6,7 @@ pub mod host;
 pub mod host_client;
 pub mod mcp;
 pub mod naming;
+pub mod backgrounds;
 pub mod pty;
 pub mod quota;
 pub mod servers;
@@ -172,6 +173,8 @@ pub fn run() {
             store::workspace_remove,
             store::workspace_rename,
             naming::workspace_autoname,
+            backgrounds::backgrounds_list,
+            backgrounds::background_delete,
             store::workspace_pause,
             store::chat_save,
             store::artifact_add,
@@ -180,7 +183,6 @@ pub fn run() {
             store::chat_forget,
             store::read_settings,
             store::write_setting,
-            store::read_picture,
             store::setup_status,
             store::ensure_setup_script,
             store::edit_setup_script,
