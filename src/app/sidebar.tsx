@@ -140,7 +140,7 @@ export function workspaceFacts(
 const colourWord = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
 /** Ages move on by the minute. */
-function useNow(): number {
+export function useNow(): number {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000)

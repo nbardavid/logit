@@ -40,6 +40,12 @@ interface Props {
 }
 
 /** `text` cut around the first place it contains `query` (any case): the match is `hit`. */
+// What a new tab can be, as in Conductor: a native Claude chat, or a shell.
+export const NEW_TAB: PickerItem[] = [
+  { key: 'chat', label: 'Chat', meta: '⌘T' },
+  { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
+]
+
 export function matchParts(text: string, query: string): { text: string; hit: boolean }[] {
   const at = query === '' ? -1 : text.toLowerCase().indexOf(query.toLowerCase())
   if (at === -1) return [{ hit: false, text }]

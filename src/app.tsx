@@ -22,11 +22,12 @@ import { McpPanel } from './app/mcp-panel'
 import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
 import { overlayShown } from './app/overlay'
-import { Picker, type PickerItem } from './app/picker'
+import { NEW_TAB, Picker } from './app/picker'
 import { PR_PROMPT, SETUP_PROMPT } from './app/prompts'
 import { Quotas } from './app/quotas'
+import { reportTab } from './app/report-view'
 import { resumeTarget, type Session } from './app/resume'
-import { ResumePicker } from './app/resume-picker'
+import { type CommandPick, ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
 import { stepPane } from './app/settings-pane'
 import { SettingsView } from './app/settings-view'
@@ -48,6 +49,7 @@ import { useLaunches } from './app/use-launches'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
+import { useReports } from './app/use-reports'
 import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
 import { isDockTag } from './app/workspace-dock'
@@ -64,12 +66,6 @@ import {
 import { byProject, type Workspace } from './model/catalog'
 import { nameCandidates } from './model/names'
 
-// What a new tab can be, as in Conductor: a native Claude chat, or a shell.
-const NEW_TAB: PickerItem[] = [
-  { key: 'chat', label: 'Chat', meta: '⌘T' },
-  { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
-]
-
 /** The chat an empty workspace offers: nothing runs until its first Enter. */
 const DRAFT: ChatState = { ...initialChat, status: 'idle' }
 
@@ -82,14 +78,6 @@ const EMPTY_TITLE = 'text-foreground text-lg'
 const KBD_INK = 'text-white/60'
 
 const copy = (text: string) => void navigator.clipboard.writeText(text)
-
-/** `/resume`'s or `/mcp`'s palette, for the chat it was typed in. (`/model` and `/effort`
- * open the chat's own model picker.) */
-interface CommandPick {
-  name: 'resume' | 'mcp'
-  chatId: string
-  args: string
-}
 
 export function App() {
   const [removing, markRemoving] = useLeaving()
@@ -155,6 +143,7 @@ export function App() {
 
   // Set once the panel's hook exists, below: a chat's publish reaches it.
   const publish = useRef<ReturnType<typeof useArtifacts>['published']>(() => {})
+  const reports = useReports(ws?.id)
   const chats = useChats({
     canStart: () => host.state.kind === 'ready',
     modelOf: (reported, current) => reportedModel(reported, current, models),
@@ -189,6 +178,7 @@ export function App() {
       })()
     },
     onRecord: store.saveChat,
+    onReport: reports.arrived,
     onSent: store.unpause,
   })
   // The sidebar's ages and task titles: the open chats' live records over the saved ones.
@@ -221,9 +211,8 @@ export function App() {
   }, [catalog, chats, host.state, setupRan, status.kind, terminals])
 
   const wsChats = chats.chats.filter((c) => c.record.workspaceId === ws?.id)
-  const wsAllTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id)
   // Setup, Run and the dock's own terminals live in the panel's dock, not in the tabs.
-  const wsTerms = wsAllTerms.filter((t) => !isDockTag(t.tag))
+  const wsTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id && !isDockTag(t.tag))
   const tabItems: (TabItem & { at: number })[] = [
     ...wsChats.map((c) => ({
       at: c.record.createdAt,
@@ -289,11 +278,13 @@ export function App() {
     hasPr: git.pr !== null,
     onClosed: (url) => void invoke('browser_close', { id: browserId(url) }).catch(() => {}),
     openPanel: () => update({ gitOpen: true }),
+    reports,
     seeArtifact: store.seeArtifact,
     visible: layout.gitOpen && mode === 'normal',
     workspaceId: ws?.id,
   })
   publish.current = artifacts.published
+  reports.watch(artifacts.view === 'report' && layout.gitOpen && mode === 'normal')
   const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
     () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, diffStat(c)])),
@@ -877,7 +868,10 @@ export function App() {
           <div className="flex min-h-0 flex-1">
             {mode === 'normal' && (
               <>
-                <main className="relative flex min-h-0 min-w-[360px] flex-1 flex-col">
+                <main
+                  className="relative flex min-h-0 min-w-[360px] flex-1 flex-col"
+                  data-zoom-host
+                >
                   {bars(
                     topBar(
                       undefined,
@@ -1009,6 +1003,7 @@ export function App() {
                       onOpenFile: openFile,
                       path: ws.path,
                       pr: git.pr,
+                      report: reportTab(reports, wsChats, git.pr, (id) => selectTab(ws.id, id)),
                       setup: (
                         <Dock
                           ws={ws}

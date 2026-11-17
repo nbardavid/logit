@@ -51,6 +51,8 @@ test('what shows: checks need a PR; Artifacts opens the last page seen, else the
   expect(shownView('artifacts', false, tabs, null)).toEqual({ browser: 'b' })
   expect(shownView('artifacts', false, tabs, 'gone')).toEqual({ browser: 'b' })
   expect(shownView({ browser: 'gone' }, true, tabs, null)).toEqual({ browser: 'b' })
+  expect(shownView('report', false, tabs, null)).toBe('changes')
+  expect(shownView('report', false, tabs, null, true)).toBe('report')
   expect(shownView('artifacts', false, [], 'a')).toBe('artifacts')
   expect(shownView({ browser: 'gone' }, false, [], null)).toBe('artifacts')
 })

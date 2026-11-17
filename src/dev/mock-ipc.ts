@@ -7,7 +7,13 @@
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
 // (truncation), `?empty-inbox` nothing waiting or done, `?merged` amber's PR merged (Clean up
 // with a full transcript to crumble), `?artifacts` ten pages on amber (two new), `?no-mcp` no
-// MCP servers for `/mcp` (else one in each state, src/dev/mcp.ts). Replies stream in over about two
+// MCP servers for `/mcp` (else one in each state, src/dev/mcp.ts), `?no-reports` no agent report
+// (else one per state, src/dev/reports.ts: amber, teal, violet, basil, coral), `?report-slow`
+// reports read in 1.5 s (the loading state), `?report-fail` every read fails (the error state),
+// `?report-live` amber's chat writes a new report 5 s in (the tab's cue), `?report-ask` amber's
+// chat waits on the report's question (AskUserQuestion), `?report-answered` it was answered,
+// `?report-done` violet finished without a PR, `?report-live-ask` amber's chat writes a new
+// question 5 s in (go elsewhere first: coming back to amber opens its Report tab). Replies stream in over about two
 // seconds; every other one asks to run a tool first. Stage, discard, push and merge change
 // what the panel shows. A setup run takes about eight seconds; deleting a workspace with
 // changes (stat tiles' Clean up, teal's menu) is refused, so "Delete anyway" shows.
@@ -23,6 +29,7 @@ import koiScene from '../../src-tauri/backgrounds/koi.js?raw'
 import { usageAnswer } from './context-usage'
 import { fakeArtifacts } from './fake-artifacts'
 import {
+  assistant,
   asTranscript,
   BRANCHES,
   catalog,
@@ -51,12 +58,14 @@ import {
   TERMINAL_PROMPT,
   toolAsk,
   toolDone,
+  toolResult,
   TRANSCRIPTS,
   turnEnd,
 } from './fixtures'
 import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
 import { KID_HOST_CHATS, withKids } from './orchestra'
+import { answeredText, liveReport, REPORT_QUESTION, reportFixtures } from './reports'
 import { SERVER_OUTPUT, serversAnswer } from './servers'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
@@ -134,20 +143,74 @@ const asked = new Map<string, { chatId: string; toolId: string; prompt: string }
 // The fixtures' own pending permissions.
 if (!flags.has('empty-inbox'))
   asked.set('perm-tests', { chatId: 'chat-menus', prompt: 'the tests', toolId: 'tool-test' })
+const REPORT_ASK = flags.has('report-ask') || flags.has('report-answered')
+/** amber's chat reports, then asks the report's question; answered or still waiting. */
+function reportAskLines(): string[] {
+  const ask = [
+    assistant('m-report', [
+      {
+        id: 'tool-report',
+        input: { state: 'question' },
+        name: 'mcp__logit__report',
+        type: 'tool_use',
+      },
+    ]),
+    toolResult('tool-report', 'Reported (question, 0 screens).'),
+    assistant('m-report-ask', [
+      {
+        id: 'tool-report-ask',
+        input: { questions: [REPORT_QUESTION] },
+        name: 'AskUserQuestion',
+        type: 'tool_use',
+      },
+    ]),
+  ]
+  if (flags.has('report-answered'))
+    return [
+      ...ask,
+      toolResult(
+        'tool-report-ask',
+        answeredText({ [REPORT_QUESTION.question]: REPORT_QUESTION.options[0]?.label ?? '' })
+      ),
+    ]
+  return [
+    ...ask,
+    JSON.stringify({
+      request: {
+        input: { questions: [REPORT_QUESTION] },
+        permission_suggestions: [],
+        subtype: 'can_use_tool',
+        tool_name: 'AskUserQuestion',
+        tool_use_id: 'tool-report-ask',
+      },
+      request_id: 'perm-report-ask',
+      type: 'control_request',
+    }),
+  ]
+}
 /** What the host replays of a chat; `?empty-inbox` leaves its question out. */
 const replayOf = (id: string) => {
   const lines = (HOSTED_LINES[id] ?? []).filter(
     (l) =>
-      !(flags.has('empty-inbox') || flags.has('question')) ||
+      !(flags.has('empty-inbox') || flags.has('question') || REPORT_ASK) ||
       !l.includes('"subtype":"can_use_tool"')
   )
   // `?question`: the busy chat's ask is AskUserQuestion's, before it goes live.
-  return flags.has('question') && id === 'chat-menus'
-    ? [...lines.slice(0, -1), ...QUESTION_ASK, ...lines.slice(-1)]
-    : lines
+  if (flags.has('question') && id === 'chat-menus')
+    return [...lines.slice(0, -1), ...QUESTION_ASK, ...lines.slice(-1)]
+  // `?report-ask`, `?report-answered`: it reported, then asked the report's question.
+  if (REPORT_ASK && id === 'chat-menus')
+    return [...lines.slice(0, -1), ...reportAskLines(), ...lines.slice(-1)]
+  return lines
 }
 if (flags.has('question'))
   asked.set('perm-question', { chatId: 'chat-menus', prompt: 'a question', toolId: 'tool-ask' })
+if (flags.has('report-ask'))
+  asked.set('perm-report-ask', {
+    chatId: 'chat-menus',
+    prompt: 'the report question',
+    toolId: 'tool-report-ask',
+  })
 let replies = 0
 
 /** Lines spread over `ms`, as Claude writes them. */
@@ -344,7 +407,10 @@ function chatSend(args: Args) {
     let after = allowed ? 'The tests pass: 86 of 86.' : 'Understood, I will not run them.'
     if (answers) after = `Going with ${Object.values(answers).join('; ')}.`
     turn(id, [
-      toolDone(ask.toolId, allowed),
+      // AskUserQuestion's answer, as Claude Code words it.
+      allowed && answers
+        ? toolResult(ask.toolId, answeredText(answers))
+        : toolDone(ask.toolId, allowed),
       ...streamedReply(`m-${crypto.randomUUID()}`, after),
       turnEnd(0.0031, 4200),
     ])
@@ -371,6 +437,33 @@ function setGitFlags(path: string, files: string[] | 'all', patch: Partial<FileC
   }
 }
 
+/** Each workspace's latest report, as the host keeps it. */
+const reports = flags.has('no-reports') ? {} : reportFixtures(Date.now(), flags)
+
+/** `report_get`: the workspace's report, slowly or failing when the flags ask. */
+async function reportGet(workspace: string) {
+  if (flags.has('report-slow') || flags.has('report-fail'))
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+  if (flags.has('report-fail')) throw new Error('The host did not answer (report_get timed out).')
+  return structuredClone(reports[workspace] ?? null)
+}
+
+/** `?report-live`: amber's chat calls the `report` tool, and the host keeps the new report. */
+if (flags.has('report-live') || flags.has('report-live-ask')) {
+  setTimeout(() => {
+    const asks = flags.has('report-live-ask')
+    reports['ws-amber'] = liveReport(Date.now(), asks)
+    const toolId = `toolu-report-${Date.now()}`
+    const input = { state: asks ? 'question' : 'review', title: 'Totaux de facture à 0 €' }
+    later(chats.get('chat-menus'), [
+      assistant(`m-${toolId}`, [
+        { id: toolId, input, name: 'mcp__logit__report', type: 'tool_use' },
+      ]),
+      toolResult(toolId, 'Report saved.'),
+    ])
+  }, 5000)
+}
+
 /** The backgrounds folder: the two seeded scenes, as the app writes them on first launch. */
 let scenes = [
   { code: kitesScene, id: 'kites', name: 'Kites' },
@@ -383,6 +476,8 @@ function handle(cmd: string, args: Args): unknown {
   switch (cmd) {
     case 'catalog':
       return structuredClone(store)
+    case 'report_get':
+      return reportGet(str(args.workspace))
     case 'host_status':
       return { list: hostList, protocolOk: !flags.has('restart') }
     case 'claude_models':

@@ -636,6 +636,7 @@ pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Res
         (w, repo)
     };
     remove_worktree(&repo, &workspace.path, force)?;
+    crate::report::remove(&data_dir(), &id);
     edit(&store, |c| {
         c.workspaces.retain(|w| w.id != id);
         c.chats.retain(|chat| chat.workspace_id != id);

@@ -4,6 +4,14 @@ import { useEffect, useState } from 'react'
 import { Picker, type PickerItem } from './picker'
 import { listable, orderSessions, originLabel, type Session } from './resume'
 
+/** `/resume`'s or `/mcp`'s palette, for the chat it was typed in. (`/model` and `/effort`
+ * open the chat's own model picker.) */
+export interface CommandPick {
+  name: 'resume' | 'mcp'
+  chatId: string
+  args: string
+}
+
 interface Props {
   projectId: string
   /** The project's main checkout. */

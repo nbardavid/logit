@@ -31,8 +31,10 @@ import {
   type PullRequest,
   uncommittedRefusal,
 } from '../git/pr'
+import { REPORT_STATE, type ReportState } from '../model/report'
 import { isBrowser, type PanelView } from './browser-tabs'
 import { countClass, Empty, type FileActions, FileList } from './file-list'
+import { ReportDot } from './report-view'
 import { Dot } from './status-dot'
 
 export interface GitPanelProps {
@@ -66,6 +68,15 @@ export interface GitPanelProps {
   agents: { count: number; tree: ReactNode }
   /** The body while a page is the view: its address bar and the page. */
   browser: ReactNode
+  /**
+   * The Report tab, when the workspace has a report: its state (for the cue of a new one
+   * not seen yet) and its body.
+   */
+  report: {
+    state: ReportState | null
+    unread: boolean
+    body: ReactNode
+  } | null
 }
 
 /** The band, its hairline, the chip's border and the ink, by the PR's tone. */
@@ -399,7 +410,9 @@ function Head({
 
 function Tab({
   active,
+  className,
   count,
+  cue,
   dot = false,
   label,
   onSelect,
@@ -408,22 +421,47 @@ function Tab({
   count: number
   /** Something new behind it (an unread artifact). */
   dot?: boolean
+  /** Its own mark of something new, in place of the dot. */
+  cue?: ReactNode
   label: string
   onSelect: () => void
+  className?: string
 }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  // The tab on screen stays in view, as it is picked and as the panel narrows.
+  useEffect(() => {
+    const el = ref.current
+    const strip = el?.parentElement
+    if (!active || !el || !strip) return
+    // Only the strip scrolls (scrollIntoView would move every scrolling ancestor too).
+    const show = () => {
+      const left = el.offsetLeft - strip.offsetLeft
+      const right = left + el.offsetWidth
+      if (left < strip.scrollLeft) strip.scrollLeft = left - 8
+      else if (right > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = right - strip.clientWidth + 8
+    }
+    show()
+    const observer = new ResizeObserver(show)
+    observer.observe(strip)
+    return () => observer.disconnect()
+  }, [active])
   return (
     <button
+      ref={ref}
       type="button"
       role="tab"
       aria-selected={active}
       className={cn(
-        'flex h-7 items-center gap-1 rounded-md px-2.5 text-sm whitespace-nowrap transition-colors duration-120 ease-out',
-        active ? 'bg-muted text-foreground font-medium' : 'text-faint hover:text-muted-foreground'
+        'flex h-7 flex-none items-center gap-1 rounded-md px-1.5 text-sm whitespace-nowrap transition-colors duration-120 ease-out',
+        active ? 'bg-muted text-foreground font-medium' : 'text-faint hover:text-muted-foreground',
+        className
       )}
       onClick={onSelect}
     >
+      {cue}
       {label}
-      {count > 0 && <span className={countClass}>{count}</span>}
+      {count > 0 && <span className={cn(countClass, 'hidden @[20rem]/tabs:inline')}>{count}</span>}
       {dot && <Dot tone="done" label="New" />}
     </button>
   )
@@ -497,8 +535,12 @@ function Checks({ pr }: { pr: PullRequest }) {
 export function GitPanel(props: GitPanelProps) {
   const { changes, onOpenFile, path, pr, setup, width } = props
   // No tree here: the Agents tab isn't either.
-  const shown = props.view === 'agents' && props.agents.count === 0 ? 'changes' : props.view
+  let shown = props.view === 'agents' && props.agents.count === 0 ? 'changes' : props.view
+  if (shown === 'report' && props.report === null) shown = 'changes'
+  const { report } = props
   const setView = props.onView
+  const reportCue = report !== null && report.unread && shown !== 'report' && report.state !== null
+  const strip = useRef<HTMLDivElement>(null)
 
   const write = (failed: string, command: string, args: Record<string, unknown>) => {
     if (path === undefined) return
@@ -541,47 +583,77 @@ export function GitPanel(props: GitPanelProps) {
         changes={changes}
         onAskPr={props.onAskPr}
       />
-      <div
-        className="flex h-10 flex-none items-center gap-0.5 px-2"
-        role="tablist"
-        aria-label="Git view"
-      >
-        {props.agents.count > 0 && (
+      <div className="relative flex-none">
+        <div
+          ref={strip}
+          // Narrow, the strip scrolls sideways (the tab on screen kept in view) rather than clip.
+          className="@container/tabs flex h-10 flex-none items-center gap-0.5 overflow-x-auto px-2 [mask-image:linear-gradient(to_right,transparent,black_8px,black_calc(100%-8px),transparent)] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Git view"
+        >
+          {report && (
+            // First: what the agent asks of you leads.
+            <Tab
+              active={shown === 'report'}
+              className="animate-in fade-in duration-160 ease-out"
+              label="Report"
+              count={0}
+              cue={
+                reportCue &&
+                report.state !== null && (
+                  <span className="animate-in fade-in grid size-[11px] place-items-center duration-160 ease-out">
+                    <ReportDot
+                      state={report.state}
+                      label={`New report: ${REPORT_STATE[report.state].word}`}
+                    />
+                  </span>
+                )
+              }
+              onSelect={() => setView('report')}
+            />
+          )}
+          {props.agents.count > 0 && (
+            <Tab
+              active={shown === 'agents'}
+              label="Agents"
+              count={props.agents.count}
+              onSelect={() => setView('agents')}
+            />
+          )}
           <Tab
-            active={shown === 'agents'}
-            label="Agents"
-            count={props.agents.count}
-            onSelect={() => setView('agents')}
+            active={shown === 'changes'}
+            label="Files"
+            count={changes?.length ?? 0}
+            onSelect={() => setView('changes')}
           />
-        )}
-        <Tab
-          active={shown === 'changes'}
-          label="Changes"
-          count={changes?.length ?? 0}
-          onSelect={() => setView('changes')}
-        />
-        {pr && (
+          {pr && (
+            <Tab
+              active={shown === 'checks'}
+              label="CI"
+              count={pr.checks.length}
+              onSelect={() => setView('checks')}
+            />
+          )}
           <Tab
-            active={shown === 'checks'}
-            label="Checks"
-            count={pr.checks.length}
-            onSelect={() => setView('checks')}
+            active={shown === 'artifacts' || isBrowser(shown)}
+            label="Artifacts"
+            count={props.artifacts.count}
+            dot={props.artifacts.unread && shown !== 'artifacts' && !isBrowser(shown)}
+            onSelect={() => setView('artifacts')}
           />
-        )}
-        <Tab
-          active={shown === 'artifacts' || isBrowser(shown)}
-          label="Artifacts"
-          count={props.artifacts.count}
-          dot={props.artifacts.unread && shown !== 'artifacts' && !isBrowser(shown)}
-          onSelect={() => setView('artifacts')}
-        />
+        </div>
       </div>
       {isBrowser(shown) && props.browser}
+      {shown === 'report' && report && (
+        <div key={`${path ?? ''}:report-pane`} className="flex min-h-0 flex-1 flex-col">
+          {report.body}
+        </div>
+      )}
       {/* A fresh container per workspace and view: WKWebView kept painting the old one. */}
       <div
         key={`${path ?? ''}:${isBrowser(shown) ? 'browser' : shown}`}
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
-        hidden={isBrowser(shown)}
+        hidden={isBrowser(shown) || shown === 'report'}
       >
         {shown === 'changes' && changes && (
           <FileList changes={changes} onOpen={onOpenFile} actions={actions} />

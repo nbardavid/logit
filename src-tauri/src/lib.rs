@@ -1,3 +1,4 @@
+pub mod backgrounds;
 pub mod browser;
 pub mod chat;
 pub mod git;
@@ -6,9 +7,9 @@ pub mod host;
 pub mod host_client;
 pub mod mcp;
 pub mod naming;
-pub mod backgrounds;
 pub mod pty;
 pub mod quota;
+pub mod report;
 pub mod servers;
 pub mod sessions;
 pub mod store;
@@ -178,6 +179,8 @@ pub fn run() {
             store::workspace_pause,
             store::chat_save,
             store::artifact_add,
+            report::report_get,
+            report::report_list,
             store::artifact_close,
             store::artifact_seen,
             store::chat_forget,

@@ -74,7 +74,9 @@ Each workspace has a colour (e.g. amber), then a name Claude gives it from its f
 prompt; tools take either. \
 This workspace's dev servers (the project's declared apps, on ports of their own so they never \
 touch the user's own dev servers): servers_start, then servers_wait until they are ready, \
-servers_status for their URLs, servers_logs when one fails, servers_stop when done.";
+servers_status for their URLs, servers_logs when one fails, servers_stop when done. \
+Each time you stop for the user (and before asking a question), call report so they see where \
+this work stands without reading the chat.";
 
 fn tools() -> Value {
     let workspace = json!({ "type": "string", "description": "A workspace's colour (e.g. amber), name or id." });
@@ -207,6 +209,36 @@ fn tools() -> Value {
                 "required": ["workspace", "text"],
             },
         },
+        {
+            "name": "report",
+            "description": "Tells the user where this work stands, shown beside this chat in logit and in an overview of all workspaces, so they need not read the chat. Call it every time you stop for the user: before asking a question (the question itself still goes through AskUserQuestion), when screens are ready to look at, when the PR is ready, when the work is done without a PR, when blocked. A new report replaces the previous one. Write every text in the user's language, for someone who has not followed the work and gives it a minute. Product choices are what the person using the product will see or live, never how it is built: not \"memoised the total with useMemo\", but \"the total updates as you type\".",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "state": { "type": "string", "enum": crate::report::STATES, "description": "question: you ask the user something; review: screens to look at before the PR; ready: the PR is ready; done: the work is finished and needs no PR; blocked: you cannot go on." },
+                    "title": { "type": "string", "maxLength": crate::report::MAX_TITLE, "description": "A few words naming the work." },
+                    "ticket": { "type": "string", "description": "The ticket id, e.g. #335 or RAI-2051, if any. A link whose label names it makes it clickable." },
+                    "summary": { "type": "string", "maxLength": crate::report::MAX_SUMMARY, "description": "The single most useful sentence, read in a list: the question itself, or what changed." },
+                    "feature": { "type": "string", "maxLength": crate::report::MAX_CONTEXT, "description": "What this screen or function is for and who uses it, 2-3 short lines. Leave it out when there is no product context (a refactor, a tooling change)." },
+                    "problem": { "type": "string", "maxLength": crate::report::MAX_CONTEXT, "description": "What the person lives today, as one concrete scenario. Leave it out with feature." },
+                    "choices": { "type": "array", "description": "Product choices made or asked (may be empty), each in terms of what the person sees. Not \"memoised the total with useMemo\"; yes \"the total updates as you type\".", "items": { "type": "object", "properties": {
+                        "text": { "type": "string", "maxLength": crate::report::MAX_CHOICE, "description": "The choice, in terms of what the person sees; for the open one, the question asked." },
+                        "setAside": { "type": "string", "description": "The option not taken." },
+                        "open": { "type": "boolean", "description": "True for the one choice you are asking the user about (with AskUserQuestion); only with state question, at most one." },
+                    }, "required": ["text"] } },
+                    "screens": { "type": "array", "description": "Screenshots per step (may be empty); at most 16 images, png/jpg/jpeg/webp, 4 MB each.", "items": { "type": "object", "properties": {
+                        "step": { "type": "string", "description": "What the step shows." },
+                        "before": { "type": "string", "description": "Image path before the change, absolute or relative to the worktree." },
+                        "after": { "type": "string", "description": "Image path after the change, absolute or relative to the worktree." },
+                    }, "required": ["step"] } },
+                    "links": { "type": "array", "description": "Links, such as the PR or the ticket: http or https URLs only.", "items": { "type": "object", "properties": {
+                        "label": { "type": "string" }, "url": { "type": "string", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
+                    }, "required": ["label", "url"] } },
+                    "left": { "type": "array", "items": { "type": "string" }, "description": "What is left for the user (merge, a migration to apply)." },
+                },
+                "required": ["state", "title", "summary"],
+            },
+        },
     ])
 }
 
@@ -226,6 +258,7 @@ fn call(chat: &str, params: &Value) -> Value {
         "servers_status" => servers_status().map(|v| v.to_string()),
         "servers_logs" => servers_logs(args),
         "servers_stop" => servers_stop(args),
+        "report" => report(chat, args),
         other => Err(format!("no tool {other}")),
     };
     match result {
@@ -315,6 +348,19 @@ fn where_am_i() -> Result<String, String> {
         "path": w.path,
     })
     .to_string())
+}
+
+fn report(chat: &str, args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let w = &h.workspace;
+    crate::report::save(
+        &store::data_dir(),
+        &w.id,
+        chat,
+        std::path::Path::new(&w.path),
+        args,
+        now_ms(),
+    )
 }
 
 // The host, over its socket.
@@ -801,7 +847,8 @@ mod tests {
                 "servers_status",
                 "servers_logs",
                 "servers_stop",
-                "chat_send"
+                "chat_send",
+                "report"
             ]
         );
     }

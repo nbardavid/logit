@@ -36,6 +36,7 @@ import {
   USAGE,
   userLine,
 } from '../chat/model'
+import { reportedSince } from '../chat/reports'
 import { HOST_BLOCKED, type HostChat } from './use-host'
 
 export interface ChatTab {
@@ -56,6 +57,8 @@ interface Hooks {
    * transcript, which must not pull it to the front).
    */
   onArtifact: (chat: ChatTab, artifact: Published, live: boolean) => void
+  /** The chat wrote a report (logit's `report` tool): `live` as it happens, not in a replay. */
+  onReport: (chat: ChatTab, live: boolean) => void
   /** False while an old background host holds the chats: a second Claude would corrupt one. */
   canStart: () => boolean
   /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
@@ -253,6 +256,9 @@ export function useChats(hooks: Hooks) {
           const [was, now] = touched(c.state, state)
           for (const artifact of newPublishes(blocksOf(was), blocksOf(now))) {
             queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
+          }
+          if (reportedSince(blocksOf(was), blocksOf(now))) {
+            queueMicrotask(() => latest.current.hooks.onReport(next, !replaying))
           }
           // A `!` command's output: into the conversation, for Claude's next prompt.
           for (const shell of shellsDone(was, now)) {

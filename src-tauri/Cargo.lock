@@ -2113,6 +2113,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 name = "logit"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "glob",
  "objc2",
  "portable-pty",

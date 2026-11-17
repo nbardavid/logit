@@ -21,6 +21,9 @@ interface Options {
   /** The panel is on screen (open, normal mode): a page shown there is seen. */
   visible: boolean
   hasPr: boolean
+  /** The workspace's report: `has` one (or a failed read of one) to show; `asks`, it waits on
+   * the user, unseen, so arriving at the workspace opens the Report tab. */
+  reports: { has: boolean; asks: boolean }
   addArtifact: (
     wsId: string,
     url: string,
@@ -66,7 +69,17 @@ export function useArtifacts(o: Options) {
   // A workspace an agent started opens on its tree; any other on its changes.
   const fallback = ws?.parentChat === undefined ? 'changes' : 'agents'
   const asked = (id === undefined ? undefined : views[id]) ?? fallback
-  const view = shownView(asked, o.hasPr, tabs, id === undefined ? null : (lasts[id] ?? null))
+  const last = id === undefined ? null : (lasts[id] ?? null)
+  const view = shownView(asked, o.hasPr, tabs, last, o.reports.has)
+
+  // Arriving at a workspace whose report asks something unseen: its Report tab comes first,
+  // set while rendering so the old tab never flashes. Only on arrival, never mid-work (the
+  // tab's dot is the cue there), and the keyboard stays where it was.
+  const [arrived, setArrived] = useState(id)
+  if (arrived !== id) {
+    setArrived(id)
+    if (id !== undefined && o.reports.asks) setViews((s) => ({ ...s, [id]: 'report' }))
+  }
 
   const setView = useCallback(
     (next: PanelView) => {
