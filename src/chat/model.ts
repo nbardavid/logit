@@ -423,11 +423,12 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         return { ...state, pending: [], queued: [], status: 'idle', stopping: false, turns }
       }
       const answer = obj(response.response)
-      // A queued prompt Claude gave back: it leaves the queue (the composer has it again).
+      // Given back, it leaves the queue; already taken (maybe unsaid), it joins the transcript.
       if (str(response.request_id).startsWith(UNQUEUE)) {
-        if (answer.cancelled !== true) return state
-        const uuid = str(response.request_id).slice(UNQUEUE.length)
-        return { ...state, queued: state.queued.filter((t) => t.id !== uuid) }
+        const turn = state.queued.find((t) => UNQUEUE + t.id === response.request_id)
+        const queued = state.queued.filter((t) => t !== turn)
+        if (answer.cancelled === true || !turn) return { ...state, queued }
+        return { ...state, queued, turns: joinPrompt(state.turns, turn) }
       }
       if (str(response.request_id).startsWith(USAGE)) {
         const usage = parseUsage(answer)
@@ -751,8 +752,9 @@ export function sendTurn(
   id: string,
   images: readonly Image[] = []
 ): ChatState {
-  // A new prompt is a new try: the last error stops showing under it.
-  if (state.status !== 'working') return { ...addUserTurn(state, text, id, images), errors: [] }
+  // A new try clears the last error. `/model`, `/effort` may never say they started: unqueued.
+  if (state.status !== 'working' || /^\/(model|effort)\b/.test(text))
+    return { ...addUserTurn(state, text, id, images), errors: [] }
   const turn = addUserTurn(state, text, id, images).turns.at(-1) as Turn
   return { ...state, queued: [...state.queued, turn] }
 }

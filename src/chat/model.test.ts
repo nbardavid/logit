@@ -899,3 +899,29 @@ test('a turn cut short to take the next prompt is not an error', () => {
   expect(feed([aborted('aborted_tools')]).errors).toEqual([])
   expect(feed([aborted('turn_setup_failed')]).errors).toEqual(['error_during_execution'])
 })
+
+describe('stuck queued prompts', () => {
+  const working: ChatState = { ...initialChat, status: 'working' }
+
+  test('a /effort sent mid-turn is not queued', () => {
+    const s = sendTurn(working, '/effort medium', 'u1')
+    expect(s.queued).toEqual([])
+    expect(s.turns.length).toBe(1)
+  })
+
+  test('a queued prompt Claude had already taken leaves the queue', () => {
+    const s = sendTurn(working, 'hello', 'u1')
+    expect(s.queued.length).toBe(1)
+    const after = feed(
+      [
+        {
+          response: { request_id: 'unqueue-u1', response: { cancelled: false } },
+          type: 'control_response',
+        },
+      ],
+      s
+    )
+    expect(after.queued).toEqual([])
+    expect(after.turns.length).toBe(1)
+  })
+})
