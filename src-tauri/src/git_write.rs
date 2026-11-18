@@ -187,24 +187,82 @@ pub fn merge_flag(methods: &serde_json::Value) -> Option<&'static str> {
     .map(|(_, flag)| flag)
 }
 
-/// Approves (best effort: GitHub refuses your own PR) and merges the branch's pull request.
-#[tauri::command(async)]
-pub fn pr_merge(path: String) -> Result<(), String> {
-    let raw = tool(
-        &path,
-        "gh",
-        &[
-            "repo",
-            "view",
-            "--json",
-            "mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
-        ],
-    )
-    .map_err(|_| "Could not read the repository's merge settings.".to_string())?;
+/// gh, said plainly when it is not there to run.
+fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
+    tool(cwd, "gh", args).map_err(|e| {
+        if e.starts_with("gh: ") && e.contains("No such file") {
+            crate::git::GH_MISSING.to_string()
+        } else {
+            e
+        }
+    })
+}
+
+/// Approves (best effort: GitHub refuses your own PR) and merges a pull request with the
+/// method GitHub pre-selects: the branch's own, or the one at `target` (its address and its
+/// `owner/repo`).
+fn merge(cwd: &str, target: Option<(&str, &str)>) -> Result<(), String> {
+    let mut repo = vec![
+        "repo",
+        "view",
+        "--json",
+        "mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    ];
+    repo.extend(target.map(|(_, name)| name));
+    let raw = gh(cwd, &repo).map_err(|e| {
+        if e == crate::git::GH_MISSING {
+            e
+        } else {
+            format!("Could not read the repository's merge settings.\n{e}")
+        }
+    })?;
     let methods: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let flag = merge_flag(&methods).ok_or("The repository allows no merge method.")?;
-    let _ = tool(&path, "gh", &["pr", "review", "--approve"]);
-    tool(&path, "gh", &["pr", "merge", flag]).map(|_| ())
+    let url = target.map(|(url, _)| url);
+    let mut review = vec!["pr", "review"];
+    review.extend(url);
+    review.push("--approve");
+    let _ = gh(cwd, &review);
+    let mut merge = vec!["pr", "merge"];
+    merge.extend(url);
+    merge.push(flag);
+    gh(cwd, &merge).map(|_| ())
+}
+
+#[tauri::command(async)]
+pub fn pr_merge(path: String) -> Result<(), String> {
+    merge(&path, None)
+}
+
+/// What the merge of `head` would lose: commits on this workspace's branch GitHub has not seen
+/// (it merges its own copy of the branch).
+pub fn unpushed(state: &BranchState, head: &str) -> Option<String> {
+    let n = state.ahead;
+    (state.branch.as_deref() == Some(head) && n > 0).then(|| {
+        let commits = if n == 1 { "commit" } else { "commits" };
+        format!("Push first: {n} {commits} on {head} not on GitHub yet would be left out.")
+    })
+}
+
+/// Merges a pull request named by its address (a card in a chat or a report). `head`, the
+/// PR's branch, as the card read it: when the workspace sits on it with commits not pushed,
+/// the merge is refused, as the git panel's is.
+#[tauri::command(async)]
+pub fn pr_merge_url(path: String, url: String, head: Option<String>) -> Result<(), String> {
+    let (url, repo) = crate::git::pr_address(&url)?;
+    let cwd = crate::git::gh_cwd(&path);
+    if let (Some(head), Ok(raw)) = (
+        head,
+        git(
+            &cwd,
+            &["status", "--porcelain=v2", "-b", "--untracked-files=no"],
+        ),
+    ) {
+        if let Some(refusal) = unpushed(&parse_branch(&raw), &head) {
+            return Err(refusal);
+        }
+    }
+    merge(&cwd, Some((&url, &repo)))
 }
 
 #[cfg(test)]
@@ -232,6 +290,23 @@ mod tests {
         let both = serde_json::json!({ "squashMergeAllowed": true, "rebaseMergeAllowed": true });
         assert_eq!(merge_flag(&both), Some("--squash"));
         assert_eq!(merge_flag(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn unpushed_commits_on_the_head_refuse_the_merge() {
+        let on = |branch: &str, ahead| BranchState {
+            ahead,
+            branch: Some(branch.into()),
+            upstream: true,
+            ..BranchState::default()
+        };
+        assert_eq!(
+            unpushed(&on("feat/x", 2), "feat/x").as_deref(),
+            Some("Push first: 2 commits on feat/x not on GitHub yet would be left out.")
+        );
+        assert_eq!(unpushed(&on("feat/x", 0), "feat/x"), None);
+        // Another branch's PR: what this one holds is not part of it.
+        assert_eq!(unpushed(&on("main", 3), "feat/x"), None);
     }
 
     #[test]

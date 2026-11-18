@@ -13,14 +13,18 @@ import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 
 // In a plain browser (vite dev only), Tauri's IPC is answered from fixtures, and
-// `?gallery` shows the UI primitives instead of the app.
+// `?gallery` shows the UI primitives and `?blocks` every report block instead of the app.
 const preview = import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)
-const gallery = preview && new URLSearchParams(location.search).has('gallery')
+const params = new URLSearchParams(location.search)
+const gallery = preview && params.has('gallery')
+const blocks = preview && params.has('blocks')
 
 async function start() {
   migrateLegacyStorage()
   if (preview) await import('./dev/mock-ipc')
-  const Root = gallery ? (await import('./dev/gallery')).Gallery : App
+  let Root = App
+  if (gallery) Root = (await import('./dev/gallery')).Gallery
+  else if (blocks) Root = (await import('./dev/blocks')).BlocksGallery
   const root = document.querySelector('#root')
   if (root) {
     createRoot(root).render(
@@ -28,7 +32,7 @@ async function start() {
         {/* Every icon in the app's one stroke. */}
         <LucideProvider strokeWidth={1.5}>
           {/* The chat background, behind the whole window. */}
-          {!gallery && <AppWallpaper />}
+          {!gallery && !blocks && <AppWallpaper />}
           <Root />
         </LucideProvider>
       </StrictMode>

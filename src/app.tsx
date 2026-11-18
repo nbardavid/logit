@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
 import { agentTree, kidsNote, signalsOf } from './app/agent-tree'
-import { notify, playChosenSound } from './app/attention'
+import { notify, playChosenSound, waitingAttention } from './app/attention'
 import { browserId } from './app/browser-tabs'
 import { readChatSettings, saveChatSettings } from './app/chat-settings'
 import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
-import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
+import { ContextMenu, type MenuItem, type MenuState, useNoBrowserMenu } from './app/context-menu'
+import { Desk, deskChat, deskSide, useDesk } from './app/desk'
 import { Dock } from './app/dock'
 import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
 import { GitMode } from './app/git-mode'
@@ -54,7 +55,7 @@ import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
 import { isDockTag } from './app/workspace-dock'
 import { availableCommands } from './chat/commands'
-import { type ChatState, type Image, initialChat, toolSummary } from './chat/model'
+import { type ChatState, type Image, initialChat } from './chat/model'
 import {
   chatFlags,
   type ChatSettings,
@@ -84,7 +85,7 @@ export function App() {
   const store = useCatalog(removing)
   const { catalog, project, projects, status, workspace: ws } = store
   const projectId = project?.id ?? null
-  const [mode, setMode] = useState<'normal' | 'git'>('normal')
+  const [mode, setMode] = useState<'normal' | 'git' | 'desk'>('normal')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
   // Where the new-tab menu drops from.
@@ -108,6 +109,8 @@ export function App() {
     attention: (): boolean => false,
     close: () => {},
     compose: () => {},
+    /** Desk back to Code, on a row's workspace (the selected one), on that chat when given. */
+    leaveDesk: (_row?: Parameters<typeof deskChat>[1] | null, _chatId?: string | null) => {},
     newTab: (_kind: 'chat' | 'terminal') => {},
     stepTab: (_step: 1 | -1) => {},
     stepWorkspace: (_step: 1 | -1) => {},
@@ -159,22 +162,7 @@ export function App() {
           await notify(
             `${chat.record.title} ${kind === 'waiting' ? 'is waiting for you' : 'is done'}`
           )
-        } else if (kind === 'waiting') {
-          const ask = chat.state.pending[0]
-          setAttention({
-            asks: ask
-              ? {
-                  tool: ask.toolName,
-                  what: toolSummary(ask.toolName, ask.input, chat.cwd) || (ask.description ?? ''),
-                }
-              : null,
-            chatId: chat.record.id,
-            projectId: p.id,
-            title: chat.record.title,
-            where: `${w.name} · ${p.name}`,
-            workspaceId: w.id,
-          })
-        }
+        } else if (kind === 'waiting') setAttention(waitingAttention(chat, p, w))
       })()
     },
     onRecord: store.saveChat,
@@ -269,6 +257,7 @@ export function App() {
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
   const git = useGit(ws?.path, paths, settled)
+  const desk = useDesk({ catalog, chats, git, mode, projects, reports, workspaces })
   const quotas = useQuotas()
   const { layout, update } = useLayout()
   const artifacts = useArtifacts({
@@ -297,7 +286,8 @@ export function App() {
         // The diff is a page: Esc leaves it, unless something sits over it.
         const over = overlay !== null || composeIn !== null || ctxMenu !== null
         if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
-        setMode('normal')
+        if (mode === 'desk') keys.current.leaveDesk()
+        else setMode('normal')
       } else if (e.ctrlKey && e.key === 'Tab')
         // In Settings, ⌃Tab steps through its panes.
         (settingsOpen ? stepPane : keys.current.stepTab)(e.shiftKey ? -1 : 1)
@@ -313,6 +303,8 @@ export function App() {
       // e.code: with Option held, e.key is the composed character.
       else if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
       else if (e.code === 'KeyS' || e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
+      // On Desk, Desk takes ⌘0 back to Code.
+      else if (e.code === 'Digit0') setMode('desk')
       else if (e.key === 'p') setOverlay('projects')
       else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
       else if (e.key === 'w') keys.current.close()
@@ -342,16 +334,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [])
 
-  // No browser menu (Reload, Inspect…): rows bring their own; text fields keep Copy and Paste.
-  useEffect(() => {
-    const onMenu = (e: MouseEvent) => {
-      const editable =
-        e.target instanceof HTMLElement && e.target.closest('input, textarea, .xterm') !== null
-      if (!editable && (window.getSelection()?.toString() ?? '') === '') e.preventDefault()
-    }
-    window.addEventListener('contextmenu', onMenu)
-    return () => window.removeEventListener('contextmenu', onMenu)
-  }, [])
+  useNoBrowserMenu()
 
   useEffect(() => {
     if (armed === null) return
@@ -397,7 +380,7 @@ export function App() {
   const newChat = (w: Workspace, prompt?: string, images: readonly Image[] = []) => {
     const id = chats.create(w.id, w.path, chatFlags(selection))
     selectTab(w.id, id)
-    if ((prompt ?? '') !== '' || images.length > 0) chats.send(id, prompt ?? '', images)
+    if ((prompt ?? '') !== '' || images.length > 0) void chats.send(id, prompt ?? '', images)
     return id
   }
 
@@ -405,7 +388,7 @@ export function App() {
   const askForPr = (w: Workspace) => {
     const id = (chat ?? wsChats.at(-1))?.record.id ?? newChat(w)
     selectTab(w.id, id)
-    chats.send(id, PR_PROMPT)
+    void chats.send(id, PR_PROMPT)
   }
   /** A chat (with the last model and effort picked, on `prompt`) or a shell, in this workspace. */
   const createTab = (kind: string, prompt?: string) => {
@@ -457,7 +440,7 @@ export function App() {
       model: ask.model ?? flags.model,
     })
     selectTab(w.id, id)
-    chats.send(id, ask.prompt)
+    void chats.send(id, ask.prompt)
     return { branch: w.branch, chatId: id, name: w.name, path: w.path }
   }
 
@@ -583,7 +566,7 @@ export function App() {
   const order = projects.flatMap((p) => tree.lists[p.id] ?? [])
   keys.current = {
     attention: () => {
-      if (attention === null || questionHere) return false
+      if (attention === null || questionHere || mode === 'desk') return false
       goTo(attention.projectId, attention.workspaceId, attention.chatId)
       setAttention(null)
       return true
@@ -592,6 +575,11 @@ export function App() {
       if (active !== undefined && mode === 'normal') requestClose(active.id)
     },
     compose: () => projectId !== null && setComposeIn(projectId),
+    leaveDesk: (r = desk.row, chatId = r && deskChat(chats.chats, r)) => {
+      if (r === null) setMode('normal')
+      else if (chatId === null) selectWs(r.projectId, r.id)
+      else goTo(r.projectId, r.id, chatId)
+    },
     newTab: (kind: 'chat' | 'terminal') => createTab(kind),
     stepTab: (step) => {
       const next = stepThrough(
@@ -657,7 +645,7 @@ export function App() {
     if (name === 'clear') chats.clear(id)
     else if (name === 'rename' && args !== '') {
       chats.rename(id, args)
-      chats.send(id, `/rename ${args}`)
+      void chats.send(id, `/rename ${args}`)
     } else if (name === 'rename') {
       renameTells.current = id
       setRenaming(id)
@@ -761,7 +749,7 @@ export function App() {
       place={mode === 'normal' ? ws?.name : undefined}
       sideOpen={layout.sideOpen}
       gitOpen={gitOpen}
-      canDiff={ws !== undefined}
+      canDiff={ws !== undefined && mode !== 'desk'}
       noChanges={mode === 'normal' && changes?.length === 0}
       gitMode={mode === 'git'}
       onShowSide={() => update({ sideOpen: true })}
@@ -810,10 +798,12 @@ export function App() {
     <div className="relative flex flex-none flex-col">
       {bar}
       {hostBar}
-      {!layout.sideOpen && attentionToast}
+      {/* Not on Desk: what asks is in its list. */}
+      {!layout.sideOpen && mode !== 'desk' && attentionToast}
     </div>
   )
   const pageTitle = {
+    desk: 'Desk',
     git: `${ws?.name ?? ''} · Diff`,
     normal: undefined,
   }[mode]
@@ -822,10 +812,11 @@ export function App() {
 
   const sidebar = (
     <Sidebar
+      desk={deskSide(desk, catalog, reports, setMode, () => keys.current.leaveDesk())}
       width={sideWidth}
       page={settingsOpen ? 'settings' : null}
       foot={<Quotas cache={quotas.cache} error={quotas.error} />}
-      dock={layout.sideOpen && attentionToast}
+      dock={layout.sideOpen && mode !== 'desk' && attentionToast}
       projects={projects}
       workspaces={tree.lists}
       signals={tree.signals}
@@ -864,7 +855,7 @@ export function App() {
         </Slide>
         <div className="relative flex min-w-0 flex-1 flex-col">
           {mode !== 'normal' && toasts}
-          {mode !== 'normal' && bars(topBar(pageTitle, null))}
+          {mode !== 'normal' && bars(topBar(pageTitle, null, null))}
           <div className="flex min-h-0 flex-1">
             {mode === 'normal' && (
               <>
@@ -894,7 +885,7 @@ export function App() {
                             if (!item.chat) terminals.rename(item.id, title)
                             else {
                               chats.rename(item.id, title)
-                              if (tell) chats.send(item.id, `/rename ${title}`)
+                              if (tell) void chats.send(item.id, `/rename ${title}`)
                             }
                           }}
                           onNew={(at) => {
@@ -917,9 +908,9 @@ export function App() {
                       onAgent={(next, typed) => setAgent(chat, next, typed)}
                       blocked={host.state.kind === 'blocked'}
                       commands={availableCommands(chat.state.commands, appWideCommands)}
-                      onSend={(text, images) => chats.send(chat.record.id, text, images)}
+                      onSend={(text, images) => void chats.send(chat.record.id, text, images)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
-                      onAnswer={(...answer) => chats.answer(chat.record.id, ...answer)}
+                      onAnswer={(...answer) => void chats.answer(chat.record.id, ...answer)}
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                       onUnqueue={(ids) => chats.unqueue(chat.record.id, ids)}
                       onShell={(command) => chats.shell(chat.record.id, command)}
@@ -1028,6 +1019,15 @@ export function App() {
                 changes={changes ?? []}
                 file={changes?.find((f) => f.path === gitFile?.path)}
                 onSelect={setGitFile}
+              />
+            )}
+            {mode === 'desk' && (
+              <Desk
+                desk={desk}
+                hub={chats}
+                reports={reports}
+                onOpen={(r, c) => keys.current.leaveDesk(r, c)}
+                onNew={() => keys.current.compose()}
               />
             )}
             {mode === 'git' && ws === undefined && (

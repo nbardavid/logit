@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { onPrMerged, seedPr } from '../cards/pr-store'
 import { type PullRequest, toPullRequest } from '../git/pr'
+import { prRef } from '../git/pr-link'
 
 export interface BranchState {
   branch: string | null
@@ -95,6 +97,9 @@ export function useGit(activePath: string | undefined, paths: string[], settled 
       if (!live || seq !== latest) return
       prs.current.set(activePath, next)
       setPr(next)
+      // Its cards in the chats and the report are as fresh as the panel.
+      const ref = next === null ? null : prRef(next.url)
+      if (ref !== null && next !== null) seedPr(ref, next)
       const pending = next?.checks.some((c) => c.state === 'pending') === true
       timer = setTimeout(() => void read(), pending ? PR_PENDING_MS : PR_MS)
     }
@@ -111,5 +116,10 @@ export function useGit(activePath: string | undefined, paths: string[], settled 
     }
   }, [activePath, tick, settled])
 
-  return { branch, changes, pr, refresh }
+  // A PR card merged something: the panel reads its PR (and the branch) again.
+  useEffect(() => onPrMerged(refresh), [refresh])
+
+  /** Whether a worktree's PR was last seen merged. */
+  const mergedOf = useCallback((path: string) => prs.current.get(path)?.state === 'Merged', [])
+  return { branch, changes, mergedOf, pr, refresh }
 }

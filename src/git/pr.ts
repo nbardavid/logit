@@ -20,6 +20,8 @@ export interface PullRequest {
   mergeState: string
   base: string
   head: string
+  /** Where the reviews stand, as GitHub decides it; `none` when the repo asks for none. */
+  review: 'approved' | 'changes' | 'required' | 'none'
 }
 
 interface RawCheck {
@@ -47,6 +49,13 @@ interface RawPr {
   mergeStateStatus?: string
   baseRefName?: string
   headRefName?: string
+  reviewDecision?: string | null
+}
+
+const REVIEW: Record<string, PullRequest['review']> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes',
+  REVIEW_REQUIRED: 'required',
 }
 
 const PASSING = new Set(['SUCCESS', 'NEUTRAL'])
@@ -98,6 +107,7 @@ export function toPullRequest(raw: string): PullRequest {
     mergeable: pr.mergeable ?? '',
     mergeState: pr.mergeStateStatus ?? '',
     number: pr.number,
+    review: REVIEW[pr.reviewDecision ?? ''] ?? 'none',
     state: prState(pr),
     title: pr.title,
     url: pr.url,

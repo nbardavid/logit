@@ -423,8 +423,9 @@ export function useChats(hooks: Hooks) {
     [add]
   )
 
+  /** Sends a prompt: settles once the host has it, rejecting with its error. */
   const send = useCallback(
-    (id: string, text: string, images: readonly Image[] = []) => {
+    async (id: string, text: string, images: readonly Image[] = []) => {
       const uuid = crypto.randomUUID()
       edit(id, (c) => {
         queueMicrotask(() => latest.current.hooks.onSent(c.record.workspaceId))
@@ -441,20 +442,21 @@ export function useChats(hooks: Hooks) {
         return { ...c, record, state: { ...state, ...started } }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
-      void write(id, userLine(text, null, uuid, images))
+      return write(id, userLine(text, null, uuid, images))
     },
     [edit, write]
   )
 
+  /** Answers a permission or a question: settles once the host has it, as `send`. */
   const answer = useCallback(
-    (
+    async (
       id: string,
       permission: Permission,
       choice: 'allow' | 'always' | 'deny',
       answers?: Record<string, string>
     ) => {
       edit(id, (c) => ({ ...c, state: resolvePermission(c.state, permission.requestId) }))
-      void write(id, permissionLine(permission, choice, answers))
+      return write(id, permissionLine(permission, choice, answers))
     },
     [edit, write]
   )
@@ -556,7 +558,7 @@ export function useChats(hooks: Hooks) {
   const command = useCallback(
     (id: string, text: string, note: string | undefined) => {
       if (note === undefined) {
-        send(id, text)
+        void send(id, text)
         return
       }
       edit(id, (c) => ({ ...c, state: addNote(c.state, note, crypto.randomUUID()) }))

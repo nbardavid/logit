@@ -38,7 +38,11 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift            |
 | Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)          |
 | Chat background (picked, or changed)            | 300ms     | ease-out    | fade in; the scene then plays at 24 fps, cell by cell |
+| Sidebar: Code ↔ Desk                            | 160ms     | ease-out    | the two lists cross-fade, 4px slide toward the mode   |
+| Desk: a row arrives                             | 240ms     | settle      | fade + 6px rise                                       |
+| Desk: an answered row leaves                    | 300ms     | settle      | fade, 16px drift right, height folds                  |
 
+- "settle" is `--ease-settle` (`cubic-bezier(0.2, 0, 0, 1)`): long, soft landings.
 - Animate `opacity` and `transform`; animate size only where the layout must move.
 - Nothing above 300ms, except Clean up's send-off, which plays once the worktree is gone and
   blocks nothing, a sidebar row's tint, a notification that moves nothing, and the chat
@@ -81,15 +85,17 @@ Every size in a component comes from this scale; no `text-[13.5px]` and the like
 font; mono (`font-mono`, Geist Mono) only for code, tool commands, counts and branch names,
 never for file names.
 
-| Utility     | Size / line | Weight    | Use                                                               |
-| ----------- | ----------- | --------- | ----------------------------------------------------------------- |
-| `text-2xs`  | 11 / 14     | 500       | badges and inbox counts only                                      |
-| `text-xs`   | 12 / 16     | 400 / 500 | ages, hints, section labels, footers, counts, chips, shortcuts    |
-| `text-sm`   | 13 / 18     | 400 / 500 | all chrome: sidebar, tabs, menus, file rows, buttons (the body)   |
-| `text-base` | 14 / 22     | 400 / 600 | user bubble, composer text, top-bar title, PR status, card titles |
-| `.md`       | 15 / 24     | 400       | Claude's answers (h1 18/26, h2 16/24, h3–h4 15/24, all 600)       |
-| `text-lg`   | 20 / 28     | 600       | empty-state titles only                                           |
-| mono        | 12.5 / 20   | 400       | code blocks; 13 for inline code in prose, 12 inline in chrome     |
+| Utility      | Size / line | Weight    | Use                                                                 |
+| ------------ | ----------- | --------- | ------------------------------------------------------------------- |
+| `text-2xs`   | 11 / 14     | 500       | badges and inbox counts only                                        |
+| `text-xs`    | 12 / 16     | 400 / 500 | ages, hints, section labels, footers, counts, chips, shortcuts      |
+| `text-sm`    | 13 / 18     | 400 / 500 | all chrome: sidebar, tabs, menus, file rows, buttons (the body)     |
+| `text-base`  | 14 / 22     | 400 / 600 | user bubble, composer text, top-bar title, PR status, card titles   |
+| `.md`        | 15 / 24     | 400       | Claude's answers (h1 18/26, h2 16/24, h3–h4 15/24, all 600)         |
+| `text-md`    | 15 / 24     | 400 / 500 | prose outside markdown on a stage: Desk's question, choices (15/22) |
+| `text-title` | 18 / 26     | 600       | a report's title on a stage (Desk's detail)                         |
+| `text-lg`    | 20 / 28     | 600       | empty-state titles only                                             |
+| mono         | 12.5 / 20   | 400       | code blocks; 13 for inline code in prose, 12 inline in chrome       |
 
 `text-2xs` and `text-lg` carry their weight; the others take `font-medium` or
 `font-semibold` where the table allows.
@@ -115,7 +121,7 @@ never for file names.
 | `line-ink`                                                   | `#4a4644`                         | the ink button's hover                                                                        |
 | `tan`, `ring`                                                | `#c29c87`                         | only the active-tab underline, the caret, ::selection; focus ring                             |
 | `good` / `good-ink` / `good-wash`                            | `#4d8a5b` / `#2f6b3e` / `#f3f8f3` | done, added; green text; PR head band (ready, merged)                                         |
-| `warn` / `warn-ink`                                          | `#c99a1e` / `#7a5a08`             | waiting, modified; amber text                                                                 |
+| `warn` / `warn-ink` / `warn-wash`                            | `#c99a1e` / `#7a5a08` / `#fbf4e2` | waiting, modified; amber text; an assumption callout, a warning mark                          |
 | `critical`, `destructive` / `critical-ink` / `critical-wash` | `#b8473a` / `#9e3324` / `#fbf3f2` | failing, deleted, destructive fills; red text; PR head band (blocked, failing), the error box |
 | `merge` / `merge-hover`                                      | `#2f8a4c` / `#287a42`             | the Merge button                                                                              |
 | `neutral`                                                    | `#b4b8bf`                         | a setup script never run                                                                      |
@@ -157,6 +163,45 @@ Controls inside bars: `h-7`.
   no veil and a 4px drop.
 - Scrollbars: none styled. WKWebView draws macOS overlay scrollbars that hide when idle;
   only the tab strip hides its own.
+
+### Cards
+
+A card is something live that a chat or a report names: a PR today (`cards/pr-card.tsx`), a
+ticket or a file later. They all use one frame, `CardFrame` in `cards/frame.tsx`. The same
+card draws in a chat and in a report, so the two never drift.
+
+- **Anatomy**: a `rounded-lg` hairline box on `background`, padded 14 / 12, with `gap-3`.
+  - A 32px `rounded-md` tile with a 16px icon: `chrome`, or a good / critical wash once done
+    or failing.
+  - Two lines. The title is `text-base` 14/22, medium; clicking it opens the thing. The meta
+    is `text-xs` 12/16 `faint`: items `gap-x-3`, mono for branches and counts, a status `Dot`
+    before a state.
+  - At most one action, at the right, centred on the two lines (`Button size="sm"`).
+  - A notice under a hairline, 12/16. A failure gets a `critical-wash` and its Retry. A quiet
+    note ("Couldn't refresh it", while what showed stays) is on `chrome`.
+- **Narrow**: below 420px of card the tile goes and the title may take two lines. Below
+  320px the action moves under the text. Meta items wrap whole and never break inside, and a
+  long branch truncates with its full name on hover.
+- **States**:
+  - Loading: skeleton bars where the title and meta go, and a still box the action's size, so
+    nothing moves when it lands. If the agent wrote something about the thing, that draws
+    instead of the skeleton.
+  - Failed with nothing to show: a muted generic title plus the error notice.
+  - Disabled action: shown, with the reason in a `data-tip`.
+  - Done (merged): the action goes, and a calm good tile and badge show.
+- **Actions** confirm in place, with no dialog. The first click (or Enter) arms the button:
+  its label becomes "Confirm" and the meta line asks the question. A risky action turns the
+  button `critical`. The button falls back to rest after 5 s, on blur, on a click elsewhere,
+  or on Esc, and Esc goes no further. While the action works, the button keeps its colour
+  and shows the white loader. When it is done, focus moves to the title.
+- **Motion**: the card enters with the block it follows (200–280ms rise). Labels and
+  statuses cross-fade (160ms, `SWAP`). The armed label swaps in 120ms without changing the
+  button's width: its labels are stacked in one grid cell. The notice folds open over 180ms
+  (grid rows and fade).
+- **Cost**: a card reads its source only while it is in view, at most two at a time, and
+  shares the result with every other card of the same thing. It reads again when the window
+  comes back (if the last read is older than 10 s), every 15 s while it settles (checks
+  running), and after its action. Nothing polls in the background.
 
 ## Checking
 

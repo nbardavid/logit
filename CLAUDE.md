@@ -48,6 +48,19 @@ branding.
 - **Artifacts** Claude publishes (Claude Code's own `Artifact` tool, always on) open
   in the right panel's browser, logged in to claude.ai once: one Artifacts tab, the title
   opening a searchable list of them in the page's place. They never take the keyboard.
+- **Reports**: agents call logit's `report` tool to say where their work stands (question,
+  blocked, review, ready, done), with screens. The Report tab leads the right panel, and opens
+  by itself on arrival when the agent waits on the user and the report is unread.
+- **Desk** is a mode of the sidebar: one queue across every project of what the agents need
+  from the user. "Code" and "Desk" sit at the sidebar's top under New workspace and Search,
+  the active one marked, the amber count on Desk; ⌘0 toggles them, Esc in Desk returns to
+  Code. Code is the list by project; Desk is the same rows in three groups (Needs you,
+  Working, Quiet, which folds), each row naming its project quietly. The sidebar never folds
+  for it and ⌘S hides it as anywhere. The main area shows the selected one's report, read
+  there as seen, the answer card pinned full width at the bottom and the report scrolling
+  above it; the open question comes first in it and is written once. Picking a row selects it
+  for Desk only; "Open chat" (⌘↩), or going back to Code, opens that workspace's chat.
+  Answered, a row leaves and the next need is selected; with none left, "Nothing needs you".
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. Two dialogs only: the composer, and Settings (⌘,), a window with its sections down
   its left side, over the app without a veil so a chat background and its blur show as they
@@ -64,7 +77,7 @@ branding.
   pretend to be another client (`cli`, `claude-vscode`).
 - **It feels native**:
   - keyboard first: ⌘N, ⌘T chat, ⇧⌘T terminal, ⌘W (twice if the agent is working), ⌘P,
-    ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
+    ⌘0 Desk, ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
     ⌘S (⌘B too) the sidebar, which slides out over the content from the left edge while hidden,
     ⌥⌘B, ⌘G, ⌘, settings;
   - no browser context menu;

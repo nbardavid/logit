@@ -1,6 +1,7 @@
 // An agent's report (logit's MCP `report` tool): what it did, told for someone who has a
 // minute. Product choices first: agents are usually right on the code, less often on what
 // the person will see.
+import type { ReportBlock } from '../report/blocks/types'
 
 export type ReportState = 'question' | 'review' | 'ready' | 'done' | 'blocked'
 
@@ -36,6 +37,9 @@ export interface Report {
   screens: ReportScreen[]
   links: { label: string; url: string }[]
   left: string[]
+  /** The body as blocks the agent composed, drawn after the summary in place of the fixed
+   * fields' layout (src/report/blocks). Absent, the fixed fields map onto blocks. */
+  blocks?: ReportBlock[]
 }
 
 /** The state's word and its status tone, as the sidebar's dots say it. */

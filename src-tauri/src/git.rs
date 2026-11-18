@@ -167,23 +167,42 @@ pub fn git_diff(path: String, file: String, untracked: bool) -> Result<String, S
 /// panel's polling never waits on a request that will not answer.
 const GH_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// `run`, killed after `limit`: `None` when it did not finish or failed to start.
-fn run_within(program: &str, cwd: &str, args: &[&str], limit: Duration) -> Option<(bool, String)> {
+/// Why a timed command gave no answer.
+#[derive(Debug, PartialEq)]
+enum Unanswered {
+    /// It could not start: the program is not installed (or not on the PATH).
+    Missing,
+    TimedOut,
+}
+
+/// A pipe read to its end on the side: a full pipe would block the child before it exits.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut out = String::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_string(&mut out);
+        }
+        out
+    })
+}
+
+/// A command killed after `limit`: whether it succeeded, its stdout and its stderr.
+fn output_within(
+    program: &str,
+    cwd: &str,
+    args: &[&str],
+    limit: Duration,
+) -> Result<(bool, String, String), Unanswered> {
     let mut child = Command::new(program)
         .args(args)
         .current_dir(cwd)
         .env("PATH", tool_path())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
-    // Read stdout on the side: a full pipe would block the child before it exits.
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut out = String::new();
-        let _ = stdout.read_to_string(&mut out);
-        out
-    });
+        .map_err(|_| Unanswered::Missing)?;
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
     let start = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -192,23 +211,108 @@ fn run_within(program: &str, cwd: &str, args: &[&str], limit: Duration) -> Optio
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                return Err(Unanswered::TimedOut);
             }
         }
     };
-    Some((status.success(), reader.join().unwrap_or_default()))
+    Ok((
+        status.success(),
+        stdout.join().unwrap_or_default(),
+        stderr.join().unwrap_or_default(),
+    ))
 }
+
+/// `run`, killed after `limit`: `None` when it did not finish or failed to start.
+fn run_within(program: &str, cwd: &str, args: &[&str], limit: Duration) -> Option<(bool, String)> {
+    output_within(program, cwd, args, limit)
+        .ok()
+        .map(|(ok, out, _)| (ok, out))
+}
+
+/// What the git panel and the PR cards read of a pull request.
+const PR_FIELDS: &str = "number,title,state,isDraft,url,additions,deletions,changedFiles,body,\
+                         statusCheckRollup,mergeable,mergeStateStatus,baseRefName,headRefName,\
+                         reviewDecision";
 
 /// The branch's pull request as `gh` reports it, or `None` without gh or without a PR. An
 /// error when gh did not answer in time: the panel keeps what it showed.
 #[tauri::command(async)]
 pub fn pr_view(path: String) -> Result<Option<String>, String> {
-    let fields = "number,title,state,isDraft,url,additions,deletions,changedFiles,body,\
-                  statusCheckRollup,mergeable,mergeStateStatus,baseRefName,headRefName";
-    match run_within("gh", &path, &["pr", "view", "--json", fields], GH_TIMEOUT) {
+    match run_within(
+        "gh",
+        &path,
+        &["pr", "view", "--json", PR_FIELDS],
+        GH_TIMEOUT,
+    ) {
         Some((true, out)) => Ok(Some(out)),
         Some((false, _)) => Ok(None),
         None => Err("gh did not answer".into()),
+    }
+}
+
+/// A GitHub pull request's address, `https://github.com/<owner>/<repo>/pull/<n>` (anything
+/// after the number, a `/files` or a `#comment`, dropped), and its `owner/repo`. The webview
+/// names a PR only this way: never a flag, never another host.
+pub fn pr_address(url: &str) -> Result<(String, String), String> {
+    let refuse = || format!("{url} is not a GitHub pull request");
+    let rest = url.strip_prefix("https://github.com/").ok_or_else(refuse)?;
+    let mut parts = rest.split(['/', '?', '#']);
+    let (owner, repo, pull, number) = (parts.next(), parts.next(), parts.next(), parts.next());
+    let name = |s: &str| {
+        !s.is_empty()
+            && !s.starts_with(['-', '.'])
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    match (owner, repo, pull, number) {
+        (Some(owner), Some(repo), Some("pull"), Some(n))
+            if name(owner)
+                && name(repo)
+                && !n.is_empty()
+                && n.len() <= 9
+                && n.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            Ok((
+                format!("https://github.com/{owner}/{repo}/pull/{n}"),
+                format!("{owner}/{repo}"),
+            ))
+        }
+        _ => Err(refuse()),
+    }
+}
+
+/// Where gh runs for a PR named by its address: the workspace, or home when it is gone (gh
+/// needs no checkout to read or merge a PR by its URL).
+pub fn gh_cwd(path: &str) -> String {
+    if !path.is_empty() && Path::new(path).is_dir() {
+        return path.to_string();
+    }
+    std::env::var("HOME").unwrap_or_else(|_| "/".into())
+}
+
+/// gh's own words on a failure, its first lines; or what kept it from answering.
+pub fn gh_failure(stderr: &str) -> String {
+    let message = stderr.trim().lines().take(3).collect::<Vec<_>>().join("\n");
+    if message.is_empty() {
+        "gh failed without saying why".into()
+    } else {
+        message
+    }
+}
+
+pub const GH_MISSING: &str = "gh is not installed: the GitHub CLI reads and merges pull requests.";
+
+/// A pull request named by its address (a link in a chat or a report), as `pr_view` reads the
+/// branch's. gh's own error when it fails, so the card can say what to do.
+#[tauri::command(async)]
+pub fn pr_view_url(path: String, url: String) -> Result<String, String> {
+    let (url, _) = pr_address(&url)?;
+    let args = ["pr", "view", url.as_str(), "--json", PR_FIELDS];
+    match output_within("gh", &gh_cwd(&path), &args, GH_TIMEOUT) {
+        Ok((true, out, _)) => Ok(out),
+        Ok((false, _, err)) => Err(gh_failure(&err)),
+        Err(Unanswered::Missing) => Err(GH_MISSING.into()),
+        Err(Unanswered::TimedOut) => Err("gh did not answer in time (network?)".into()),
     }
 }
 
@@ -297,6 +401,49 @@ mod tests {
             run_within("echo", "/", &["hi"], Duration::from_secs(5)),
             Some((true, "hi\n".to_string()))
         );
+    }
+
+    #[test]
+    fn a_missing_program_is_told_from_a_slow_one() {
+        assert_eq!(
+            output_within("no-such-tool-here", "/", &[], Duration::from_secs(1)),
+            Err(Unanswered::Missing)
+        );
+        let (ok, _, err) = output_within(
+            "sh",
+            "/",
+            &["-c", "echo oops >&2; exit 3"],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(!ok);
+        assert_eq!(gh_failure(&err), "oops");
+        assert_eq!(gh_failure("  "), "gh failed without saying why");
+    }
+
+    #[test]
+    fn a_pr_is_named_by_its_github_address_only() {
+        let pr = |u: &str| pr_address(u).map(|(url, repo)| format!("{repo} {url}"));
+        assert_eq!(
+            pr("https://github.com/nbardavid/logit/pull/128").unwrap(),
+            "nbardavid/logit https://github.com/nbardavid/logit/pull/128"
+        );
+        assert_eq!(
+            pr("https://github.com/a-b/c.d_e/pull/7/files#diff-1").unwrap(),
+            "a-b/c.d_e https://github.com/a-b/c.d_e/pull/7"
+        );
+        for bad in [
+            "https://github.com/o/r/issues/1",
+            "https://gitlab.com/o/r/pull/1",
+            "http://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/",
+            "https://github.com/o/r/pull/1x",
+            "https://github.com/-o/r/pull/1",
+            "https://github.com/o/../pull/1",
+            "--repo=x",
+        ] {
+            assert!(pr_address(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

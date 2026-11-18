@@ -1,9 +1,10 @@
-// The browser preview's agent reports (`report_get`), one per state: amber asks a question
-// (an open choice; `?report-ask` its chat waits on it, `?report-answered` it was answered),
-// teal has three steps of screens to review, violet's PR is ready with a migration left to run
-// (and the report is older than its chat; `?report-done` finished without a PR), basil is
-// blocked, coral (in amber's Agents tab) says everything at the limits. `?merged`: amber's
-// report is a ready PR, now merged. The others have none.
+// The browser preview's agent reports (`report_get`), one per state. amber (logit) asks a
+// question (an open choice; `?report-ask` its chat waits on it, `?report-answered` it was
+// answered), violet's PR is ready with a migration left to run (older than its chat, so it reads
+// as "Earlier"; `?report-done` finished without a PR), basil is blocked, plum is done with what
+// it did, coral (in amber's Agents tab) says everything at the limits, only with `?long`.
+// `?merged`: amber's report is a ready PR, now merged. atlas's reports are in desk.ts. The
+// screens are drawn here as SVG: a booking back-office (`shot`) and logit itself (`logitShot`).
 import type { Report } from '../model/report'
 
 const MIN = 60_000
@@ -12,7 +13,13 @@ const HOUR = 60 * MIN
 /** A screen of a small back-office app, drawn as an SVG data URL. */
 interface Screen {
   title: string
+  /** The app's name, top left. */
+  app?: string
   nav?: string
+  /** The table's four column heads. */
+  heads?: readonly string[]
+  /** The table's rows, four cells each; the default is a list of bookings. */
+  cells?: readonly (readonly string[])[]
   rows?: number
   /** A button at the heading's right; `new` rings it as the change. */
   button?: { label: string; new?: boolean }
@@ -29,29 +36,37 @@ interface Screen {
 }
 
 const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
-/** The table's columns: where each starts, and its cells' width. */
-const COLUMNS = [
-  [26, 52],
-  [120, 90],
-  [250, 70],
-  [360, 44],
-] as const
+const svgUrl = (w: number, h: number, parts: string[]) =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w * 2}" height="${h * 2}" viewBox="0 0 ${w} ${h}" font-family="-apple-system, BlinkMacSystemFont, system-ui, sans-serif">${parts.join('')}</svg>`
+  )}`
+/** Where each of the table's four columns starts. */
+const COLUMNS = [26, 128, 222, 312] as const
 const RING = 'stroke="#c29c87" stroke-width="2" fill="none" rx="5"'
+const BOOKINGS = [
+  ['Martin, Claire', 'B-2291', 'Lyon', '1 240 €'],
+  ['Bernard, Hugo', 'B-2288', 'Nice', '860 €'],
+  ['Dubois, Léa', 'B-2285', 'Paris', '2 015 €'],
+  ['Moreau, Paul', 'B-2279', 'Bordeaux', '430 €'],
+  ['Laurent, Inès', 'B-2276', 'Marseille', '1 780 €'],
+  ['Simon, Jules', 'B-2270', 'Lille', '615 €'],
+  ['Garcia, Emma', 'B-2266', 'Annecy', '990 €'],
+] as const
 
 export function shot(s: Screen): string {
   const w = 480
   const h = 300
   const parts: string[] = [
     `<rect width="${w}" height="${h}" fill="#fff"/>`,
-    `<rect width="${w}" height="34" fill="#fafaf9"/><line x1="0" y1="34" x2="${w}" y2="34" stroke="#ebeae9"/>`,
+    `<rect width="${w}" height="34" fill="#fafaf9"/><line x1="0" y1="34.5" x2="${w}" y2="34.5" stroke="#ebeae9"/>`,
     `<rect x="14" y="11" width="12" height="12" rx="3" fill="#3d6aa8"/>`,
-    `<text x="32" y="21.5" font-size="11" font-weight="600" fill="#282725">Agence</text>`,
-    `<text x="92" y="21.5" font-size="10.5" fill="#6c6a69">${esc(s.nav ?? 'Dossiers   Clients   Planning')}</text>`,
+    `<text x="32" y="21.5" font-size="11" font-weight="600" fill="#282725">${esc(s.app ?? 'Atlas')}</text>`,
+    `<text x="84" y="21.5" font-size="10.5" fill="#6c6a69" xml:space="preserve">${esc(s.nav ?? 'Bookings    Customers    Planning')}</text>`,
   ]
   if (s.search) {
     parts.push(
       `<rect x="300" y="8" width="166" height="18" rx="4" fill="#fff" stroke="#dddbd9"/>`,
-      `<text x="308" y="20.5" font-size="9.5" fill="${s.search.text === undefined ? '#a3a19f' : '#282725'}">${esc(s.search.text ?? 'Dossier, client…')}</text>`,
+      `<text x="308" y="20.5" font-size="9.5" fill="${s.search.text === undefined ? '#a3a19f' : '#282725'}">${esc(s.search.text ?? 'Booking, customer…')}</text>`,
       `<text x="446" y="20.5" font-size="9" fill="#a3a19f">⌘K</text>`
     )
     if (s.search.new === true) parts.push(`<rect x="296" y="4" width="174" height="26" ${RING}/>`)
@@ -60,7 +75,7 @@ export function shot(s: Screen): string {
     `<text x="16" y="62" font-size="15" font-weight="600" fill="#282725">${esc(s.title)}</text>`
   )
   if (s.button) {
-    const bw = 18 + s.button.label.length * 6
+    const bw = 18 + s.button.label.length * 5.6
     const bx = w - 16 - bw
     parts.push(
       `<rect x="${bx}" y="47" width="${bw}" height="22" rx="5" fill="#282725"/>`,
@@ -73,27 +88,30 @@ export function shot(s: Screen): string {
   if (s.strip) {
     parts.push(
       `<rect x="16" y="${y}" width="${w - 32}" height="24" rx="5" fill="#f3f8f3"/>`,
-      `<text x="26" y="${y + 15.5}" font-size="10" fill="#2f6b3e">${esc(s.strip.label)}</text>`
+      `<text x="26" y="${y + 15.5}" font-size="10" fill="#2f6b3e" xml:space="preserve">${esc(s.strip.label)}</text>`
     )
     if (s.strip.new === true)
       parts.push(`<rect x="12" y="${y - 4}" width="${w - 24}" height="32" ${RING}/>`)
     y += 34
   }
-  const rows = s.rows ?? 6
+  const cells = s.cells ?? BOOKINGS
+  const rows = Math.min(s.rows ?? 6, cells.length)
   parts.push(`<rect x="16" y="${y}" width="${w - 32}" height="22" fill="#fafaf9"/>`)
-  for (const [x, width] of COLUMNS) {
+  for (const [i, x] of COLUMNS.entries()) {
+    const head = (s.heads ?? ['Customer', 'Booking', 'City', 'Total'])[i] ?? ''
     parts.push(
-      `<rect x="${x}" y="${y + 8}" width="${width * 0.7}" height="6" rx="2" fill="#c9c6c3"/>`
+      `<text x="${x}" y="${y + 14.5}" font-size="9" font-weight="600" fill="#6c6a69">${esc(head)}</text>`
     )
   }
   for (let r = 0; r < rows; r++) {
     const ry = y + 22 + r * 24
     const dim = s.dimFrom !== undefined && r >= s.dimFrom
-    const ink = dim ? '#e6e4e1' : '#a3a19f'
-    parts.push(`<line x1="16" y1="${ry}" x2="${w - 16}" y2="${ry}" stroke="#ebeae9"/>`)
-    for (const [i, [x, width]] of COLUMNS.entries()) {
+    parts.push(`<line x1="16" y1="${ry + 0.5}" x2="${w - 16}" y2="${ry + 0.5}" stroke="#ebeae9"/>`)
+    for (const [i, x] of COLUMNS.entries()) {
+      let ink = i === 0 ? '#282725' : '#5a5856'
+      if (dim) ink = '#c9c6c3'
       parts.push(
-        `<rect x="${x}" y="${ry + 9}" width="${width - ((r * 7 + i * 5) % 20)}" height="6" rx="2" fill="${ink}"/>`
+        `<text x="${x}" y="${ry + 15.5}" font-size="10" fill="${ink}">${esc(cells[r]?.[i] ?? '')}</text>`
       )
     }
     if (s.badge && r < 2) {
@@ -113,16 +131,147 @@ export function shot(s: Screen): string {
     for (const [i, label] of s.results.entries()) {
       const ry = 36 + i * 30
       parts.push(
-        `<text x="242" y="${ry + 17}" font-size="10" font-weight="${i === 0 ? 600 : 400}" fill="#282725">${esc(label)}</text>`
-      )
-      parts.push(
-        `<rect x="412" y="${ry + 6}" width="48" height="16" rx="4" fill="${i === 0 ? '#282725' : '#f4f4f3'}"/>`
+        `<text x="242" y="${ry + 17}" font-size="10" font-weight="${i === 0 ? 600 : 400}" fill="#282725">${esc(label)}</text>`,
+        `<rect x="404" y="${ry + 6}" width="56" height="16" rx="4" fill="${i === 0 ? '#282725' : '#f4f4f3'}"/>`,
+        `<text x="420" y="${ry + 17}" font-size="8.5" font-weight="500" fill="${i === 0 ? '#fff' : '#5a5856'}">Open</text>`
       )
     }
-    parts.push(`<rect x="408" y="38" width="56" height="24" ${RING}/>`)
+    parts.push(`<rect x="400" y="38" width="64" height="24" ${RING}/>`)
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * 2}" height="${h * 2}" viewBox="0 0 ${w} ${h}" font-family="-apple-system, system-ui, sans-serif">${parts.join('')}</svg>`
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  return svgUrl(w, h, parts)
+}
+
+/** A logit window: the sidebar, a chat, and a right-click menu over it. */
+interface AppScreen {
+  /** The menu: where it opens, its items, the one under the pointer, the submenu it opened. */
+  menu?: { x: number; y: number; items: string[]; hover?: number; sub?: string[] }
+  /** Rings what changed. */
+  ring?: { x: number; y: number; w: number; h: number }
+}
+
+const SIDE_ROWS = [
+  ['Port the menus to Base UI', true],
+  ['Write the release notes', false],
+  ['Hide child workspaces', false],
+  ['Tests for the agent tree', false],
+] as const
+
+export function logitShot(s: AppScreen): string {
+  const w = 480
+  const h = 300
+  const parts: string[] = [
+    `<rect width="${w}" height="${h}" fill="#fff"/>`,
+    // The sidebar: traffic lights, the project, its workspaces.
+    `<rect width="128" height="${h}" fill="#f7f6f5"/><line x1="128.5" y1="0" x2="128.5" y2="${h}" stroke="#ebeae9"/>`,
+    ...['#ec6a5e', '#f4bf4f', '#61c554'].map(
+      (c, i) => `<circle cx="${12 + i * 12}" cy="13" r="3.5" fill="${c}"/>`
+    ),
+    `<rect x="10" y="34" width="10" height="10" rx="2.5" fill="#7c6f64"/>`,
+    `<text x="25" y="42.5" font-size="9.5" font-weight="600" fill="#282725">logit</text>`,
+  ]
+  for (const [i, [label, on]] of SIDE_ROWS.entries()) {
+    const y = 52 + i * 20
+    if (on) parts.push(`<rect x="6" y="${y}" width="116" height="18" rx="4" fill="#ecebea"/>`)
+    parts.push(
+      `<text x="14" y="${y + 12.5}" font-size="8.5" fill="${on ? '#282725' : '#6c6a69'}" font-weight="${on ? 500 : 400}">${esc(label)}</text>`
+    )
+  }
+  // The top bar and its tabs.
+  parts.push(
+    `<line x1="128" y1="28.5" x2="${w}" y2="28.5" stroke="#ebeae9"/>`,
+    `<text x="140" y="18" font-size="9.5" font-weight="600" fill="#282725">amber</text>`,
+    `<rect x="178" y="7" width="66" height="16" rx="4" fill="#ecebea"/>`,
+    `<text x="186" y="18" font-size="8.5" fill="#282725">Menus</text>`,
+    `<text x="256" y="18" font-size="8.5" fill="#6c6a69">Terminal</text>`
+  )
+  // The chat: a prompt, an answer.
+  parts.push(
+    `<rect x="300" y="44" width="164" height="22" rx="6" fill="#f4f4f3"/>`,
+    `<text x="310" y="58.5" font-size="8.5" fill="#282725">Port the menus to Base UI.</text>`,
+    `<text x="148" y="88" font-size="9" fill="#282725">Every menu now runs on Base UI: the tab menu, the</text>`,
+    `<text x="148" y="101" font-size="9" fill="#282725">sidebar's right-click and the model picker.</text>`,
+    `<text x="148" y="122" font-size="9" fill="#6c6a69">Edited src/components/ui/menu.tsx  +84 −131</text>`,
+    `<rect x="140" y="${h - 46}" width="${w - 156}" height="34" rx="7" fill="#fff" stroke="#dddbd9"/>`,
+    `<text x="152" y="${h - 25}" font-size="9" fill="#a3a19f">Ask Claude…</text>`
+  )
+  if (s.menu) {
+    const m = s.menu
+    const mw = 128
+    const mh = 8 + m.items.length * 20
+    parts.push(
+      `<rect x="${m.x + 1}" y="${m.y + 3}" width="${mw}" height="${mh}" rx="7" fill="#282725" fill-opacity="0.08"/>`,
+      `<rect x="${m.x}" y="${m.y}" width="${mw}" height="${mh}" rx="7" fill="#fff" stroke="#dddbd9"/>`
+    )
+    for (const [i, item] of m.items.entries()) {
+      const iy = m.y + 4 + i * 20
+      if (i === m.hover)
+        parts.push(
+          `<rect x="${m.x + 4}" y="${iy}" width="${mw - 8}" height="20" rx="4" fill="#f1f0ef"/>`
+        )
+      parts.push(
+        `<text x="${m.x + 12}" y="${iy + 13.5}" font-size="9" fill="#282725">${esc(item)}</text>`
+      )
+      if (item.endsWith('…') || (m.sub !== undefined && i === m.hover))
+        parts.push(
+          `<text x="${m.x + mw - 16}" y="${iy + 13.5}" font-size="9" fill="#a3a19f">›</text>`
+        )
+    }
+    if (m.sub !== undefined && m.hover !== undefined) {
+      const sx = m.x + mw - 4
+      const sy = m.y + m.hover * 20
+      const sh = 8 + m.sub.length * 20
+      parts.push(
+        `<rect x="${sx + 1}" y="${sy + 3}" width="${mw}" height="${sh}" rx="7" fill="#282725" fill-opacity="0.08"/>`,
+        `<rect x="${sx}" y="${sy}" width="${mw}" height="${sh}" rx="7" fill="#fff" stroke="#dddbd9"/>`
+      )
+      for (const [i, item] of m.sub.entries()) {
+        parts.push(
+          `<text x="${sx + 12}" y="${sy + 4 + i * 20 + 13.5}" font-size="9" fill="#282725">${esc(item)}</text>`
+        )
+      }
+    }
+  }
+  if (s.ring)
+    parts.push(
+      `<rect x="${s.ring.x}" y="${s.ring.y}" width="${s.ring.w}" height="${s.ring.h}" ${RING}/>`
+    )
+  return svgUrl(w, h, parts)
+}
+
+/** The tab's right-click menu, before (a click opens "Move to") and after (it opens on hover). */
+export const MENU_STEP = {
+  after: logitShot({
+    menu: {
+      hover: 2,
+      items: ['Rename', 'Duplicate', 'Move to', 'Close tab'],
+      sub: ['New window', 'amber · Terminal', 'teal · Notes'],
+      x: 200,
+      y: 30,
+    },
+    ring: { h: 76, w: 136, x: 320, y: 66 },
+  }),
+  before: logitShot({
+    menu: { hover: 2, items: ['Rename', 'Duplicate', 'Move to…', 'Close tab'], x: 200, y: 30 },
+  }),
+  step: 'The tab menu: "Move to" opens on hover',
+}
+
+/** The question amber's chat asks with AskUserQuestion, as its report says it. */
+export const REPORT_QUESTION = {
+  header: 'Submenus',
+  multiSelect: false,
+  options: [
+    {
+      description: 'As macOS menus do: rest on the item a moment and it slides out.',
+      label: 'On hover, after 150 ms (Recommended)',
+    },
+    {
+      description: 'Nothing opens by accident, one more click every time.',
+      label: 'Only on click or →',
+    },
+    { description: 'Hover for the mouse, → for the keyboard, click for both.', label: 'All three' },
+  ],
+  question: 'How should a submenu open: on hover, or only on click and →?',
 }
 
 const ask = (now: number): Report => ({
@@ -131,93 +280,46 @@ const ask = (now: number): Report => ({
   choices: [
     {
       open: false,
-      setAside: 'un bandeau qui leur demande de vérifier chaque fiche',
-      text: 'Les totaux faux sont corrigés sans rien demander aux secrétaires',
+      setAside: 'anchored under the row it belongs to',
+      text: 'A right-click menu opens where the pointer is',
     },
-    {
-      open: true,
-      text: 'Comment réparer les 212 dossiers déjà faux : en base, ou par un bouton dans la fiche ?',
-    },
+    { open: true, text: REPORT_QUESTION.question },
     {
       open: false,
-      setAside: 'aucune trace visible',
-      text: 'Une ligne « Total recalculé le 18/11 » sur la fiche, pendant 30 jours',
+      setAside: 'Esc closing every level at once',
+      text: 'Esc closes one level at a time',
     },
   ],
   feature:
-    'La fiche facture d’un dossier patient. Les secrétaires y lisent le total à encaisser et la part de la mutuelle, au guichet, patient en face.',
+    'Every menu in logit: the tab and sidebar right-click menus, the model picker, ⌘P. People open them dozens of times an hour.',
   left: [],
-  links: [{ label: 'RAI-2051 on Linear', url: 'https://linear.app/labo/issue/RAI-2051' }],
+  links: [{ label: 'Issue #212', url: 'https://github.com/nbardavid/logit/issues/212' }],
   problem:
-    'Une secrétaire ouvre un dossier de septembre : total 0,00 € alors que trois analyses ont été faites. Elle refait le calcul à la main, ou laisse partir le patient sans encaisser.',
+    'The old menus took the focus from the composer, so typing after a menu went nowhere, and a right-click on a tab sometimes opened two menus.',
   screens: [],
   state: 'question',
   summary:
-    'Le total était remis à zéro quand une analyse était ajoutée après la validation. Le calcul est corrigé ; reste à savoir comment réparer les dossiers déjà faux.',
-  ticket: 'RAI-2051',
-  title: 'Totaux de facture à 0 €',
+    'Every menu now runs on Base UI and gives the focus back to the composer. One choice is left: how a submenu opens.',
+  ticket: '#212',
+  title: 'Port the menus to Base UI',
   workspaceId: 'ws-amber',
 })
 
-const review = (now: number): Report => ({
-  at: now - 41 * MIN,
-  chatId: 'chat-notes',
-  choices: [
-    {
-      open: false,
-      setAside: 'un champ en haut de la liste Dossiers seulement',
-      text: 'La recherche est dans la barre du haut, sur toutes les pages (⌘K)',
-    },
-    {
-      open: false,
-      setAside: '« Nouveau devis » d’abord',
-      text: 'Chaque résultat a deux boutons : « Ouvrir » d’abord, « Nouveau devis » ensuite',
-    },
-    {
-      open: false,
-      setAside: 'aussi dans les notes internes, trop de bruit',
-      text: 'On cherche dans le n° de dossier, le nom du client et la destination',
-    },
-    { open: false, setAside: 'masqués', text: 'Les dossiers annulés sortent en dernier, grisés' },
+/** The lab's drafts list, for violet's screens (pragma-once's reports are in French). */
+const DRAFTS = {
+  app: 'Labo',
+  cells: [
+    ['Mme Roux', 'Bilan lipidique', 'Dr Faure', '12/08'],
+    ['M. Petit', 'NFS', 'Dr Faure', '14/08'],
+    ['Mme Blanc', 'TSH', 'Dr Chevalier', '02/09'],
+    ['M. Henry', 'Glycémie', 'Dr Faure', '05/09'],
+    ['Mme Perrin', 'Ferritine', 'Dr Chevalier', '11/09'],
+    ['M. Morel', 'Bilan hépatique', 'Dr Faure', '18/09'],
   ],
-  feature: 'La liste des dossiers du back-office, où les agents retrouvent un voyage en cours.',
-  left: [],
-  links: [],
-  problem:
-    'Pour retrouver un dossier, un agent fait défiler la liste ou filtre colonne par colonne : une minute par appel client.',
-  screens: [
-    {
-      after: shot({ button: { label: 'Nouveau devis' }, search: { new: true }, title: 'Dossiers' }),
-      before: shot({ button: { label: 'Nouveau devis' }, title: 'Dossiers' }),
-      step: 'La barre du haut',
-    },
-    {
-      after: shot({
-        results: ['D-0412 · Famille Morel', 'D-0405 · Famille Moreau', 'C-1187 · Mme Morin'],
-        rows: 5,
-        search: { text: 'mor' },
-        title: 'Dossiers',
-      }),
-      before: shot({
-        rows: 4,
-        strip: { label: 'N° dossier   ·   Client   ·   Destination   ·   Filtrer' },
-        title: 'Dossiers',
-      }),
-      step: 'Trouver un dossier',
-    },
-    {
-      after: shot({ dimFrom: 4, search: {}, title: 'Dossiers · annulés en dernier' }),
-      before: shot({ search: {}, title: 'Dossiers · annulés en dernier' }),
-      step: 'Les dossiers annulés',
-    },
-  ],
-  state: 'review',
-  summary:
-    'Une recherche dans la barre du haut retrouve un dossier en trois lettres, de n’importe quelle page.',
-  ticket: '#335',
-  title: 'Recherche de dossier',
-  workspaceId: 'ws-teal',
-})
+  heads: ['Patient', 'Analyse', 'Biologiste', 'Créé le'],
+  nav: 'Comptes-rendus    Réglages',
+  title: 'Brouillons',
+}
 
 const ready = (now: number): Report => ({
   at: now - 26 * HOUR,
@@ -256,12 +358,8 @@ const ready = (now: number): Report => ({
     'La liste compte 1 900 brouillons, dont 600 de plus de trois mois que personne ne rouvrira.',
   screens: [
     {
-      after: shot({
-        badge: { label: 'Corbeille 12 j', new: true },
-        nav: 'Comptes-rendus   Réglages',
-        title: 'Brouillons',
-      }),
-      before: shot({ nav: 'Comptes-rendus   Réglages', title: 'Brouillons' }),
+      after: shot({ ...DRAFTS, badge: { label: 'Corbeille 12 j', new: true } }),
+      before: shot(DRAFTS),
       step: 'La liste des brouillons',
     },
   ],
@@ -351,13 +449,45 @@ const done = (now: number): Report => ({
 const shipped = (now: number): Report => ({
   ...ask(now),
   choices: ask(now).choices.filter((c) => !c.open),
-  left: ['Merger la PR', 'Vérifier lundi la caisse du guichet 2'],
+  left: ['Merge the PR', 'Try the tab menu on a second display'],
   links: [
     { label: 'PR #128', url: 'https://github.com/nbardavid/logit/pull/128' },
-    { label: 'RAI-2051 on Linear', url: 'https://linear.app/labo/issue/RAI-2051' },
+    { label: 'Issue #212', url: 'https://github.com/nbardavid/logit/issues/212' },
   ],
   state: 'ready',
-  summary: 'Le total est juste à nouveau, et les 212 dossiers faux sont réparés en base.',
+  summary: 'Every menu runs on Base UI, and a submenu opens on hover after 150 ms.',
+})
+
+/** plum, done: the agent tree's tests, with what it did and what it found on the way. */
+const tested = (now: number): Report => ({
+  at: now - 7 * MIN,
+  blocks: [
+    {
+      items: [
+        { detail: 'agent-tree.test.ts, 14 tests', status: 'done', text: 'Wrote the tree’s tests' },
+        { status: 'done', text: 'Fixed the child that lost its parent' },
+        { detail: '611 of 611', status: 'done', text: 'Ran the whole suite' },
+        { status: 'done', text: 'Lint and format pass' },
+      ],
+      kind: 'steps',
+    },
+    {
+      kind: 'callout',
+      text: 'A child whose parent chat was closed showed at the top level of the tree. It now stays under its workspace; one of the new tests holds it.',
+      title: 'Found on the way',
+      tone: 'note',
+    },
+  ],
+  chatId: 'chat-plum',
+  choices: [],
+  left: [],
+  links: [],
+  screens: [],
+  state: 'done',
+  summary:
+    'The agent tree has its tests: 14 new ones, all green, and the bug they caught is fixed.',
+  title: 'Tests for the agent tree',
+  workspaceId: 'ws-plum',
 })
 
 /** Every fixture report, by workspace. */
@@ -365,30 +495,13 @@ export function reportFixtures(now: number, flags: URLSearchParams): Record<stri
   return Object.fromEntries(
     [
       flags.has('merged') ? shipped(now) : ask(now),
-      review(now),
       flags.has('report-done') ? done(now) : ready(now),
       blocked(now),
-      long(now),
+      tested(now),
+      // The stress report only with `?long`: it must not be the first thing Desk shows.
+      ...(flags.has('long') ? [long(now)] : []),
     ].map((r) => [r.workspaceId, r])
   )
-}
-
-/** The question amber's chat asks with AskUserQuestion, as its report says it. */
-export const REPORT_QUESTION = {
-  header: 'Réparation',
-  multiSelect: false,
-  options: [
-    {
-      description: 'Une migration ponctuelle : les 212 fiches sont justes demain matin.',
-      label: 'Réparer en base (Recommended)',
-    },
-    {
-      description: 'La secrétaire corrige quand elle ouvre un dossier à 0 €.',
-      label: 'Bouton « Recalculer » dans la fiche',
-    },
-    { description: 'Migration maintenant, bouton pour les cas à venir.', label: 'Les deux' },
-  ],
-  question: 'Comment réparer les 212 dossiers déjà faux : en base, ou par un bouton ?',
 }
 
 /** What Claude Code says once AskUserQuestion is answered. */
@@ -407,8 +520,8 @@ export function liveReport(now: number, asks = false): Report {
     ...was,
     at: now,
     choices,
-    screens: [review(now).screens[0] ?? { step: '' }],
+    screens: [MENU_STEP],
     state: 'review',
-    summary: 'Les 212 dossiers sont réparés en base ; voici la fiche avant et après.',
+    summary: 'A submenu now opens on hover after 150 ms; here is the tab menu before and after.',
   }
 }

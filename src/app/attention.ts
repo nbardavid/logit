@@ -8,9 +8,13 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification'
 
+import type { Attention } from './toast'
+import type { ChatTab } from './use-chats'
+
 import bell from '../assets/sounds/bell.wav'
 import ding from '../assets/sounds/ding.wav'
 import plane from '../assets/sounds/plane.wav'
+import { toolSummary } from '../chat/model'
 import { effectiveValue, rowById, type SettingValue } from '../settings/schema'
 
 const FILES: Record<string, string> = { Bell: bell, Ding: ding, Plane: plane }
@@ -59,4 +63,22 @@ export async function playChosenSound(): Promise<void> {
 export async function notify(body: string): Promise<void> {
   const granted = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
   if (granted) sendNotification({ body, title: 'logit' })
+}
+
+/** The toast for a chat that waits on the user, in workspace `w` of project `p`. */
+export function waitingAttention(
+  chat: ChatTab,
+  p: { id: string; name: string },
+  w: { id: string; name: string }
+): Attention {
+  const ask = chat.state.pending[0]
+  const what = ask && (toolSummary(ask.toolName, ask.input, chat.cwd) || (ask.description ?? ''))
+  return {
+    asks: ask ? { tool: ask.toolName, what: what ?? '' } : null,
+    chatId: chat.record.id,
+    projectId: p.id,
+    title: chat.record.title,
+    where: `${w.name} · ${p.name}`,
+    workspaceId: w.id,
+  }
 }

@@ -151,3 +151,16 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
 
 // `.btn-danger:hover` darkens the red rather than fading it.
 const DANGER_HOVER = 'hover:bg-[color-mix(in_srgb,var(--critical)_88%,black)]'
+
+/** No browser menu (Reload, Inspect…): rows bring their own; text fields keep Copy and Paste. */
+export function useNoBrowserMenu() {
+  useEffect(() => {
+    const onMenu = (e: MouseEvent) => {
+      const editable =
+        e.target instanceof HTMLElement && e.target.closest('input, textarea, .xterm') !== null
+      if (!editable && (window.getSelection()?.toString() ?? '') === '') e.preventDefault()
+    }
+    window.addEventListener('contextmenu', onMenu)
+    return () => window.removeEventListener('contextmenu', onMenu)
+  }, [])
+}

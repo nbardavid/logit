@@ -90,6 +90,11 @@
   --shadow-dialog: 0 24px 64px -24px rgb(43 40 38 / 0.32);
   --shadow-composer: 0 1px 2px rgb(40 39 37 / 0.04), 0 4px 12px -6px rgb(40 39 37 / 0.08);
 
+  /* Waiting's wash, beside good-wash and critical-wash: an assumption, a warn mark. */
+  --warn-wash: #fbf4e2;
+  /* Settling into place: quick out, long settle, no overshoot. */
+  --ease-settle: cubic-bezier(0.2, 0, 0, 1);
+
   color-scheme: light;
 }
 
@@ -113,6 +118,12 @@
   /* The user bubble, composer text, the top bar's title, PR status, card titles. */
   --text-base: 14px;
   --text-base--line-height: 22px;
+  /* Prose outside markdown: a report's lead, Desk's question and its choices. */
+  --text-md: 15px;
+  --text-md--line-height: 24px;
+  /* A report's title (Desk's detail, the Report tab); semibold. */
+  --text-title: 18px;
+  --text-title--line-height: 26px;
   /* Empty-state titles only. */
   --text-lg: 20px;
   --text-lg--line-height: 28px;
@@ -183,6 +194,7 @@
   --color-tick: var(--tick);
   --color-line-ink: var(--line-ink);
   --color-line-strong: var(--line-strong);
+  --color-warn-wash: var(--warn-wash);
 }
 
 /* Element defaults, in Tailwind's base layer: after its preflight, under every utility. */
@@ -444,6 +456,30 @@ body.resizing * {
   }
 }
 
+/* A screen's frame: a hairline of pure black at low alpha, so any screenshot sits clean on
+   any surface. */
+@layer components {
+  .frame {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
+    transition: box-shadow 120ms ease-out;
+  }
+  .frame:enabled:hover {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.14);
+  }
+  /* A block rising into place, a beat after the one before (`--i`). */
+  .block-in {
+    animation: block-in 240ms var(--ease-settle) backwards;
+    animation-delay: calc(min(var(--i, 0), 8) * 30ms);
+  }
+}
+
+@keyframes block-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 /* Rendered markdown (Claude's answers, a command's output): 15 / 24 prose. In the components
    layer, so a utility on the `.md` element (a smaller size for an output card) wins. */
 @layer components {
@@ -652,6 +688,12 @@ body.resizing * {
   }
 
   @keyframes pop {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes block-in {
     from {
       opacity: 0;
     }

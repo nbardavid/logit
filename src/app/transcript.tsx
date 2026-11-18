@@ -18,6 +18,9 @@ import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
+import type { PrRef } from '../git/pr-link'
+
+import { PrCards } from '../cards/pr-card'
 import {
   agentRun,
   type AgentRun,
@@ -40,6 +43,7 @@ import {
   type Turn,
   type TurnEnd,
 } from '../chat/model'
+import { cardSpot, chatPrCards } from '../chat/pr-cards'
 import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
@@ -697,12 +701,15 @@ function TurnFooter({
 
 function ExchangeView({
   agentOf,
+  cards,
   cwd,
   exchange,
   onOpenAgent,
   onOpenFile,
 }: {
   exchange: Exchange
+  /** The chat's PR cards, by where they go (`chatPrCards`). */
+  cards: Map<string, PrRef[]>
   cwd: string
   agentOf: (id: string) => AgentRun | null
   onOpenAgent?: (id: string) => void
@@ -736,6 +743,12 @@ function ExchangeView({
     ) : (
       <div key={it.key} className={ENTER}>
         <BlockView block={it.block} live={live && it.block === lastBlock} collapsed={collapsed} />
+        {/* Its PRs, live, once it is written: they rise in under it. */}
+        {cards.has(cardSpot(exchange.key, it.key)) && (
+          <div className={cn('mt-3', ENTER)}>
+            <PrCards links={cards.get(cardSpot(exchange.key, it.key)) ?? []} cwd={cwd} />
+          </div>
+        )}
       </div>
     )
   }
@@ -926,6 +939,7 @@ export const Transcript = memo(function Transcript({
   const empty = state.turns.length === 0 && !blocked
   const all = exchanges(state.turns, working, new Set(state.pending.map((p) => p.toolUseId)))
   const { first, sentinel } = useWindow(scroller, all.length)
+  const cards = chatPrCards(all)
 
   const toLatest = () => {
     const el = scroller.current
@@ -978,6 +992,7 @@ export const Transcript = memo(function Transcript({
             >
               <ExchangeView
                 exchange={exchange}
+                cards={cards}
                 cwd={cwd}
                 agentOf={(id) => agentRun(state, id)}
                 onOpenAgent={onOpenAgent}

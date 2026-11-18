@@ -1,32 +1,57 @@
 // The browser preview (`bun run web:dev` opened in a browser): Tauri's IPC answered from
 // fixtures, so every screen can be looked at and screenshotted without the app. Loaded by
 // main.tsx only in vite dev and only outside Tauri. Query flags reach the states fixtures
-// alone cannot: `?empty` no project, `?bare` a project without workspaces, `?heavy` 12 long running chats (start profiling), `?restart` a host
-// from an older protocol holding work (the restart bar), `?update` a release waiting (the
-// pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
-// (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
-// (truncation), `?empty-inbox` nothing waiting or done, `?merged` amber's PR merged (Clean up
-// with a full transcript to crumble), `?artifacts` ten pages on amber (two new), `?no-mcp` no
-// MCP servers for `/mcp` (else one in each state, src/dev/mcp.ts), `?no-reports` no agent report
-// (else one per state, src/dev/reports.ts: amber, teal, violet, basil, coral), `?report-slow`
-// reports read in 1.5 s (the loading state), `?report-fail` every read fails (the error state),
-// `?report-live` amber's chat writes a new report 5 s in (the tab's cue), `?report-ask` amber's
-// chat waits on the report's question (AskUserQuestion), `?report-answered` it was answered,
-// `?report-done` violet finished without a PR, `?report-live-ask` amber's chat writes a new
-// question 5 s in (go elsewhere first: coming back to amber opens its Report tab). Replies stream in over about two
-// seconds; every other one asks to run a tool first. Stage, discard, push and merge change
-// what the panel shows. A setup run takes about eight seconds; deleting a workspace with
-// changes (stat tiles' Clean up, teal's menu) is refused, so "Delete anyway" shows.
-// basil has no PR and two commits to push.
+// alone cannot:
+// - `?empty` no project, `?bare` a project without workspaces, `?heavy` 12 long running chats
+//   (start profiling), `?long` long names, many tabs and files (truncation), and coral's report
+//   at every limit;
+// - `?restart` a host from an older protocol holding work (the restart bar), `?update` a
+//   release waiting (the pill), `?attention` a chat asking from another tab (the toast),
+//   `?fail` a failing call (the error toast: Setup › Write it with a chat);
+// - `?empty-inbox` nothing waiting or unread, and only done reports (Desk: "Nothing needs
+//   you"), `?merged` amber's PR merged (Clean up with a full transcript to crumble),
+//   `?artifacts` ten pages on amber (two new), `?no-mcp` no MCP servers for `/mcp` (else one in
+//   each state, src/dev/mcp.ts);
+// - PR cards (src/dev/pull-requests.ts): `?prs` adds amber a chat "Ship this week's pull
+//   requests" linking a PR in every state (#209 is slow, #208 fails, #211 refuses the merge,
+//   #202's checks finish 20 s after its first read) and gives teal a report naming them;
+//   `?pr-slow` holds every PR read 3 s (the skeleton), `?pr-fail` fails every read (gh signed
+//   out), `?pr-merge-fail` refuses every merge. Merging walks armed, merging (1.4 s), merged;
+// - reports (src/dev/reports.ts, atlas's in src/dev/desk.ts): `?no-reports` none,
+//   `?report-slow` reads take 1.5 s (`=ms`; the loading state), `?report-fail` every read fails
+//   (the error state), `?report-live` amber's chat writes a new report 5 s in (the tab's cue),
+//   `?report-ask` amber's chat waits on the report's question (AskUserQuestion),
+//   `?report-answered` it was answered, `?report-done` violet finished without a PR,
+//   `?report-live-ask` amber's chat writes a new question 5 s in (go elsewhere first: coming
+//   back to amber opens its Report tab);
+// - Desk (⌘0): twelve workspaces over three projects in every group and state
+//   (src/dev/desk.ts); `?no-desk` leaves out atlas, the third project, and the chats Desk adds;
+//   `?send-fail` fails every write to a chat (an answer that could not go);
+// - `?gallery` shows the UI primitives and `?blocks` every report block (src/dev/blocks.tsx)
+//   instead of the app.
+// Replies stream in over about two seconds; every other one asks to run a tool first. Stage,
+// discard, push and merge change what the panel shows. A setup run takes about eight seconds;
+// deleting a workspace with changes (stat tiles' Clean up, teal's menu) is refused, so
+// "Delete anyway" shows. basil has no PR and two commits to push.
 
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 
 import type { FileChange } from '../app/use-git'
 import type { Catalog, Workspace } from '../model/catalog'
+import type { Report } from '../model/report'
 
 import kitesScene from '../../src-tauri/backgrounds/kites.js?raw'
 import koiScene from '../../src-tauri/backgrounds/koi.js?raw'
 import { usageAnswer } from './context-usage'
+import {
+  DESK_ASKED,
+  DESK_HOST_CHATS,
+  DESK_LINES,
+  DESK_SESSIONS,
+  DESK_TRANSCRIPTS,
+  deskReports,
+  withDesk,
+} from './desk'
 import { fakeArtifacts } from './fake-artifacts'
 import {
   assistant,
@@ -65,6 +90,7 @@ import {
 import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
 import { KID_HOST_CHATS, withKids } from './orchestra'
+import { PR_CHAT, prMergeUrl, prReport, prViewUrl } from './pull-requests'
 import { answeredText, liveReport, REPORT_QUESTION, reportFixtures } from './reports'
 import { SERVER_OUTPUT, serversAnswer } from './servers'
 
@@ -78,7 +104,7 @@ type Args = Record<string, unknown>
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty')
   ? { chats: [], projects: [], workspaces: [] }
-  : withKids(catalog(), Date.now())
+  : withKids(flags.has('no-desk') ? catalog() : withDesk(catalog(), Date.now()), Date.now())
 // `?wallpaper=Kites` opens on that chat background.
 if (flags.has('wallpaper')) SETTINGS.settings['ui.wallpaper'] = flags.get('wallpaper')
 if (flags.has('merged'))
@@ -86,6 +112,10 @@ if (flags.has('merged'))
 if (flags.has('artifacts')) {
   const first = store.workspaces.find((w) => w.id === 'ws-amber')
   if (first) first.artifacts = fakeArtifacts(10, Date.now())
+}
+if (flags.has('prs')) {
+  store.chats.push(PR_CHAT.record(Date.now()))
+  TRANSCRIPTS['session-prs'] = PR_CHAT.transcript()
 }
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 // When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
@@ -100,6 +130,12 @@ for (const c of store.chats) {
 }
 const hostList = structuredClone(HOST_STATUS.list)
 hostList.chats.unshift(...KID_HOST_CHATS)
+if (!flags.has('no-desk') && !flags.has('empty')) {
+  hostList.chats.push(...DESK_HOST_CHATS)
+  Object.assign(HOSTED_LINES, DESK_LINES)
+  Object.assign(TRANSCRIPTS, DESK_TRANSCRIPTS)
+  SESSIONS.push(...DESK_SESSIONS(Date.now()))
+}
 if (flags.has('long')) {
   const long = longFixture()
   store.projects.push(long.project)
@@ -188,12 +224,13 @@ function reportAskLines(): string[] {
     }),
   ]
 }
-/** What the host replays of a chat; `?empty-inbox` leaves its question out. */
+/** What the host replays of a chat; `?empty-inbox` leaves every ask out, `?question` and
+ * `?report-ask` amber's (they put their own in its place). */
 const replayOf = (id: string) => {
+  const drop =
+    flags.has('empty-inbox') || (id === 'chat-menus' && (flags.has('question') || REPORT_ASK))
   const lines = (HOSTED_LINES[id] ?? []).filter(
-    (l) =>
-      !(flags.has('empty-inbox') || flags.has('question') || REPORT_ASK) ||
-      !l.includes('"subtype":"can_use_tool"')
+    (l) => !drop || !l.includes('"subtype":"can_use_tool"')
   )
   // `?question`: the busy chat's ask is AskUserQuestion's, before it goes live.
   if (flags.has('question') && id === 'chat-menus')
@@ -211,6 +248,7 @@ if (flags.has('report-ask'))
     prompt: 'the report question',
     toolId: 'tool-report-ask',
   })
+if (!flags.has('no-desk')) for (const [id, ask] of DESK_ASKED) asked.set(id, ask)
 let replies = 0
 
 /** Lines spread over `ms`, as Claude writes them. */
@@ -437,15 +475,37 @@ function setGitFlags(path: string, files: string[] | 'all', patch: Partial<FileC
   }
 }
 
-/** Each workspace's latest report, as the host keeps it. */
-const reports = flags.has('no-reports') ? {} : reportFixtures(Date.now(), flags)
+/** `?report-slow=6000` holds the reads that long (1.5 s by default). */
+const SLOW_MS = Number(flags.get('report-slow')) || 1500
+
+/** Each workspace's latest report, as the host keeps it; `?empty-inbox` keeps the done ones. */
+const reports: Record<string, Report> = flags.has('no-reports')
+  ? {}
+  : Object.fromEntries(
+      Object.entries({
+        ...reportFixtures(Date.now(), flags),
+        ...(flags.has('no-desk') ? {} : deskReports(Date.now())),
+        ...(flags.has('prs') ? { 'ws-teal': prReport(Date.now()) } : {}),
+      }).filter(([, r]) => !flags.has('empty-inbox') || r.state === 'done')
+    )
 
 /** `report_get`: the workspace's report, slowly or failing when the flags ask. */
 async function reportGet(workspace: string) {
   if (flags.has('report-slow') || flags.has('report-fail'))
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await new Promise((resolve) => setTimeout(resolve, SLOW_MS))
   if (flags.has('report-fail')) throw new Error('The host did not answer (report_get timed out).')
   return structuredClone(reports[workspace] ?? null)
+}
+
+/** `report_list`: every workspace's report, newest first, without its screens' images. */
+async function reportList() {
+  if (flags.has('report-slow') || flags.has('report-fail'))
+    await new Promise((resolve) => setTimeout(resolve, SLOW_MS))
+  if (flags.has('report-fail')) throw new Error('The host did not answer (report_list timed out).')
+  return Object.values(reports)
+    .filter((r) => store.workspaces.some((w) => w.id === r.workspaceId))
+    .toSorted((a, b) => b.at - a.at)
+    .map((r) => ({ ...r, screens: r.screens.map((s) => ({ step: s.step })) }))
 }
 
 /** `?report-live`: amber's chat calls the `report` tool, and the host keeps the new report. */
@@ -454,7 +514,7 @@ if (flags.has('report-live') || flags.has('report-live-ask')) {
     const asks = flags.has('report-live-ask')
     reports['ws-amber'] = liveReport(Date.now(), asks)
     const toolId = `toolu-report-${Date.now()}`
-    const input = { state: asks ? 'question' : 'review', title: 'Totaux de facture à 0 €' }
+    const input = { state: asks ? 'question' : 'review', title: 'Port the menus to Base UI' }
     later(chats.get('chat-menus'), [
       assistant(`m-${toolId}`, [
         { id: toolId, input, name: 'mcp__logit__report', type: 'tool_use' },
@@ -478,6 +538,8 @@ function handle(cmd: string, args: Args): unknown {
       return structuredClone(store)
     case 'report_get':
       return reportGet(str(args.workspace))
+    case 'report_list':
+      return reportList()
     case 'host_status':
       return { list: hostList, protocolOk: !flags.has('restart') }
     case 'claude_models':
@@ -502,6 +564,7 @@ function handle(cmd: string, args: Args): unknown {
       return null
     }
     case 'chat_send':
+      if (flags.has('send-fail')) throw new Error('The host is not answering')
       chatSend(args)
       return null
     case 'chat_save': {
@@ -650,6 +713,10 @@ function handle(cmd: string, args: Args): unknown {
       if (b) Object.assign(b, { ahead: 0, upstream: true })
       return null
     }
+    case 'pr_view_url':
+      return prViewUrl(str(args.url), flags)
+    case 'pr_merge_url':
+      return prMergeUrl(str(args.url), flags)
     case 'pr_merge': {
       const pr = PRS[path]
       if (pr) pr.state = 'MERGED'
