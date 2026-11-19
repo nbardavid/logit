@@ -18,7 +18,11 @@
 //   requests" linking a PR in every state (#209 is slow, #208 fails, #211 refuses the merge,
 //   #202's checks finish 20 s after its first read) and gives teal a report naming them;
 //   `?pr-slow` holds every PR read 3 s (the skeleton), `?pr-fail` fails every read (gh signed
-//   out), `?pr-merge-fail` refuses every merge. Merging walks armed, merging (1.4 s), merged;
+//   out), `?pr-merge-fail` refuses every merge (a review is required). Merging walks armed,
+//   merging (1.4 s), merged. Merged, a card whose PR is its own workspace's offers Delete
+//   workspace: amber's #128 in the `?prs` chat (`?merged` reads it merged; amber has changes,
+//   so it asks "Delete anyway"), moss's #418 in Desk (no changes: the row leaves), while #206,
+//   no workspace's, offers nothing; `?delete-fail` refuses every workspace deletion;
 // - reports (src/dev/reports.ts, atlas's in src/dev/desk.ts): `?no-reports` none,
 //   `?report-slow` reads take 1.5 s (`=ms`; the loading state), `?report-fail` every read fails
 //   (the error state), `?report-live` amber's chat writes a new report 5 s in (the tab's cue),
@@ -633,6 +637,8 @@ function handle(cmd: string, args: Args): unknown {
     case 'workspace_create':
       return createWorkspace(args)
     case 'workspace_remove': {
+      if (flags.has('delete-fail'))
+        throw new Error('fatal: cannot remove a locked working tree, lock reason: in use')
       // As git does: a worktree with changes is removed only by force.
       const w = store.workspaces.find((x) => x.id === args.id)
       if (w && args.force !== true && (GIT_STATUS[w.path] ?? []).length > 0) {

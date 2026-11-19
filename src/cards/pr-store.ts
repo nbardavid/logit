@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import type { PrRef } from '../git/pr-link'
+import type { Workspace } from '../model/catalog'
 
 import { type PullRequest, toPullRequest } from '../git/pr'
 import { alreadyMerged } from './pr-card-model'
@@ -117,6 +118,27 @@ export async function mergePr(ref: PrRef, cwd: string | undefined, head: string)
   if (shown) update(ref.key, { pr: { ...shown, state: 'Merged' } })
   for (const fn of merged) fn()
   void loadPr(ref, cwd, 0)
+}
+
+/** What a merged card can close: the app's workspaces, and the git panel's clean up of one. */
+export interface CardPlaces {
+  workspaces: readonly Workspace[]
+  /** Rejects with git's refusal; `force` discards uncommitted changes. */
+  remove: (w: Workspace, force: boolean) => Promise<void>
+}
+let places: CardPlaces | null = null
+const placeWatchers = new Set<() => void>()
+/** Given by the app; absent (the gallery), a merged card offers nothing. */
+export function setCardPlaces(next: CardPlaces | null) {
+  places = next
+  for (const fn of placeWatchers) fn()
+}
+export const cardPlaces = () => places
+export function watchCardPlaces(fn: () => void): () => void {
+  placeWatchers.add(fn)
+  return () => {
+    placeWatchers.delete(fn)
+  }
 }
 
 /** Tests only: forget every PR. */

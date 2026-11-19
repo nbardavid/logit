@@ -1,6 +1,7 @@
 // What the PR card says, as plain functions: its checks in one line, whether Merge is offered
-// (as the git panel's head decides it), and gh's failures in words a person can act on.
-import { type Check, prHeadline, type PullRequest } from '../git/pr'
+// (as the git panel's head decides it), which workspace a merged PR closes, and gh's and git's
+// failures in words a person can act on.
+import { type Check, prHeadline, type PullRequest, uncommittedRefusal } from '../git/pr'
 
 export interface CiSummary {
   tone: 'none' | 'running' | 'passing' | 'failing'
@@ -70,6 +71,34 @@ export function mergeQuestion(pr: PullRequest, risky: boolean): string {
   return `${failing} ${failing === 1 ? 'check' : 'checks'} failing. Merge anyway?`
 }
 
+/**
+ * The workspace a merged PR closes: the one the card sits in (`cwd`, its folder: a chat's or a
+ * report's workspace), when the PR's head is its branch. Someone else's PR, or one of another
+ * branch, has none.
+ */
+export function workspaceOfPr<W extends { path: string; branch: string }>(
+  workspaces: readonly W[],
+  cwd: string | undefined,
+  pr: Pick<PullRequest, 'head' | 'state'>
+): W | null {
+  if (pr.state !== 'Merged' || pr.head === '' || cwd === undefined || cwd === '') return null
+  return workspaces.find((w) => w.path === cwd && w.branch === pr.head) ?? null
+}
+
+/** What the armed Delete workspace asks, as the git panel's Clean up does. */
+export function deleteQuestion(name: string, force: boolean): string {
+  if (force) return 'Its uncommitted changes will be lost. Delete anyway?'
+  return `Delete ${name}? Its worktree folder goes; the branch stays.`
+}
+
+/** A refused delete in words: git's own first line unless it is the uncommitted changes. */
+export function deleteProblem(raw: string): string {
+  if (uncommittedRefusal(raw)) return 'It has uncommitted changes. Delete anyway to discard them.'
+  // A thrown Error (not the host's plain string) says so first: not words for the user.
+  const e = raw.trim().replace(/^Error:\s*/, '')
+  return e.split('\n')[0] ?? e
+}
+
 /** gh said the PR is merged already: what the user wanted is done. */
 export const alreadyMerged = (error: string) => /already (been )?merged/i.test(error)
 
@@ -85,14 +114,17 @@ export function ghProblem(raw: string): string {
   if (/gh auth login|not logged in|authenticat|bad credentials|HTTP 401/i.test(e))
     return 'gh isn’t signed in to GitHub. Run gh auth login, then retry.'
   if (/is (still )?a draft/i.test(e)) return 'It’s a draft. Mark it ready for review first.'
-  if (/not mergeable|merge conflict|cannot be cleanly created/i.test(e))
-    return 'It has merge conflicts. Resolve them on the branch, then retry.'
+  // Before the conflicts: gh says "not mergeable" for a missing review too.
+  if (/approving review|review is required|review required/i.test(e))
+    return 'It needs an approving review before it can be merged.'
   if (
     /required status check|checks? (are|is) (expected|required|pending)|checks? must pass/i.test(e)
   )
     return 'Required checks haven’t passed yet.'
-  if (/base branch policy|branch protection|approving review|review is required/i.test(e))
+  if (/base branch policy|branch protection/i.test(e))
     return 'The branch rules block it: a required review or check is missing.'
+  if (/not mergeable|merge conflict|cannot be cleanly created/i.test(e))
+    return 'It has merge conflicts. Resolve them on the branch, then retry.'
   if (/permission|not authorized|must have (admin|write)|HTTP 403|forbidden/i.test(e))
     return 'Your GitHub account isn’t allowed to merge this pull request.'
   if (/could not resolve to a (pullrequest|repository)|HTTP 404|not found/i.test(e))

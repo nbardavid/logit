@@ -1,10 +1,12 @@
 // The pull-request card: whenever an agent links a GitHub PR (a chat message, a report), the
-// PR shows live, with one action, Merge. One component for every surface, so they can't drift.
+// PR shows live, with one action: Merge, then, once merged, Delete workspace when the PR is the
+// card's own workspace's. One component for every surface, so they can't drift.
 import {
   GitMergeIcon,
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   GitPullRequestIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import {
   type ReactNode,
@@ -19,14 +21,31 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-import type { PullRequest } from '../git/pr'
-
 import { Dot } from '../app/status-dot'
+import { type PullRequest, uncommittedRefusal } from '../git/pr'
 import { type PrRef, prRef } from '../git/pr-link'
 import { openLink } from '../report/blocks/primitives'
 import { Bar, CardFrame, MetaItem, MetaRow, SWAP, type TileTone } from './frame'
-import { ciSummary, ciWords, ghProblem, mergeOffer, mergeQuestion } from './pr-card-model'
-import { FOCUS_GAP_MS, loadPr, mergePr, prEntry, RUNNING_MS, watchPr } from './pr-store'
+import {
+  ciSummary,
+  ciWords,
+  deleteProblem,
+  deleteQuestion,
+  ghProblem,
+  mergeOffer,
+  mergeQuestion,
+  workspaceOfPr,
+} from './pr-card-model'
+import {
+  cardPlaces,
+  FOCUS_GAP_MS,
+  loadPr,
+  mergePr,
+  prEntry,
+  RUNNING_MS,
+  watchCardPlaces,
+  watchPr,
+} from './pr-store'
 
 /** What a report's `pr` block already says: drawn until the PR itself is read. */
 export interface PrSketch {
@@ -114,7 +133,7 @@ function useLivePr(link: PrRef, cwd: string | undefined, inView: boolean) {
   return entry
 }
 
-type Phase = 'idle' | 'armed' | 'merging'
+type Phase = 'idle' | 'armed' | 'working'
 
 /** One PR, live: `url` any address of it; `sketch` what to draw until it is read. */
 export function PrCard({
@@ -138,11 +157,15 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
   const entry = useLivePr(link, cwd, inView)
   const { pr } = entry
   const [phase, setPhase] = useState<Phase>('idle')
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<{ of: 'merge' | 'delete'; text: string } | null>(null)
+  // git refused the delete over uncommitted changes: the action is now "Delete anyway".
+  const [force, setForce] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
   const title = useRef<HTMLButtonElement>(null)
+  const places = useSyncExternalStore(watchCardPlaces, cardPlaces)
+  const owner = pr === null || places === null ? null : workspaceOfPr(places.workspaces, cwd, pr)
 
-  // Armed, Merge goes back to rest on its own, on a click anywhere else, or when it loses focus.
+  // Armed, the action goes back to rest on its own, on a click anywhere else, or when it loses focus.
   useEffect(() => {
     if (phase !== 'armed') return
     const timer = setTimeout(() => setPhase('idle'), ARMED_MS)
@@ -158,14 +181,30 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
 
   const merge = async () => {
     const focused = document.activeElement === button.current
-    setPhase('merging')
+    setPhase('working')
     setFailure(null)
     try {
       await mergePr(link, cwd, pr?.head ?? '')
       // The button goes with the merge: the focus lands on the title, not on the page.
       if (focused) requestAnimationFrame(() => title.current?.focus())
     } catch (error) {
-      setFailure(ghProblem(String(error)))
+      setFailure({ of: 'merge', text: ghProblem(String(error)) })
+    } finally {
+      setPhase('idle')
+    }
+  }
+
+  // The workspace goes as from the git panel; the card with it. A refusal stays on the card.
+  const remove = async () => {
+    if (owner === null || places === null) return
+    setPhase('working')
+    setFailure(null)
+    try {
+      await places.remove(owner, force)
+    } catch (error) {
+      const text = String(error)
+      if (uncommittedRefusal(text)) setForce(true)
+      setFailure({ of: 'delete', text: deleteProblem(text) })
     } finally {
       setPhase('idle')
     }
@@ -247,11 +286,50 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
     </MetaRow>
   )
 
-  // Armed or merging, the second line says what is about to happen, in place of the facts.
+  // The live action: Merge while it can go, then Delete workspace once it merged from the
+  // card's own workspace. Both arm, then Confirm, in place.
+  let act: {
+    label: string
+    icon: ReactNode
+    /** Its button's colour at rest. */
+    rest: string
+    danger: boolean
+    question: string
+    doing: string
+    /** What the meta line says while it works. */
+    working: string
+    tip: string
+    run: () => void
+  } | null = null
+  if (offer?.kind === 'merge' && pr !== null)
+    act = {
+      danger: risky,
+      doing: 'Merging',
+      icon: <GitMergeIcon />,
+      label: 'Merge',
+      question: mergeQuestion(pr, risky),
+      rest: MERGE,
+      run: () => void merge(),
+      tip: 'Click again to merge · Esc to cancel',
+      working: `Merging #${pr.number}${pr.base === '' ? '' : ` into ${pr.base}`}…`,
+    }
+  if (owner !== null)
+    act = {
+      danger: true,
+      doing: 'Deleting',
+      icon: <Trash2Icon />,
+      label: force ? 'Delete anyway' : 'Delete workspace',
+      question: deleteQuestion(owner.name, force),
+      rest: 'bg-secondary text-secondary-foreground hover:bg-active',
+      run: () => void remove(),
+      tip: 'Click again to delete · Esc to cancel',
+      working: `Deleting ${owner.name}…`,
+    }
+
+  // Armed or working, the second line says what is about to happen, in place of the facts.
   let asking: string | null = null
-  if (pr !== null && phase === 'armed') asking = mergeQuestion(pr, risky)
-  if (pr !== null && phase === 'merging')
-    asking = `Merging #${pr.number}${pr.base === '' ? '' : ` into ${pr.base}`}…`
+  if (act !== null && phase === 'armed') asking = act.question
+  if (act !== null && phase === 'working') asking = act.working
   const meta = (
     <div className="grid">
       <div
@@ -267,7 +345,9 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
           key={phase}
           className={cn(
             'col-start-1 row-start-1 truncate leading-4 font-medium',
-            risky && phase === 'armed' ? 'text-critical-ink' : 'text-muted-foreground',
+            act?.danger === true && phase === 'armed'
+              ? 'text-critical-ink'
+              : 'text-muted-foreground',
             SWAP
           )}
           aria-live="polite"
@@ -291,31 +371,32 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
         </Button>
       </span>
     )
-  if (offer?.kind === 'merge' && pr !== null)
+  if (act !== null) {
+    const { danger, run } = act
     action = (
       <Button
+        // A new action (Merge, then Delete workspace) is a new button: it fades in.
+        key={act.doing}
         ref={button}
         type="button"
         size="sm"
         className={cn(
           'grid',
-          phase === 'armed' && risky
+          phase === 'armed' && danger
             ? 'bg-critical hover:not-disabled:bg-critical/88 text-white'
-            : MERGE,
-          // Merging is no rest: the button keeps its colour while it works.
-          phase === 'merging' && 'disabled:opacity-100',
+            : act.rest,
+          // Working is no rest: the button keeps its colour while it works.
+          phase === 'working' && 'disabled:opacity-100',
           SWAP
         )}
-        aria-label={
-          phase === 'armed' ? `${mergeQuestion(pr, risky)} Confirm` : `Merge #${pr.number}`
-        }
-        title={phase === 'armed' ? 'Click again to merge · Esc to cancel' : undefined}
-        disabled={phase === 'merging'}
+        aria-label={phase === 'armed' ? `${act.question} Confirm` : act.label}
+        title={phase === 'armed' ? act.tip : undefined}
+        disabled={phase === 'working'}
         onClick={() => {
           if (phase === 'idle') {
             setFailure(null)
             setPhase('armed')
-          } else if (phase === 'armed') void merge()
+          } else if (phase === 'armed') run()
         }}
         onBlur={() => phase === 'armed' && setPhase('idle')}
         onKeyDown={(e) => {
@@ -327,17 +408,18 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
         }}
       >
         <Layer on={phase === 'idle'}>
-          <GitMergeIcon />
-          Merge
+          {act.icon}
+          {act.label}
         </Layer>
         <Layer on={phase === 'armed'}>Confirm</Layer>
-        <Layer on={phase === 'merging'}>
-          <span className="flex [&_.text-foreground]:text-white">
-            <Dot tone="working" label="Merging" />
+        <Layer on={phase === 'working'}>
+          <span className={cn('flex', act.rest === MERGE && '[&_.text-foreground]:text-white')}>
+            <Dot tone="working" label={act.doing} />
           </span>
         </Layer>
       </Button>
     )
+  }
 
   let notice: Parameters<typeof CardFrame>[0]['notice'] = null
   const retry = (label: string, run: () => void, busy: boolean) => (
@@ -352,12 +434,23 @@ function LivePrCard({ cwd, link, sketch }: { link: PrRef; cwd?: string; sketch?:
       {busy ? 'Retrying…' : label}
     </Button>
   )
-  if (failure !== null)
+  if (failure?.of === 'merge')
     notice = {
-      aside: retry('Retry', () => void merge(), phase === 'merging'),
+      aside: retry('Retry', () => void merge(), phase === 'working'),
       body: (
         <>
-          <span className="font-medium">Couldn’t merge #{link.number}.</span> {failure}
+          <span className="font-medium">Couldn’t merge #{link.number}.</span> {failure.text}
+        </>
+      ),
+      tone: 'critical',
+    }
+  // No Retry for a delete: it asks again from its button, as deleting always asks.
+  else if (failure?.of === 'delete')
+    notice = {
+      body: (
+        <>
+          <span className="font-medium">Couldn’t delete {owner?.name ?? 'the workspace'}.</span>{' '}
+          {failure.text}
         </>
       ),
       tone: 'critical',

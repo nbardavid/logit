@@ -370,7 +370,7 @@ export function deskReports(now: number): Record<string, Report> {
       blocks: [
         { items: ['Run the seat migration on production after the merge'], kind: 'left' },
         {
-          branch: 'feat/coach-seat-map',
+          branch: 'logit/moss',
           ci: 'passing',
           kind: 'pr',
           number: 418,

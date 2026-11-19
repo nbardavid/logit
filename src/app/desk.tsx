@@ -523,6 +523,7 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
           <ReportPane
             entry={entry?.loading === true && report === null ? undefined : entry}
             className={`px-8 pt-6 ${bottom} [&>*]:mx-auto [&>*]:max-w-[720px]`}
+            cwd={row.path}
             ask={ask}
             chatActiveAt={row.activeAt}
             merged={row.merged}

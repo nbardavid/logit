@@ -9,8 +9,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
+import { useEffect, useRef } from 'react'
 
 import type { Workspace } from '../model/catalog'
+
+import { setCardPlaces } from '../cards/pr-store'
 
 export const CLEANUP_EFFECTS = ['Dust', 'Brush', 'Glint', 'None'] as const
 export type CleanupEffect = (typeof CLEANUP_EFFECTS)[number]
@@ -225,9 +228,10 @@ function capture(
   if (matchMedia('(prefers-reduced-motion: reduce)').matches)
     return { colors: [], ghost, grains: [], rect, restoreScroll }
   const roots = [effect === 'Dust' ? main : null, row].filter((r): r is Element => r !== null)
-  // The chat lets go as the sweep passes; the sidebar row at once.
+  // The chat lets go as the sweep passes; the sidebar row at once (and alone when there is no
+  // chat to sweep, as in Desk: a zero-wide sweep would hold its grains forever).
   const delayOf = (x: number) =>
-    x >= rect.left
+    rect.width > 0 && x >= rect.left
       ? ((x - rect.left) / rect.width) * SWEEP_MS + Math.random() * 50
       : Math.random() * 120
   const { colors, grains } = roots.length ? grainsOf(roots, delayOf) : { colors: [], grains: [] }
@@ -487,18 +491,36 @@ async function chosenEffect(): Promise<CleanupEffect> {
   }
 }
 
+interface CleanupOpts {
+  fail: (title: string) => (error: unknown) => void
+  hide: (id: string, hidden: boolean) => void
+  remove: (w: Workspace, force: boolean) => Promise<void>
+}
+
+/**
+ * A merged PR card's Delete workspace (`setCardPlaces`): this Clean up, awaited (its "dirty"
+ * path) so git's refusal reaches the card; the send-off plays once the worktree is gone.
+ * `opts` is read when a card deletes: the app's latest removal.
+ */
+export function useCardCleanup(workspaces: readonly Workspace[], opts: () => CleanupOpts) {
+  const latest = useRef(opts)
+  latest.current = opts
+  useEffect(() => {
+    setCardPlaces({
+      remove: async (w, force) => {
+        const o = latest.current()
+        await cleanupOf(w, true, { ...o, remove: async (x) => o.remove(x, force) })?.run(false)
+      },
+      workspaces,
+    })
+    return () => setCardPlaces(null)
+  }, [workspaces])
+}
+
 /** The git panel's Clean up: captures the workspace, hides it and plays the send-off at once
  * while git removes the worktree in the background; a failure brings it back with a toast.
  * A dirty worktree is refused by git unless forced: that one asks first, before anything moves. */
-export function cleanupOf(
-  ws: Workspace | undefined,
-  dirty: boolean,
-  opts: {
-    fail: (title: string) => (error: unknown) => void
-    hide: (id: string, hidden: boolean) => void
-    remove: (w: Workspace, force: boolean) => Promise<void>
-  }
-) {
+export function cleanupOf(ws: Workspace | undefined, dirty: boolean, opts: CleanupOpts) {
   if (ws === undefined) return null
   const { fail, hide, remove } = opts
   return {

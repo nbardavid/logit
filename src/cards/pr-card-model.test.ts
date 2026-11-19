@@ -5,9 +5,12 @@ import {
   alreadyMerged,
   ciSummary,
   ciWords,
+  deleteProblem,
+  deleteQuestion,
   ghProblem,
   mergeOffer,
   mergeQuestion,
+  workspaceOfPr,
 } from './pr-card-model'
 
 const ok = (name: string) => ({ conclusion: 'SUCCESS', name, status: 'COMPLETED' })
@@ -78,6 +81,17 @@ test('gh failures read as what to do', () => {
     ghProblem('GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created.')
   ).toMatch(/conflicts/)
   expect(ghProblem('GraphQL: Base branch policy prohibits the merge')).toMatch(/branch rules/)
+  // A merge refused for a missing review says so, never "conflicts" for gh's "not mergeable".
+  expect(
+    ghProblem(
+      'GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)'
+    )
+  ).toBe('It needs an approving review before it can be merged.')
+  expect(
+    ghProblem(
+      'Pull request o/r#7 is not mergeable: the base branch policy prohibits the merge.\nTo have the pull request merged after all the requirements have been met, add the `--auto` flag.'
+    )
+  ).toMatch(/branch rules/)
   expect(ghProblem('GraphQL: Required status check "test" is expected.')).toMatch(/Required checks/)
   expect(ghProblem('HTTP 403: Resource not accessible by integration')).toMatch(/allowed/)
   expect(ghProblem('GraphQL: Could not resolve to a PullRequest with the number of 9.')).toMatch(
@@ -93,4 +107,34 @@ test('a PR merged meanwhile is a merge done', () => {
   expect(alreadyMerged('Pull request o/r#7 was already merged')).toBe(true)
   expect(alreadyMerged('GraphQL: Pull Request has already been merged')).toBe(true)
   expect(alreadyMerged('not mergeable')).toBe(false)
+})
+
+test('a merged PR closes the workspace whose folder and branch are its own', () => {
+  const ws = [
+    { branch: 'feat/x', id: 'a', path: '/w/a' },
+    { branch: 'feat/y', id: 'b', path: '/w/b' },
+  ]
+  const merged = pr({ headRefName: 'feat/x', state: 'MERGED' })
+  expect(workspaceOfPr(ws, '/w/a', merged)?.id).toBe('a')
+  // Another workspace's card, someone else's branch, no workspace at all: nothing to close.
+  expect(workspaceOfPr(ws, '/w/b', merged)).toBeNull()
+  expect(workspaceOfPr(ws, '/w/a', pr({ headRefName: 'fix/z', state: 'MERGED' }))).toBeNull()
+  expect(workspaceOfPr(ws, undefined, merged)).toBeNull()
+  // Still open, or closed unmerged: the workspace keeps its work.
+  expect(workspaceOfPr(ws, '/w/a', pr({ headRefName: 'feat/x' }))).toBeNull()
+  expect(workspaceOfPr(ws, '/w/a', pr({ headRefName: 'feat/x', state: 'CLOSED' }))).toBeNull()
+})
+
+test('deleting asks as the panel does, and a refusal reads as what to do', () => {
+  expect(deleteQuestion('amber', false)).toBe(
+    'Delete amber? Its worktree folder goes; the branch stays.'
+  )
+  expect(deleteQuestion('amber', true)).toMatch(/Delete anyway\?/)
+  expect(
+    deleteProblem("fatal: '/w/a' contains modified or untracked files, use --force to delete it")
+  ).toMatch(/uncommitted changes/)
+  expect(deleteProblem('unknown workspace\nmore')).toBe('unknown workspace')
+  expect(deleteProblem('Error: fatal: cannot remove a locked working tree')).toBe(
+    'fatal: cannot remove a locked working tree'
+  )
 })

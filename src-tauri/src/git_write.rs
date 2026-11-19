@@ -198,10 +198,10 @@ fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     })
 }
 
-/// Approves (best effort: GitHub refuses your own PR) and merges a pull request with the
-/// method GitHub pre-selects: the branch's own, or the one at `target` (its address and its
-/// `owner/repo`).
-fn merge(cwd: &str, target: Option<(&str, &str)>) -> Result<(), String> {
+/// Merges a pull request with the method GitHub pre-selects: the branch's own, or the one at
+/// `target` (its address and its `owner/repo`). With `approve`, approves it first (best effort:
+/// GitHub refuses your own PR).
+fn merge(cwd: &str, target: Option<(&str, &str)>, approve: bool) -> Result<(), String> {
     let mut repo = vec![
         "repo",
         "view",
@@ -219,10 +219,12 @@ fn merge(cwd: &str, target: Option<(&str, &str)>) -> Result<(), String> {
     let methods: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let flag = merge_flag(&methods).ok_or("The repository allows no merge method.")?;
     let url = target.map(|(url, _)| url);
-    let mut review = vec!["pr", "review"];
-    review.extend(url);
-    review.push("--approve");
-    let _ = gh(cwd, &review);
+    if approve {
+        let mut review = vec!["pr", "review"];
+        review.extend(url);
+        review.push("--approve");
+        let _ = gh(cwd, &review);
+    }
     let mut merge = vec!["pr", "merge"];
     merge.extend(url);
     merge.push(flag);
@@ -231,7 +233,7 @@ fn merge(cwd: &str, target: Option<(&str, &str)>) -> Result<(), String> {
 
 #[tauri::command(async)]
 pub fn pr_merge(path: String) -> Result<(), String> {
-    merge(&path, None)
+    merge(&path, None, true)
 }
 
 /// What the merge of `head` would lose: commits on this workspace's branch GitHub has not seen
@@ -246,7 +248,8 @@ pub fn unpushed(state: &BranchState, head: &str) -> Option<String> {
 
 /// Merges a pull request named by its address (a card in a chat or a report). `head`, the
 /// PR's branch, as the card read it: when the workspace sits on it with commits not pushed,
-/// the merge is refused, as the git panel's is.
+/// the merge is refused, as the git panel's is. It only merges: no approval on the way, so a
+/// required review refuses it with gh's reason.
 #[tauri::command(async)]
 pub fn pr_merge_url(path: String, url: String, head: Option<String>) -> Result<(), String> {
     let (url, repo) = crate::git::pr_address(&url)?;
@@ -262,7 +265,7 @@ pub fn pr_merge_url(path: String, url: String, head: Option<String>) -> Result<(
             return Err(refusal);
         }
     }
-    merge(&cwd, Some((&url, &repo)))
+    merge(&cwd, Some((&url, &repo)), false)
 }
 
 #[cfg(test)]

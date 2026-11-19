@@ -189,7 +189,11 @@ card draws in a chat and in a report, so the two never drift.
     instead of the skeleton.
   - Failed with nothing to show: a muted generic title plus the error notice.
   - Disabled action: shown, with the reason in a `data-tip`.
-  - Done (merged): the action goes, and a calm good tile and badge show.
+  - Done (merged): Merge goes, and a calm good tile and badge show. When the PR's head is the
+    branch of the card's own workspace (a chat's, a report's), "Delete workspace" (secondary,
+    critical once armed) takes its place: the git panel's Clean up, its send-off included. A
+    refusal stays on the card; uncommitted changes turn it into "Delete anyway". Someone
+    else's PR offers nothing.
 - **Actions** confirm in place, with no dialog. The first click (or Enter) arms the button:
   its label becomes "Confirm" and the meta line asks the question. A risky action turns the
   button `critical`. The button falls back to rest after 5 s, on blur, on a click elsewhere,

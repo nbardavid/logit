@@ -12,7 +12,7 @@ import { notify, playChosenSound, waitingAttention } from './app/attention'
 import { browserId } from './app/browser-tabs'
 import { readChatSettings, saveChatSettings } from './app/chat-settings'
 import { ChatView } from './app/chat-view'
-import { cleanupOf } from './app/cleanup-effect'
+import { cleanupOf, useCardCleanup } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState, useNoBrowserMenu } from './app/context-menu'
 import { Desk, deskChat, deskSide, useDesk } from './app/desk'
 import { Dock } from './app/dock'
@@ -131,6 +131,7 @@ export function App() {
     () => byProject(withoutLeaving(catalog, removing)),
     [catalog, removing]
   )
+  useCardCleanup(catalog.workspaces, () => removal)
   // An agent's workspaces leave the sidebar for their parent's Agents tab.
   const selectWs = (pid: string, wid: string | null) => {
     setMode('normal')
@@ -498,10 +499,7 @@ export function App() {
         label: 'Close project…',
         run: async () => {
           await store.removeProject(row.project.id)
-          for (const w of owned) {
-            terminals.closeWorkspace(w.id)
-            for (const c of chats.chats) if (c.record.workspaceId === w.id) chats.close(c.record.id)
-          }
+          for (const w of owned) closeRemoved(w)
         },
       })
     }
