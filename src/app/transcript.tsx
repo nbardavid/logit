@@ -48,6 +48,7 @@ import { cardSpot, chatPrCards } from '../chat/pr-cards'
 import { isShown } from '../chat/shown'
 import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
+import { HtmlBlock, htmlSource, Streaming } from './html-preview'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
 import { AskedRecord, askedText, QuestionBar, useInView } from './question-line'
@@ -102,9 +103,19 @@ function CopyButton({
   )
 }
 
-/** A fenced code block, with Copy at its top right on hover or focus. */
+/** A fenced code block, with Copy at its top right on hover or focus; ```html shows its page. */
 function CodeBlock({ children }: { children: ReactNode }) {
   const pre = useRef<HTMLPreElement>(null)
+  const html = htmlSource(children)
+  if (html !== null) {
+    return (
+      <HtmlBlock
+        html={html}
+        pre={<pre className="m-0">{children}</pre>}
+        copy={<CopyButton label="Copy" text={() => html} />}
+      />
+    )
+  }
   return (
     <div data-ui className="group/code relative mb-3 last:mb-0">
       <pre ref={pre} className="m-0">
@@ -379,11 +390,13 @@ function Thought({ text }: { text: string }) {
 function AnswerText({ live, text }: { live: boolean; text: string }) {
   const shown = useSmoothText(text, live)
   return (
-    <div className="md">
-      <Markdown remarkPlugins={PLUGINS} components={MD}>
-        {shown}
-      </Markdown>
-    </div>
+    <Streaming value={live || shown !== text}>
+      <div className="md">
+        <Markdown remarkPlugins={PLUGINS} components={MD}>
+          {shown}
+        </Markdown>
+      </div>
+    </Streaming>
   )
 }
 

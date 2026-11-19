@@ -226,7 +226,18 @@ What changes:
 | \`context-menu.tsx\` | 125 | 48 |
 | \`picker.tsx\` | 141 | 62 |
 
-See [Base UI's menu docs](https://base-ui.com/react/components/menu) for the parts.`
+See [Base UI's menu docs](https://base-ui.com/react/components/menu) for the parts.
+
+The empty state, drawn:
+
+\`\`\`html
+<section style="font-family:system-ui;padding:28px;border:1px solid #ebeae9;border-radius:8px;color:#282725">
+  <p style="margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8d8885">No workspaces</p>
+  <h2 style="margin:6px 0 4px;font-size:18px">Start something new</h2>
+  <p style="margin:0 0 16px;color:#6c6a69">Each workspace gets its own branch, chats and terminals.</p>
+  <a href="https://github.com/nbardavid/logit" style="display:inline-block;padding:6px 12px;border-radius:8px;background:#282725;color:#fff;text-decoration:none;font-size:13px">New workspace ⌘N</a>
+</section>
+\`\`\``
 
 export const CONTEXT_OUTPUT = `## Context Usage
 
