@@ -244,6 +244,11 @@ pub fn sent_line(line: &str) -> String {
 const SWEEP: Duration = Duration::from_secs(5);
 /// Idle chats are stopped this long after the last window left; they resume when reopened.
 const CHAT_IDLE: Duration = Duration::from_secs(300);
+/// A live chat nobody wrote to (Claude nor the user) for this long is compacted, while
+/// Claude's prompt cache (one hour) still holds it: the summary is cheap now, and the next
+/// message after the pause no longer pays for the whole conversation.
+const CHAT_COMPACT: Duration = Duration::from_secs(55 * 60);
+const COMPACT_LINE: &str = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"/compact"}]},"parent_tool_use_id":null,"session_id":""}"#;
 /// The host exits this long after the last window left, once nothing runs.
 const HOST_IDLE: Duration = Duration::from_secs(60);
 /// A window that stops reading loses its stream instead of stalling the whole host.
@@ -264,6 +269,20 @@ struct ChatProc {
     flags: ChatFlags,
     history_len: usize,
     ended: bool,
+    /// The last line either way, for the idle compaction.
+    last_activity: Instant,
+    /// Nothing happened since the last compaction (or since start): no point compacting.
+    compacted: bool,
+}
+
+impl ChatProc {
+    fn due_for_compact(&self) -> bool {
+        !self.ended
+            && !self.compacted
+            && !self.flags.working
+            && !self.flags.waiting
+            && self.last_activity.elapsed() >= CHAT_COMPACT
+    }
 }
 
 struct TermProc {
@@ -357,6 +376,9 @@ pub fn serve(sock: &Path) -> std::io::Result<()> {
     loop {
         std::thread::sleep(SWEEP);
         let mut s = lock(&state);
+        for chat in s.chats.values_mut().filter(|c| c.due_for_compact()) {
+            compact(chat);
+        }
         if s.windows > 0 {
             continue;
         }
@@ -650,6 +672,8 @@ fn chat_open(
                 flags: ChatFlags::default(),
                 history_len: start.history_len,
                 ended: false,
+                last_activity: Instant::now(),
+                compacted: true,
             },
         );
     }
@@ -679,6 +703,7 @@ fn chat_out(state: &Shared, id: &str, serial: u64, line: String, observe: bool) 
     if observe {
         chat.flags.observe_out(&line, windows);
     }
+    chat.last_activity = Instant::now();
     broadcast(&mut chat.subs, &line);
     chat.lines.push(line);
 }
@@ -704,6 +729,22 @@ fn chat_exit(state: &Shared, id: &str, serial: u64) {
     }
 }
 
+/// Sends Claude `/compact` from the host; the windows show it as if one had sent it.
+fn compact(chat: &mut ChatProc) {
+    chat.compacted = true;
+    if writeln!(chat.stdin, "{COMPACT_LINE}")
+        .and_then(|()| chat.stdin.flush())
+        .is_err()
+    {
+        return;
+    }
+    chat.flags.observe_in(COMPACT_LINE);
+    chat.last_activity = Instant::now();
+    let sent = sent_line(COMPACT_LINE);
+    broadcast(&mut chat.subs, &sent);
+    chat.lines.push(sent);
+}
+
 fn chat_send(state: &Shared, id: &str, line: &str) -> Result<(), String> {
     let mut s = lock(state);
     let chat = s
@@ -715,6 +756,8 @@ fn chat_send(state: &Shared, id: &str, line: &str) -> Result<(), String> {
         .and_then(|()| chat.stdin.flush())
         .map_err(|e| e.to_string())?;
     chat.flags.observe_in(line);
+    chat.last_activity = Instant::now();
+    chat.compacted &= !chat.flags.working;
     // Replay only: the window that sent it already shows it.
     let sent = sent_line(line);
     if !sent.is_empty() {
@@ -1362,6 +1405,47 @@ mod tests {
         let mut f = ChatFlags::default();
         f.observe_out(r#"{"type":"result","subtype":"success"}"#, 1);
         assert!(!f.unread);
+    }
+
+    #[test]
+    fn an_idle_chat_compacts_once_after_a_turn() {
+        let mut child = std::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut out = BufReader::new(child.stdout.take().unwrap());
+        let mut chat = ChatProc {
+            serial: 1,
+            stdin: child.stdin.take().unwrap(),
+            child: Some(child),
+            lines: Vec::new(),
+            subs: Vec::new(),
+            flags: ChatFlags::default(),
+            history_len: 0,
+            ended: false,
+            last_activity: Instant::now() - CHAT_COMPACT,
+            compacted: true,
+        };
+        assert!(!chat.due_for_compact(), "nothing ran yet");
+        chat.compacted = false;
+        chat.flags.working = true;
+        assert!(!chat.due_for_compact(), "a turn runs");
+        chat.flags.working = false;
+        chat.last_activity = Instant::now();
+        assert!(!chat.due_for_compact(), "not idle long enough");
+        chat.last_activity = Instant::now() - CHAT_COMPACT;
+        assert!(chat.due_for_compact());
+
+        compact(&mut chat);
+        let mut line = String::new();
+        out.read_line(&mut line).unwrap();
+        assert!(line.contains("/compact"));
+        assert!(chat.lines[0].contains("logit_sent"));
+        chat.flags.working = false;
+        chat.last_activity = Instant::now() - CHAT_COMPACT;
+        assert!(!chat.due_for_compact(), "once per pause");
+        let _ = chat.child.take().map(|mut c| c.kill());
     }
 
     #[test]
