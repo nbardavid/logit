@@ -106,16 +106,6 @@ export function childrenOf(catalog: Catalog): Record<string, Workspace[]> {
   return out
 }
 
-/** The sidebar's lists: a workspace made by another one's agent shows under it, not here. */
-export function withoutChildren(
-  lists: Record<string, Workspace[]>,
-  catalog: Catalog
-): Record<string, Workspace[]> {
-  return Object.fromEntries(
-    Object.entries(lists).map(([p, list]) => [p, list.filter((w) => parentOf(catalog, w) === null)])
-  )
-}
-
 /** Everything under `id`, at any depth. */
 export function descendants(children: Record<string, Workspace[]>, id: string): Workspace[] {
   const out: Workspace[] = []

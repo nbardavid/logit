@@ -122,7 +122,7 @@ export function numbersOf(line: string): number[] | null {
   return [...text.matchAll(/[1-9]/g)].map((m) => Number(m[0]))
 }
 
-/** What Desk and the composer reach into the card with. */
+/** What the composer reaches into the card with. */
 export interface CardHandle {
   /** A digit typed outside the card: picks that option, without sending. */
   digit: (n: number) => void
@@ -141,9 +141,6 @@ export interface CardHandle {
  * "Something else…" field; 1–9 pick from anywhere but a field, and the composer answers too: Enter alone sends the picks, a
  * number ("2", "1 3") picks and sends, and words are a free answer (a row of its own until
  * the other questions are answered).
- * `scoped` (Desk): the dock's card, with its own free-answer line at the bottom, as the
- * composer's. It answers only while the focus is in it, digits 1–9 pick, a click picks without
- * sending, Enter sends once something is picked, and Skip has no key.
  */
 export function QuestionCard({
   disabled,
@@ -151,13 +148,11 @@ export function QuestionCard({
   onAnswer,
   permission,
   questions,
-  scoped = false,
 }: {
   permission: Permission
   questions: Question[]
   disabled: boolean
   onAnswer: (choice: 'allow' | 'deny', answers?: Record<string, string>) => void
-  scoped?: boolean
   /** Set to pick, send or answer from outside the card. */
   handle?: RefObject<CardHandle | null>
 }) {
@@ -169,7 +164,7 @@ export function QuestionCard({
     )
   const answers = answersWith(picked, other)
   const complete = Object.values(answers).every((a) => a !== '')
-  const instant = !scoped && questions.length === 1 && questions[0]?.multiSelect === false
+  const instant = questions.length === 1 && questions[0]?.multiSelect === false
 
   const submit = () => {
     if (complete && !disabled) onAnswer('allow', answers)
@@ -246,32 +241,16 @@ export function QuestionCard({
     }
   }
   if (handle !== undefined) handle.current = { digit, numbers, submit, type }
-  const keys = useRef({ digit, disabled, onAnswer, scoped, submit })
-  keys.current = { digit, disabled, onAnswer, scoped, submit }
+  const keys = useRef({ digit, disabled, onAnswer, submit })
+  keys.current = { digit, disabled, onAnswer, submit }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Answered and folding away (`inert`), it takes no more keys.
       if (e.defaultPrevented || keys.current.disabled || card.current?.closest('[inert]')) return
-      const inside = card.current?.contains(document.activeElement) === true
-      if (keys.current.scoped && !inside) return
       const typing =
         e.target instanceof HTMLInputElement && card.current?.contains(e.target) === true
       const plain = !e.metaKey && !e.ctrlKey && !e.altKey
-      if (keys.current.scoped && !typing && plain) {
-        if (e.key === 'Enter') {
-          // On an option not picked yet, Enter picks it (its click); else it sends.
-          const on = e.target instanceof HTMLElement ? e.target.closest('[aria-checked]') : null
-          if (on?.getAttribute('aria-checked') === 'false') return
-          e.preventDefault()
-          keys.current.submit()
-          return
-        }
-        if (!/^[1-9]$/.test(e.key)) return
-        e.preventDefault()
-        keys.current.digit(Number(e.key))
-        return
-      }
-      if (!keys.current.scoped && plain && /^[1-9]$/.test(e.key)) {
+      if (plain && /^[1-9]$/.test(e.key)) {
         if (overlayShown() || !digitPicks(e.target)) return
         e.preventDefault()
         keys.current.digit(Number(e.key))
@@ -279,8 +258,7 @@ export function QuestionCard({
       }
       if (!e.metaKey) return
       if (e.key === 'Enter' && !e.shiftKey) keys.current.submit()
-      else if (e.key === 'Backspace' && !typing && !keys.current.scoped)
-        keys.current.onAnswer('deny')
+      else if (e.key === 'Backspace' && !typing) keys.current.onAnswer('deny')
       else return
       e.preventDefault()
     }
@@ -307,14 +285,11 @@ export function QuestionCard({
   if (disabled) hint = 'Claude is stopping…'
   else if (several) hint = `${done} of ${questions.length} answered`
 
-  // The free answer, Skip and send: the dock's foot in Desk, the last row of the list in a chat.
-  // Nothing in it takes the focus on its own: a key meant for the composer never answers.
+  // The free answer, Skip and send: the last row of the list. Nothing in it takes the focus on
+  // its own: a key meant for the composer never answers.
   const foot = (
     <form
-      className={cn(
-        'flex min-w-0 items-center gap-1.5 py-1.5 pr-1.5 pl-3.5',
-        scoped ? 'border-t' : 'bg-background'
-      )}
+      className="bg-background flex min-w-0 items-center gap-1.5 py-1.5 pr-1.5 pl-3.5"
       onSubmit={(e) => {
         e.preventDefault()
         commit()
@@ -338,18 +313,18 @@ export function QuestionCard({
         variant="ghost"
         size="sm"
         disabled={disabled}
-        aria-keyshortcuts={scoped ? undefined : 'Meta+Backspace'}
+        aria-keyshortcuts="Meta+Backspace"
         onClick={() => onAnswer('deny')}
       >
         Skip
-        {!scoped && <Kbd className="@max-[420px]:hidden">⌘⌫</Kbd>}
+        <Kbd className="@max-[420px]:hidden">⌘⌫</Kbd>
       </Button>
       <Button
         type="submit"
         size="icon"
         className="disabled:bg-line-strong rounded-md disabled:opacity-100"
-        aria-label={scoped ? 'Send (Enter)' : 'Send (⌘↩)'}
-        aria-keyshortcuts={scoped ? undefined : 'Meta+Enter'}
+        aria-label="Send (⌘↩)"
+        aria-keyshortcuts="Meta+Enter"
         disabled={disabled || (!complete && draft.trim() === '')}
       >
         <ArrowUpIcon strokeWidth={2} />
@@ -363,32 +338,27 @@ export function QuestionCard({
       className={cn(
         '@container flex flex-col transition-opacity duration-160 ease-out',
         disabled && 'opacity-60',
-        // Desk: the dock's card, its parent brings it in. The chat's rises with the transcript.
-        scoped
-          ? 'border-border bg-background shadow-composer rounded-lg border outline-none'
-          : 'animate-in fade-in slide-in-from-bottom-[6px] gap-2 duration-280 ease-[var(--ease-settle)]'
+        // It rises with the transcript.
+        'animate-in fade-in slide-in-from-bottom-[6px] gap-2 duration-280 ease-[var(--ease-settle)]'
       )}
       aria-disabled={disabled || undefined}
-      tabIndex={scoped ? -1 : undefined}
       role="alertdialog"
       aria-label={questions.length === 1 ? questions[0]?.question : 'Claude asks'}
       data-question
       data-request={permission.requestId}
     >
-      <div className={cn('flex flex-col', scoped ? 'gap-0' : 'gap-5')}>
+      <div className="flex flex-col gap-5">
         {questions.map((q, i) => {
           const eyebrow = [q.header, q.multiSelect ? 'Pick any' : ''].filter((s) => s !== '')
           const typed = other[i] ?? ''
           return (
             <fieldset
               key={q.question}
-              className={cn('flex min-w-0 flex-col', scoped ? 'not-first:border-t' : 'gap-2.5')}
+              className="flex min-w-0 flex-col gap-2.5"
               disabled={disabled}
             >
               <legend className="contents">
-                <span
-                  className={cn('flex min-w-0 flex-col gap-0.5', scoped && 'px-3.5 pt-3 pb-2.5')}
-                >
+                <span className="flex min-w-0 flex-col gap-0.5">
                   {eyebrow.length > 0 && (
                     <span className="text-faint text-xs font-medium">{eyebrow.join(' · ')}</span>
                   )}
@@ -397,12 +367,7 @@ export function QuestionCard({
                   </span>
                 </span>
               </legend>
-              <div
-                className={cn(
-                  'divide-border flex flex-col divide-y overflow-hidden',
-                  scoped ? 'border-t' : 'bg-background rounded-lg border'
-                )}
-              >
+              <div className="divide-border bg-background flex flex-col divide-y overflow-hidden rounded-lg border">
                 {q.options.map((o, n) => {
                   const { recommended, text } = splitRecommended(o.label)
                   return (
@@ -437,13 +402,12 @@ export function QuestionCard({
                     />
                   </div>
                 )}
-                {!scoped && i === questions.length - 1 && foot}
+                {i === questions.length - 1 && foot}
               </div>
             </fieldset>
           )
         })}
       </div>
-      {scoped && foot}
     </div>
   )
 }

@@ -68,8 +68,8 @@ shown in the user's sidebar. Other workspaces of the same project each run their
 To split work, start workspaces with workspace_create (each gets its own branch and an agent \
 working on the prompt), then wait_for them and read their answers with chat_read; \
 workspace_stop interrupts one, workspace_remove cleans one up once its work is merged or \
-dropped. The workspaces this chat creates leave the sidebar and show as a \
-tree in this workspace's Agents tab, so give each a prompt that names its feature. \
+dropped. The workspaces this chat creates show in the sidebar right under this one, \
+each with its own task page, so give each a prompt that names its feature. \
 Each workspace has a colour (e.g. amber), then a name Claude gives it from its first \
 prompt; tools take either. \
 This workspace's dev servers (the project's declared apps, on ports of their own so they never \
@@ -174,7 +174,7 @@ fn tools() -> Value {
         },
         {
             "name": "workspace_create",
-            "description": format!("Starts a new workspace (a worktree on its own branch) with an agent working on `prompt`, as the user's New workspace does. It shows in this workspace's Agents tab. The prompt must stand alone: that agent knows nothing of this conversation. Follow with wait_for."),
+            "description": format!("Starts a new workspace (a worktree on its own branch) with an agent working on `prompt`, as the user's New workspace does. It shows in the sidebar under this workspace. The prompt must stand alone: that agent knows nothing of this conversation. Follow with wait_for."),
             "inputSchema": {
                 "type": "object",
                 "properties": {

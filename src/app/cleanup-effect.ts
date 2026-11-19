@@ -229,7 +229,7 @@ function capture(
     return { colors: [], ghost, grains: [], rect, restoreScroll }
   const roots = [effect === 'Dust' ? main : null, row].filter((r): r is Element => r !== null)
   // The chat lets go as the sweep passes; the sidebar row at once (and alone when there is no
-  // chat to sweep, as in Desk: a zero-wide sweep would hold its grains forever).
+  // chat to sweep, as from a report's card: a zero-wide sweep would hold its grains forever).
   const delayOf = (x: number) =>
     rect.width > 0 && x >= rect.left
       ? ((x - rect.left) / rect.width) * SWEEP_MS + Math.random() * 50

@@ -2,11 +2,11 @@
 // mid-way, at its on-screen test (`?report-new` its page just started, head only;
 // `?report-ask` its chat waits on the page's question, `?report-answered` it was answered;
 // `?report-live` it fills its result 5 s in and stops on screens to review 4 s later;
-// `?report-live-ask` it asks 5 s in; `?merged` its PR is ready, then merged). coral (in amber's
-// Agents tab) has written its plan, today beside the mockup, while at work (`?long`: every
+// `?report-live-ask` it asks 5 s in; `?merged` its PR is ready, then merged). coral (under amber
+// in the sidebar) has written its plan, today beside the mockup, while at work (`?long`: every
 // section at its limits). violet's is a page saved before sections, its PR ready and older than
 // its chat (`?report-done` finished without a PR), basil is blocked, plum is done. atlas's pages
-// are in desk.ts. The screens are drawn here as SVG: a booking back-office (`shot`) and logit
+// are in atlas.ts. The screens are drawn here as SVG: a booking back-office (`shot`) and logit
 // itself (`logitShot`).
 import type { Report, ReportProgress } from '../model/report'
 

@@ -3,7 +3,7 @@
 // the same objects, so a merge from a card shows in the git panel and the other way round.
 // `?prs` gives amber a chat and teal a report that link them; `?pr-slow` holds every read 3 s,
 // `?pr-fail` fails every read (gh signed out), `?pr-merge-fail` fails every merge. Merged, the
-// cards of amber's #128 (its chat) and moss's #418 (its report, Desk) offer Delete workspace.
+// cards of amber's #128 (its chat) and moss's #418 (its report) offer Delete workspace.
 import type { Report } from '../model/report'
 
 import { assistant, asTranscript, PATHS, PRS, result, sent } from './fixtures'
@@ -58,7 +58,7 @@ const LISTED: RawPr[] = [
   pr('https://github.com/atlas/booking/pull/418', {
     additions: 640,
     deletions: 85,
-    // moss's own branch: merged, its card in Desk offers to delete moss.
+    // moss's own branch: merged, its card in its report offers to delete moss.
     headRefName: 'logit/moss',
     reviewDecision: 'APPROVED',
     statusCheckRollup: [ok('unit'), ok('e2e'), ok('lint')],

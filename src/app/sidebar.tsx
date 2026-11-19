@@ -1,24 +1,14 @@
 import {
   ChevronRightIcon,
-  CircleAlertIcon,
-  CodeIcon,
   EllipsisIcon,
   FolderOpenIcon,
   InboxIcon,
-  type LucideIcon,
   PanelLeftIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
 } from 'lucide-react'
-import {
-  type MouseEvent,
-  type ReactNode,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type MouseEvent, type ReactNode, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -28,8 +18,9 @@ import { cn } from '@/lib/utils'
 import type { Project, Signal, Workspace } from '../model/catalog'
 import type { FileChange } from './use-git'
 
-import { type DeskGhost, type DeskGroup, type DeskRow, rowTone } from './desk-model'
+import { rowTone, type Stop, STOP_WORD } from './needs'
 import { useReorder } from './reorder'
+import { type TreeRow, treeRows } from './sidebar-tree'
 import { Dot, type Tone } from './status-dot'
 import { RenameField } from './tab-bar'
 import { useServerPort } from './use-servers'
@@ -64,34 +55,24 @@ export interface ChatFacts {
   activeAt?: number
 }
 
-/**
- * Desk (⌘0), the sidebar's other mode: the same rows, grouped by what they need from the user
- * instead of by project (desk.tsx keeps the state).
- */
-export interface DeskSide {
-  on: boolean
-  /** Code (false) or Desk (true). */
-  onMode: (desk: boolean) => void
-  groups: Record<DeskGroup, DeskRow[]>
-  /** Rows that just left "Needs you", folding out. */
-  ghosts: readonly DeskGhost[]
-  onGhostDone: (ghost: DeskGhost) => void
-  selected: string | null
-  onPick: (id: string) => void
-  quietOpen: boolean
-  onQuiet: () => void
-  loading: boolean
-  /** The reports failed to load. */
-  error: string | null
-  onRetry: () => void
-  /** Any workspace, agents' included: a row is drawn from it. */
-  workspace: (id: string) => Workspace | undefined
+/** Who needs the user: each row's page stop and whether it asks something unseen. */
+export interface SidebarNeeds {
+  /** How many rows ask something the user has not seen. */
+  count: number
+  /** Goes up each time ⌘0 found nothing: the row says so once. */
+  nothing: number
+  /** ⌘0: the next one. */
+  onNext: () => void
+  stops: Record<string, Stop | null>
+  unread: Record<string, boolean>
 }
 
 interface Props {
-  desk?: DeskSide
+  needs?: SidebarNeeds
   projects: Project[]
   workspaces: Record<string, Workspace[]>
+  /** Each sub-workspace's parent (the workspace whose chat started it), by id. */
+  parents?: Readonly<Record<string, string>>
   /** What each workspace's tabs call attention to. */
   signals: Record<string, Signal | null>
   diffs: Record<string, DiffStat>
@@ -198,8 +179,6 @@ export function useNow(): number {
 
 const NAV =
   'hover:bg-hover text-muted-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color,color] duration-120'
-/** The mode on screen (Code or Desk): the selected row's fill. */
-const NAV_ON = 'bg-active hover:bg-active text-foreground font-medium'
 /** What the hover tools cover: gone while they show. */
 const UNDER_TOOLS =
   'transition-opacity duration-120 group-focus-within/row:opacity-0 group-hover/row:opacity-0'
@@ -213,14 +192,9 @@ const LABEL = 'text-label text-xs font-medium'
 const HOVER_TOOLS =
   'pointer-events-none absolute right-1 flex items-center bg-linear-to-r from-transparent to-(--row) to-30% pl-6 opacity-0 [:root[data-wallpaper]_&]:bg-none transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100'
 
-/** The two lists under the entries (by project, and Desk's), one over the other. */
-const LIST =
-  'absolute inset-0 overflow-auto px-1.5 pb-3 transition-[opacity,translate,visibility] duration-160 ease-out motion-reduce:transition-[opacity,visibility]'
-/** A list put away: faded out, a few pixels toward the side its entry sits on. */
-const LIST_OFF_LEFT = 'invisible -translate-x-1 opacity-0'
-const LIST_OFF_RIGHT = 'invisible translate-x-1 opacity-0'
-
-const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+/** Folding a group slides its height; the rows inside don't reflow. */
+const FOLD =
+  'grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]'
 
 /** Where a menu opens: at the pointer for a right-click, under the button for a click. */
 function at(e: MouseEvent) {
@@ -230,11 +204,15 @@ function at(e: MouseEvent) {
 }
 
 const FOLDED_KEY = 'logit.sidebar.folded'
+/** The workspaces whose sub-workspaces are folded (open by default). */
+export const KIDS_FOLDED_KEY = 'logit.sidebar.kids-folded'
+/** The projects whose Parked group is open (folded by default). */
+const PARKED_KEY = 'logit.sidebar.parked-open'
 
 /** The projects folded last time: a per-window convenience, empty when storage is refused. */
-function loadFolded(): ReadonlySet<string> {
+function loadFolded(key = FOLDED_KEY): ReadonlySet<string> {
   try {
-    const raw = localStorage.getItem(FOLDED_KEY)
+    const raw = localStorage.getItem(key)
     const ids: unknown = raw === null ? [] : JSON.parse(raw)
     return new Set(Array.isArray(ids) ? ids.filter((x) => typeof x === 'string') : [])
   } catch {
@@ -242,9 +220,9 @@ function loadFolded(): ReadonlySet<string> {
   }
 }
 
-function saveFolded(ids: ReadonlySet<string>) {
+function saveFolded(ids: ReadonlySet<string>, key = FOLDED_KEY) {
   try {
-    localStorage.setItem(FOLDED_KEY, JSON.stringify([...ids]))
+    localStorage.setItem(key, JSON.stringify([...ids]))
   } catch {
     // nothing to do: the next launch shows every project open
   }
@@ -265,10 +243,52 @@ export function Sidebar(props: Props) {
       saveFolded(next)
       return next
     })
+  const [parkedOpen, setParkedOpen] = useState<ReadonlySet<string>>(() => loadFolded(PARKED_KEY))
+  const toggleParked = (id: string) =>
+    setParkedOpen((state) => {
+      const next = new Set(state)
+      if (!next.delete(id)) next.add(id)
+      saveFolded(next, PARKED_KEY)
+      return next
+    })
+  const [kidsFolded, setKidsFolded] = useState<ReadonlySet<string>>(() =>
+    loadFolded(KIDS_FOLDED_KEY)
+  )
+  const toggleKids = (id: string) =>
+    setKidsFolded((state) => {
+      const next = new Set(state)
+      if (!next.delete(id)) next.add(id)
+      saveFolded(next, KIDS_FOLDED_KEY)
+      return next
+    })
+  const parents = props.parents ?? {}
+  // The workspace on screen never hides: the parents above it stay open.
+  const above = new Set<string>()
+  for (let at = parents[workspaceId ?? '']; at !== undefined && !above.has(at); at = parents[at])
+    above.add(at)
+  const folded = (id: string) => kidsFolded.has(id) && !above.has(id)
+  /** Each list's rows with what their tree needs: hidden under a folded parent, how many of
+   * those below ask, and the toggle. */
+  const tree = (rows: TreeRow[]) => {
+    const hides = new Set<string>()
+    return rows.map((row, i) => {
+      const hidden = row.parent !== null && hides.has(row.parent)
+      if (hidden || folded(row.ws.id)) hides.add(row.ws.id)
+      const asking = rows
+        .slice(i + 1, i + 1 + row.below)
+        .filter((r) => r.ws.paused !== true && props.needs?.unread[r.ws.id] === true).length
+      return {
+        asking,
+        folded: folded(row.ws.id),
+        hidden,
+        onFold: () => toggleKids(row.ws.id),
+        row,
+      }
+    })
+  }
   // ⌘1–9 go through every workspace in sidebar order, folded groups included.
   const order = projects.flatMap((p) => (props.workspaces[p.id] ?? []).map((w) => w.id))
-  const desk = props.desk
-  const needs = desk?.groups.needs.length ?? 0
+  const needs = props.needs
 
   return (
     <nav
@@ -302,42 +322,11 @@ export function Sidebar(props: Props) {
           <SearchIcon className="text-faint size-4 shrink-0" />
           <span className="min-w-0 flex-1 text-left">Search</span>
         </button>
-        {desk !== undefined && (
-          <div role="tablist" aria-label="Sidebar" className="contents">
-            <ModeTab
-              on={!desk.on}
-              tip="Code · ⌘0"
-              icon={CodeIcon}
-              label="Code"
-              onClick={() => desk.onMode(false)}
-            />
-            <ModeTab
-              on={desk.on}
-              tip="Desk · ⌘0"
-              icon={InboxIcon}
-              label="Desk"
-              onClick={() => desk.onMode(true)}
-            >
-              {needs > 0 && (
-                <span
-                  key={needs}
-                  className="bg-warn animate-in fade-in grid h-[18px] min-w-[18px] place-items-center rounded-full px-[5px] text-[11px] leading-[14px] font-medium text-white tabular-nums duration-160"
-                  aria-label={`${needs} need you`}
-                >
-                  {needs}
-                </span>
-              )}
-            </ModeTab>
-          </div>
-        )}
+        {needs !== undefined && <NeedsEntry needs={needs} />}
       </div>
-      {/* The two lists, one over the other: switching cross-fades them in place, and each
-          keeps its scroll and its rows' state while the other shows. */}
       <div className="relative min-h-0 flex-1">
-        {desk !== undefined && <DeskList {...props} desk={desk} now={now} />}
         <div
-          className={cn(LIST, desk?.on === true && LIST_OFF_LEFT)}
-          inert={desk?.on === true}
+          className="absolute inset-0 overflow-auto px-1.5 pb-3"
           data-reorder
           onClickCapture={projectDrag.onClickCapture}
         >
@@ -350,8 +339,15 @@ export function Sidebar(props: Props) {
           )}
           {projects.map((project, p) => {
             const open = !collapsed.has(project.id)
-            const list = props.workspaces[project.id] ?? []
-            const listIds = list.map((w) => w.id)
+            const all = props.workspaces[project.id] ?? []
+            const list = all.filter((w) => w.paused !== true)
+            const parked = all.filter((w) => w.paused === true)
+            const rows = tree(treeRows(list, parents))
+            const parkedRows = tree(treeRows(parked, parents))
+            // A row and its sub-workspaces drag together.
+            const groups = rows.filter((r) => r.row.depth === 0)
+            const listIds = groups.map((g) => g.row.ws.id)
+            const parkedShown = parkedOpen.has(project.id)
             // With no workspace to select, the project itself is where you are (not in Settings).
             const here = project.id === projectId && workspaceId === null && props.page === null
             return (
@@ -416,48 +412,86 @@ export function Sidebar(props: Props) {
                     </Button>
                   </span>
                 </div>
-                {/* Folding slides the group's height; the rows inside don't reflow. */}
                 <div
-                  className={cn(
-                    'grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
-                    open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
-                  )}
+                  className={cn(FOLD, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0')}
                   inert={!open}
                 >
-                  <div
-                    className="flex min-h-0 flex-col gap-0.5 overflow-hidden pt-0.5"
-                    data-reorder
-                    onClickCapture={workspaceDrag.onClickCapture}
-                  >
-                    {list.length === 0 && (
-                      <button
-                        type="button"
-                        className="text-label hover:bg-hover hover:text-muted-foreground flex h-8 items-center gap-2 rounded-md pl-3 text-sm transition-[background-color,color] duration-120"
-                        onClick={() => props.onNewWorkspace(project.id)}
-                      >
-                        <PlusIcon className="size-3.5 flex-none" />
-                        New workspace
-                      </button>
-                    )}
-                    {list.map((ws) => (
-                      <div
-                        key={ws.id}
-                        data-reorder-id={ws.id}
-                        className={cn(
-                          'rounded-md transition-[box-shadow,background-color] duration-120',
-                          workspaceDrag.dragging === ws.id && 'bg-side shadow-popover'
-                        )}
-                        onPointerDown={(e) => workspaceDrag.start(ws.id, listIds, e)}
-                      >
-                        <WorkspaceRow
-                          {...props}
-                          ws={ws}
-                          project={project}
-                          number={order.indexOf(ws.id)}
-                          now={now}
+                  <div className="min-h-0 overflow-hidden">
+                    <div
+                      className="flex flex-col gap-0.5 pt-0.5"
+                      data-reorder
+                      onClickCapture={workspaceDrag.onClickCapture}
+                    >
+                      {all.length === 0 && (
+                        <button
+                          type="button"
+                          className="text-label hover:bg-hover hover:text-muted-foreground flex h-8 items-center gap-2 rounded-md pl-3 text-sm transition-[background-color,color] duration-120"
+                          onClick={() => props.onNewWorkspace(project.id)}
+                        >
+                          <PlusIcon className="size-3.5 flex-none" />
+                          New workspace
+                        </button>
+                      )}
+                      {groups.map((top) => {
+                        const at = rows.indexOf(top)
+                        const id = top.row.ws.id
+                        return (
+                          <div
+                            key={id}
+                            data-reorder-id={id}
+                            className={cn(
+                              'flex flex-col rounded-md transition-[box-shadow,background-color] duration-120',
+                              workspaceDrag.dragging === id && 'bg-side shadow-popover'
+                            )}
+                            onPointerDown={(e) => workspaceDrag.start(id, listIds, e)}
+                          >
+                            {rows.slice(at, at + 1 + top.row.below).map((t) => (
+                              <TreeFold key={t.row.ws.id} hidden={t.hidden} first={t === top}>
+                                <WorkspaceRow
+                                  {...props}
+                                  ws={t.row.ws}
+                                  tree={t}
+                                  project={project}
+                                  number={order.indexOf(t.row.ws.id)}
+                                  now={now}
+                                />
+                              </TreeFold>
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {parked.length > 0 && (
+                      <div className="flex flex-col">
+                        <ParkedHead
+                          count={parked.length}
+                          open={parkedShown}
+                          onToggle={() => toggleParked(project.id)}
                         />
+                        <div
+                          className={cn(
+                            FOLD,
+                            parkedShown ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
+                          )}
+                          inert={!parkedShown}
+                        >
+                          <div className="flex min-h-0 flex-col overflow-hidden">
+                            {parkedRows.map((t, i) => (
+                              <TreeFold key={t.row.ws.id} hidden={t.hidden} first={i === 0}>
+                                <WorkspaceRow
+                                  {...props}
+                                  ws={t.row.ws}
+                                  tree={t}
+                                  project={project}
+                                  number={order.indexOf(t.row.ws.id)}
+                                  now={now}
+                                />
+                              </TreeFold>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               </section>
@@ -509,7 +543,16 @@ const SETTLE_MS = 1500
  * colour, then keeps a faint wash from the left edge while it stays so. `flash` is read when
  * the tint appears: a row already finished or waiting when the sidebar drew it doesn't flash.
  */
-function RowTint({ flash, signal }: { signal: 'done' | 'waiting' | 'failing'; flash: boolean }) {
+function RowTint({
+  flash,
+  left = 0,
+  signal,
+}: {
+  signal: 'done' | 'waiting' | 'failing'
+  flash: boolean
+  /** A sub-workspace's wash starts at its own indent, past its parent's guides. */
+  left?: number
+}) {
   const [play] = useState(flash)
   return (
     <span
@@ -520,40 +563,53 @@ function RowTint({ flash, signal }: { signal: 'done' | 'waiting' | 'failing'; fl
         TINT[signal],
         play && 'animate-[tint_0.7s_cubic-bezier(0.2,0,0,1)]'
       )}
+      style={left > 0 ? { left } : undefined}
     />
   )
 }
 
+/** What a page's stop reads in, while it asks something unseen. */
+const STOP_INK: Record<Stop, string> = {
+  blocked: 'text-critical-ink',
+  question: 'text-warn-ink',
+  ready: 'text-good-ink',
+  review: 'text-warn-ink',
+}
+
 /**
  * A workspace: what its agent is doing (the working loader, the waiting dot, the done dot
- * while unread, nothing while idle) over its tint, its task (the first chat's title; a name the user chose
+ * while unread, nothing while idle), its task (the first chat's title; a name the user chose
  * outranks it, and with neither, the colour word), bold while a finished turn is unread; at
- * the right its colour word and age. On hover, its menu button and, in a tooltip, its diff,
- * branch and ⌘ number.
+ * the right its page's stop in one word, its colour word and age. While it asks something the
+ * user has not seen, a tint washes it. Parked, it is muted and asks nothing. On hover, its
+ * menu button and, in a tooltip, its diff, branch and ⌘ number.
  */
 function WorkspaceRow(
   props: Props & {
     ws: Workspace
+    tree: RowTree
     project: Project
     number: number
     now: number
-    /** On Desk: selected there, picked there, and its project's name when there are several. */
-    pick?: { selected: boolean; onPick: () => void; where: string | null }
   }
 ) {
-  const { now, number, pick, project, ws } = props
+  const { now, number, project, tree, ws } = props
+  const { depth } = tree.row
+  const kids = tree.row.below
   // Settings on screen: no row is where you are.
   const active =
-    pick?.selected ??
-    (project.id === props.projectId && ws.id === props.workspaceId && props.page === null)
+    project.id === props.projectId && ws.id === props.workspaceId && props.page === null
+  const paused = ws.paused === true
   // Working and waiting show on the row you are on too; what it finished, you are reading.
   const reported = props.signals[ws.id] ?? null
   const signal = active && reported === 'done' ? null : reported
-  const unread = signal === 'done'
-  // The mark says why it needs you: the chat's live signal, else its report (sidebar and Desk
-  // agree, desk-model.ts).
-  const deskRow = props.desk?.groups.needs.find((r) => r.id === ws.id)
-  const tone = rowTone(signal, deskRow)
+  const asks = !paused && props.needs?.unread[ws.id] === true
+  const unread = !paused && signal === 'done'
+  // The mark says why it needs you: the chat's live signal, else its page's stop. Parked, only
+  // the working loader shows.
+  const stop = paused ? null : (props.needs?.stops[ws.id] ?? null)
+  const parkedTone = signal === 'working' ? 'working' : null
+  const tone = paused ? parkedTone : rowTone(signal, stop)
   // The signals settle while the chats load and replay: what a row shows then, it shows
   // without a flash. A tint that comes after has news to tell.
   const [settled, setSettled] = useState(false)
@@ -573,9 +629,7 @@ function WorkspaceRow(
     e.preventDefault()
     props.onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
   }
-  const paused = ws.paused === true
-  // Put aside: muted, and says so where its age was.
-  const status = paused ? 'Paused' : ageLabel(facts.activeAt, now)
+  const status = ageLabel(facts.activeAt, now)
   // Keyed by the signal, so a change cross-fades in place.
   const icon = (
     <span
@@ -586,11 +640,12 @@ function WorkspaceRow(
     </span>
   )
   const tip = [
-    pick?.where ?? null,
+    paused ? 'Parked' : null,
     diff && diff.add + diff.del > 0 ? `+${diff.add} −${diff.del}` : null,
     ws.branch,
   ].filter((part) => part !== null)
-  const row = 'flex h-9 w-full items-center gap-2 pr-2 pl-2.5'
+  const row = 'flex h-9 w-full items-center gap-2 pr-2'
+  const indent = { paddingLeft: PAD + depth * STEP }
 
   return (
     <div
@@ -600,12 +655,13 @@ function WorkspaceRow(
       )}
       onContextMenu={menu}
     >
-      {(tone === 'done' || tone === 'waiting' || tone === 'failing') && (
-        <RowTint key={tone} signal={tone} flash={settled} />
+      <Guides tree={tree} />
+      {asks && (tone === 'done' || tone === 'waiting' || tone === 'failing') && (
+        <RowTint key={tone} signal={tone} flash={settled} left={depth * STEP} />
       )}
       {renaming ? (
         // In place of the row's button: a field inside a button would click it.
-        <div className={row}>
+        <div className={row} style={indent}>
           {icon}
           <RenameField
             className="-ml-0.5 pl-0.5 text-sm"
@@ -625,9 +681,10 @@ function WorkspaceRow(
                   'transition-opacity duration-160 ease-out',
                   paused && 'opacity-50'
                 )}
+                style={indent}
                 aria-current={active}
                 data-workspace={ws.id}
-                onClick={() => (pick ? pick.onPick() : props.onSelect(project.id, ws.id))}
+                onClick={() => props.onSelect(project.id, ws.id)}
                 onDoubleClick={() => props.onRename(ws)}
               />
             }
@@ -637,7 +694,7 @@ function WorkspaceRow(
               className={cn(
                 'min-w-0 flex-1 truncate text-left',
                 active && 'text-foreground font-medium',
-                !active && unread && 'text-foreground font-semibold'
+                !active && (unread || asks) && 'text-foreground font-semibold'
               )}
             >
               {title}
@@ -648,20 +705,19 @@ function WorkspaceRow(
                 'text-faint flex flex-none items-center gap-1 text-xs tabular-nums'
               )}
             >
+              {kids > 0 && <KidsCount tree={tree} />}
               {/* Below 240px of sidebar the task keeps the room; the tooltip has the branch. */}
-              {/* Its project, on Desk across several: the name in a wide sidebar, else its
-                  initial; the tooltip has it whole. */}
-              {pick?.where != null && (
-                <span className="text-label flex min-w-0 items-center gap-1">
-                  <span className="max-w-24 truncate @max-[340px]:hidden">{pick.where}</span>
-                  <span aria-hidden="true" className="text-faint @max-[340px]:hidden">
+              {stop !== null && (
+                <span
+                  key={stop}
+                  className={cn(
+                    'animate-in fade-in flex items-center gap-1 transition-[color] duration-160',
+                    asks ? cn(STOP_INK[stop], 'font-medium') : 'text-muted-foreground'
+                  )}
+                >
+                  <span>{STOP_WORD[stop]}</span>
+                  <span aria-hidden="true" className="text-faint font-normal">
                     ·
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="text-2xs ring-foreground/12 mr-0.5 grid size-4 place-items-center rounded-sm ring-1 ring-inset @min-[340px]:hidden"
-                  >
-                    {pick.where.slice(0, 1).toUpperCase()}
                   </span>
                 </span>
               )}
@@ -691,6 +747,24 @@ function WorkspaceRow(
       )}
       {!renaming && (
         <span className={cn(HOVER_TOOLS, 'top-0 h-9')}>
+          {kids > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-faint h-7 gap-0.5 px-1.5 text-xs font-normal tabular-nums"
+              aria-expanded={!tree.folded}
+              aria-label={`${tree.folded ? 'Show' : 'Hide'} the ${kids} ${kids === 1 ? 'workspace' : 'workspaces'} ${ws.name} started`}
+              onClick={tree.onFold}
+            >
+              {kids}
+              <ChevronRightIcon
+                className={cn(
+                  'size-3.5 transition-[rotate] duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+                  !tree.folded && 'rotate-90'
+                )}
+              />
+            </Button>
+          )}
           <Button variant="ghost" size="icon-sm" aria-label={`More for ${ws.name}`} onClick={menu}>
             <EllipsisIcon className="size-4" />
           </Button>
@@ -700,270 +774,193 @@ function WorkspaceRow(
   )
 }
 
-/** Code or Desk, at the top of the sidebar: the mode on screen takes the selected fill. */
-function ModeTab({
+/** A row in its tree: hidden under a folded parent, how many of those below it ask. */
+interface RowTree {
+  row: TreeRow
+  hidden: boolean
+  folded: boolean
+  /** How many rows below it ask something unseen. */
+  asking: number
+  onFold: () => void
+}
+
+// The tree's geometry: each level steps 18px; a guide runs down the centre of its parent's
+// mark column (10px of padding, then the 14px mark).
+const PAD = 10
+const STEP = 18
+const rail = (level: number) => PAD + 7 + level * STEP
+
+/** A sub-workspace's hairlines: the guides of the levels above that run on past it, an elbow
+ * from its parent into its own mark, and a stem down to its children while they show. */
+function Guides({ tree }: { tree: RowTree }) {
+  const { depth, last, rails } = tree.row
+  const line = 'bg-line-strong pointer-events-none absolute w-px'
+  return (
+    <span aria-hidden>
+      {rails.map((on, level) =>
+        on ? (
+          <span
+            key={level}
+            className={cn(line, '-top-0.5 bottom-0')}
+            style={{ left: rail(level) }}
+          />
+        ) : null
+      )}
+      {depth > 0 && (
+        <>
+          <span
+            className="border-line-strong pointer-events-none absolute -top-0.5 h-5 rounded-bl-md border-b border-l"
+            style={{ left: rail(depth - 1), width: STEP - 6 }}
+          />
+          {!last && (
+            <span className={cn(line, 'top-4.5 bottom-0')} style={{ left: rail(depth - 1) }} />
+          )}
+        </>
+      )}
+      {tree.row.below > 0 && !tree.folded && (
+        <span className={cn(line, 'top-6 bottom-0')} style={{ left: rail(depth) }} />
+      )}
+    </span>
+  )
+}
+
+/** A parent's quiet count of what sits under it; folded, what asks below shows as a dot. */
+function KidsCount({ tree }: { tree: RowTree }) {
+  const n = tree.row.below
+  const asks = tree.folded && tree.asking > 0
+  return (
+    <span
+      className={cn(
+        'flex items-center gap-1 transition-[color] duration-160',
+        asks && 'text-warn-ink font-medium'
+      )}
+      title={asks ? `${tree.asking} below need you` : undefined}
+    >
+      {asks && <Dot tone="waiting" label={`${tree.asking} below need you`} />}
+      <span className="flex items-center">
+        {asks ? tree.asking : n}
+        <ChevronRightIcon
+          className={cn(
+            'size-3 transition-[rotate] duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+            !tree.folded && 'rotate-90'
+          )}
+        />
+      </span>
+      <span aria-hidden="true" className="text-faint font-normal">
+        ·
+      </span>
+    </span>
+  )
+}
+
+/** A row in its group, folding away under a folded parent: its height slides, nothing
+ * reflows. Every row but a group's first keeps the 2px between rows inside its fold. */
+function TreeFold({
   children,
-  icon: Icon,
-  label,
-  on,
-  onClick,
-  tip,
+  first,
+  hidden,
 }: {
-  on: boolean
-  icon: LucideIcon
-  label: string
-  tip: string
-  onClick: () => void
-  children?: ReactNode
+  children: ReactNode
+  first: boolean
+  hidden: boolean
 }) {
+  return (
+    <div
+      className={cn(FOLD, hidden ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr]')}
+      inert={hidden}
+    >
+      <div className={cn('min-h-0 overflow-hidden', !first && 'pt-0.5')}>{children}</div>
+    </div>
+  )
+}
+
+/** "Needs you" under Search: how many rows ask something unseen, and ⌘0's way to the next.
+ * Pressed with none, it says so for a moment in place of its label. */
+function NeedsEntry({ needs }: { needs: SidebarNeeds }) {
+  const [quiet, setQuiet] = useState(false)
+  const [seenNothing, setSeenNothing] = useState(needs.nothing)
+  if (needs.nothing !== seenNothing) {
+    setSeenNothing(needs.nothing)
+    setQuiet(true)
+  }
+  useEffect(() => {
+    if (!quiet) return
+    const timer = setTimeout(() => setQuiet(false), 1600)
+    return () => clearTimeout(timer)
+  }, [quiet, seenNothing])
+  const { count } = needs
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={on}
-      className={cn(NAV, on && NAV_ON)}
-      data-tip={tip}
-      onClick={onClick}
+      className={NAV}
+      data-tip="Next that needs you · ⌘0"
+      aria-keyshortcuts="Meta+0"
+      onClick={needs.onNext}
     >
-      <Icon
-        className={cn(
-          'size-4 shrink-0 transition-[color] duration-120',
-          on ? 'text-foreground' : 'text-faint'
-        )}
-      />
-      <span className="min-w-0 flex-1 text-left">{label}</span>
-      {children}
+      <InboxIcon className="text-faint size-4 shrink-0" />
+      {/* The two labels share one cell: the swap cross-fades with no shift. */}
+      <span className="grid min-w-0 flex-1 text-left">
+        <span
+          className={cn(
+            'col-start-1 row-start-1 truncate transition-opacity duration-120 ease-out',
+            quiet && 'opacity-0'
+          )}
+        >
+          Needs you
+        </span>
+        <span
+          aria-live="polite"
+          className={cn(
+            'text-faint col-start-1 row-start-1 truncate transition-opacity duration-120 ease-out',
+            !quiet && 'opacity-0'
+          )}
+        >
+          {quiet ? 'Nothing needs you' : ''}
+        </span>
+      </span>
+      {count > 0 ? (
+        <span
+          key={count}
+          className="bg-foreground animate-in fade-in text-2xs grid h-[18px] min-w-[18px] place-items-center rounded-full px-[5px] text-white tabular-nums duration-160"
+          aria-label={`${count} need you`}
+        >
+          {count}
+        </span>
+      ) : (
+        <Kbd>⌘0</Kbd>
+      )}
     </button>
   )
 }
 
-/** A Desk group's head, drawn as a project's: its label and count; Quiet folds. */
-function DeskHead({
+/** A project's Parked group head: its label and count, folded by default. */
+function ParkedHead({
   count,
-  first,
-  label,
   onToggle,
   open,
 }: {
-  label: string
   count: number
-  first: boolean
-  onToggle?: () => void
-  open?: boolean
+  open: boolean
+  onToggle: () => void
 }) {
-  const inner = (
-    <>
-      <span className="min-w-0 flex-[0_1_auto] truncate">{label}</span>
-      <span className="ml-0.5 font-normal tabular-nums">{count}</span>
-    </>
-  )
   return (
-    <div
-      className={cn('group/row relative flex h-7 items-center rounded-md', first ? 'mt-2' : 'mt-4')}
-    >
-      {onToggle === undefined ? (
-        <h3 className={cn(LABEL, 'flex h-full min-w-0 flex-1 items-center gap-1 px-3')}>{inner}</h3>
-      ) : (
-        <button
-          type="button"
-          className={cn(
-            LABEL,
-            'hover:text-faint flex h-full min-w-0 flex-1 items-center gap-1 px-3 transition-[color] duration-120'
-          )}
-          aria-expanded={open}
-          onClick={onToggle}
-        >
-          {inner}
-          <ChevronRightIcon
-            className={cn(
-              'size-3.5 transition-[opacity,rotate] duration-[120ms,150ms] ease-[ease,cubic-bezier(0.2,0,0,1)] group-hover/row:opacity-100',
-              // Folded, it shows at rest: the group has rows to open.
-              open === true ? 'rotate-90 opacity-0' : 'opacity-100'
-            )}
-          />
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** A row put in the list after it was drawn: it rises in (a row there from the start doesn't). */
-function Arrive({ children, id, ready }: { id: string; ready: boolean; children: ReactNode }) {
-  const [rise] = useState(ready)
-  return (
-    <div
-      data-desk-row={id}
+    <button
+      type="button"
       className={cn(
-        rise &&
-          'animate-in fade-in slide-in-from-bottom-1.5 duration-240 ease-[var(--ease-settle)] motion-reduce:slide-in-from-bottom-0'
+        LABEL,
+        'group/parked hover:text-faint mt-0.5 flex h-7 items-center gap-1 rounded-md pl-8 transition-[color] duration-120'
       )}
+      aria-expanded={open}
+      onClick={onToggle}
     >
-      {children}
-    </div>
-  )
-}
-
-/** A row that just stopped needing the user: itself, folding away where it was. */
-function Leaving({ children, onDone }: { children: ReactNode; onDone: () => void }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const done = useRef(onDone)
-  done.current = onDone
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (el === null) return
-    if (reduced()) {
-      done.current()
-      return
-    }
-    const h = `${el.offsetHeight}px`
-    const anim = el.animate(
-      [
-        { height: h, opacity: 1, transform: 'translateX(0)' },
-        { height: h, offset: 0.35, opacity: 0.5, transform: 'translateX(10px)' },
-        { height: '0px', opacity: 0, transform: 'translateX(16px)' },
-      ],
-      { duration: 300, easing: 'cubic-bezier(0.2, 0, 0, 1)', fill: 'forwards' }
-    )
-    anim.onfinish = () => done.current()
-    return () => anim.cancel()
-  }, [])
-  return (
-    <div ref={ref} aria-hidden className="pointer-events-none overflow-hidden" inert>
-      {children}
-    </div>
-  )
-}
-
-/**
- * Desk's list: the sidebar's own rows, grouped by what they need from the user (desk-model.ts's
- * order) instead of by project. Selecting one shows its report in the content area.
- */
-function DeskList(props: Props & { desk: DeskSide; now: number }) {
-  const { desk, now } = props
-  const list = useRef<HTMLDivElement>(null)
-  // Rows drawn after the first moment rise in; the ones there from the start don't.
-  const [ready, setReady] = useState(false)
-  useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 400)
-    return () => clearTimeout(timer)
-  }, [])
-  // The selected row stays in view as it moves.
-  useEffect(() => {
-    if (!desk.on || desk.selected === null) return
-    list.current
-      ?.querySelector(`[data-desk-row="${CSS.escape(desk.selected)}"]`)
-      ?.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'nearest' })
-  }, [desk.on, desk.selected])
-
-  const { needs, quiet, working } = desk.groups
-  const order = props.projects.flatMap((p) => (props.workspaces[p.id] ?? []).map((w) => w.id))
-  const many = new Set([...needs, ...working, ...quiet].map((r) => r.projectId)).size > 1
-  const rowOf = (r: DeskRow, picked: boolean) => {
-    const ws = desk.workspace(r.id)
-    const project = props.projects.find((p) => p.id === r.projectId)
-    if (ws === undefined || project === undefined) return null
-    return (
-      <WorkspaceRow
-        {...props}
-        ws={ws}
-        project={project}
-        number={order.indexOf(ws.id)}
-        now={now}
-        pick={{
-          onPick: () => desk.onPick(r.id),
-          selected: picked && desk.selected === r.id,
-          where: many ? project.name : null,
-        }}
+      <span>Parked</span>
+      <span className="font-normal tabular-nums">{count}</span>
+      <ChevronRightIcon
+        className={cn(
+          'size-3.5 transition-[rotate] duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+          open && 'rotate-90'
+        )}
       />
-    )
-  }
-  const live = (r: DeskRow) => (
-    <Arrive key={r.id} id={r.id} ready={ready}>
-      {rowOf(r, true)}
-    </Arrive>
-  )
-  // Rows that just left stay a moment where they were, folding.
-  let needsRows: ReactNode[] = needs.map(live)
-  for (const g of desk.ghosts.toSorted((a, b) => a.at - b.at)) {
-    const ghost = (
-      <Leaving key={`leaving-${g.row.id}`} onDone={() => desk.onGhostDone(g)}>
-        {rowOf(g.row, false)}
-      </Leaving>
-    )
-    needsRows = needsRows.toSpliced(Math.min(g.at, needsRows.length), 0, ghost)
-  }
-  const rows = (children: ReactNode) => (
-    <div className="flex flex-col gap-0.5 pt-0.5">{children}</div>
-  )
-
-  return (
-    <div
-      ref={list}
-      className={cn(LIST, !desk.on && LIST_OFF_RIGHT)}
-      inert={!desk.on}
-      aria-label="Desk"
-    >
-      {desk.error !== null && (
-        <div
-          className="bg-critical-wash text-critical-ink mt-2 flex items-center gap-2 rounded-md py-1.5 pr-1.5 pl-2.5 text-xs"
-          title={desk.error}
-        >
-          <CircleAlertIcon className="size-3.5 flex-none" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 font-medium">Couldn&rsquo;t load the reports</span>
-          <Button variant="ghost" size="xs" onClick={desk.onRetry}>
-            Retry
-          </Button>
-        </div>
-      )}
-      {desk.loading ? (
-        <div aria-label="Reading the reports">
-          <div className={cn(LABEL, 'mt-2 flex h-7 items-center px-3')}>Reading the reports…</div>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex h-9 items-center gap-2 pr-2 pl-8">
-              <span
-                className="bg-active h-3 animate-pulse rounded-sm"
-                style={{ opacity: 1 - i * 0.25, width: `${70 - i * 12}%` }}
-              />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <>
-          {needs.length + desk.ghosts.length > 0 && (
-            <>
-              <DeskHead first label="Needs you" count={needs.length} />
-              {rows(needsRows)}
-            </>
-          )}
-          {working.length > 0 && (
-            <>
-              <DeskHead first={needs.length === 0} label="Working" count={working.length} />
-              {rows(working.map(live))}
-            </>
-          )}
-          {quiet.length > 0 && (
-            <>
-              <DeskHead
-                first={needs.length + working.length === 0}
-                label="Quiet"
-                count={quiet.length}
-                open={desk.quietOpen}
-                onToggle={desk.onQuiet}
-              />
-              {/* Folding slides the group's height, as a project's does. */}
-              <div
-                className={cn(
-                  'grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
-                  desk.quietOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
-                )}
-                inert={!desk.quietOpen}
-              >
-                <div className="min-h-0 overflow-hidden">{rows(quiet.map(live))}</div>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
+    </button>
   )
 }

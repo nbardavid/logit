@@ -1,4 +1,4 @@
-// A task's page, drawn natively: the right panel's Report tab and Desk's main area. Reading
+// A task's page, drawn natively: the right panel's Report tab, beside its chat. Reading
 // order: the head (title, where it stands, project · colour · ticket), the summary (or why it
 // is blocked), the question it waits on, then the six sections in their fixed order, each
 // with its label; an empty one is a faint line, and the empty ones that close the page fold
@@ -437,14 +437,13 @@ function Sections({
 }
 
 /**
- * The page itself, for any surface that has room for it: the right panel's tab, the Desk.
+ * The page itself, for any surface that has room for it: the right panel's Report tab.
  * `onZoom` asks the surface to show a screen larger (see `ZoomedShot`).
  */
 export function ReportBody({
   ask = { kind: 'unknown' },
   chatActiveAt,
   cwd,
-  head,
   merged = false,
   meta = null,
   onOpenChat = null,
@@ -452,8 +451,6 @@ export function ReportBody({
   report,
   showAsk = true,
   signal,
-  stateLine = null,
-  working: workingOverride,
 }: {
   report: Report
   /** The workspace's chats' last activity: a stop-state older than it is outdated. */
@@ -471,36 +468,26 @@ export function ReportBody({
   onZoom: (zoom: Zoom, from: HTMLButtonElement) => void
   /** The line under the title (project · colour · ticket). */
   meta?: ReactNode
-  /** False where the surface asks the question itself (Desk's answer card): written once. */
+  /** False where the question is asked elsewhere (its card in the chat): written once. */
   showAsk?: boolean
-  /** In place of the page's own state line. */
-  stateLine?: ReactNode
-  /** In place of the whole head (Desk's, which says where the workspace stands). */
-  head?: ReactNode
-  /** Whether the agent is at work right now, where the surface knows better (Desk's row). */
-  working?: boolean
 }) {
   const outdated = !merged && isOutdated(report, chatActiveAt)
   const says = pageSays(report, { outdated, signal })
-  const working = workingOverride ?? (!merged && says.working)
+  const working = !merged && says.working
   const page = pageOf(report, { ask, merged, question: showAsk })
   const top = [...page.lead, ...page.asks]
   const actions = { cwd, onZoom }
   return (
     <article className="@container/report flex flex-col gap-5" aria-label="Task">
-      {head ?? (
-        <ReportHead
-          title={report.title}
-          stateLine={
-            stateLine ?? (
-              <StateLine report={report} merged={merged} outdated={outdated} signal={signal} />
-            )
-          }
-          openTip="Go to the chat that keeps this page"
-          onOpenChat={onOpenChat}
-          meta={meta ?? <PageMeta ticket={report.ticket} links={linksOf(report)} />}
-        />
-      )}
+      <ReportHead
+        title={report.title}
+        stateLine={
+          <StateLine report={report} merged={merged} outdated={outdated} signal={signal} />
+        }
+        openTip="Go to the chat that keeps this page"
+        onOpenChat={onOpenChat}
+        meta={meta ?? <PageMeta ticket={report.ticket} links={linksOf(report)} />}
+      />
       {top.length > 0 && <Blocks blocks={top} start={1} actions={actions} />}
       <Sections
         sections={page.sections}
@@ -560,20 +547,14 @@ function useZoomHost(fallback: RefObject<HTMLElement | null>) {
 export function ReportPane({
   ask,
   chatActiveAt,
-  className = 'px-5 pt-1 pb-6',
   cwd,
   entry,
-  head,
   merged,
   meta,
   onOpenChat,
   onRetry,
-  scrollRef,
   showAsk,
   signal,
-  stateLine,
-  tail,
-  working,
 }: {
   entry: ReportEntry | undefined
   chatActiveAt?: number
@@ -583,22 +564,13 @@ export function ReportPane({
   merged?: boolean
   onOpenChat?: (() => void) | null
   onRetry: () => void
-  /** The scroller's padding. */
-  className?: string
   meta?: ReactNode
   showAsk?: boolean
-  stateLine?: ReactNode
-  head?: ReactNode
-  working?: boolean
-  /** After the page, in its column and scrolling with it: Desk's question card. */
-  tail?: ReactNode
-  scrollRef?: RefObject<HTMLDivElement | null>
 }) {
   const [zoom, setZoom] = useState<Zoom | null>(null)
   const from = useRef<HTMLButtonElement | null>(null)
   const pane = useRef<HTMLDivElement>(null)
-  const ownScroller = useRef<HTMLDivElement>(null)
-  const scroller = scrollRef ?? ownScroller
+  const scroller = useRef<HTMLDivElement>(null)
   const host = useZoomHost(pane)
   const report = entry?.report ?? null
   // A new version of the page may drop the screen zoomed: the zoom closes.
@@ -634,9 +606,6 @@ export function ReportPane({
           meta={meta}
           showAsk={showAsk}
           signal={signal}
-          working={working}
-          head={head}
-          stateLine={stateLine}
           onOpenChat={onOpenChat}
           onZoom={(z, button) => {
             from.current = button
@@ -669,10 +638,9 @@ export function ReportPane({
       <div
         ref={scroller}
         onScroll={remember}
-        className={cn('h-full [overflow-anchor:none] overflow-x-hidden overflow-y-auto', className)}
+        className="h-full [overflow-anchor:none] overflow-x-hidden overflow-y-auto px-5 pt-1 pb-6"
       >
         {body}
-        {tail}
       </div>
       {zoom !== null && report !== null && host !== null && (
         <ZoomedShot host={host} zoom={zoom} onZoom={setZoom} onClose={close} />
@@ -732,6 +700,8 @@ export function reportTab(
         cwd={chats[0]?.cwd}
         ask={ask}
         merged={pr?.state === 'Merged'}
+        // The question is asked once, by its card in the chat beside: the page says its state.
+        showAsk={false}
         onOpenChat={onOpenChat}
         onRetry={reports.retry}
       />

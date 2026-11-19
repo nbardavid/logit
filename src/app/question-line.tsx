@@ -85,7 +85,7 @@ export function useInView(
   tail: RefObject<HTMLElement | null>,
   scroller: RefObject<HTMLElement | null>,
   asking: boolean,
-  /** Changes when the card or its scroller is a new element (Desk's next row): watched anew. */
+  /** Changes when the card or its scroller is a new element: watched anew. */
   watch?: unknown
 ): boolean {
   const [inView, setInView] = useState(true)
@@ -116,7 +116,7 @@ export function QuestionBar({
   line: string
   away: boolean
   onShow: () => void
-  /** Its column, where it is not the chat's (Desk's report). */
+  /** Its column, where it is not the chat's. */
   className?: string
 }) {
   return (
@@ -137,7 +137,7 @@ export function QuestionBar({
             ? 'animate-in fade-in slide-in-from-bottom-[4px] pointer-events-auto duration-140 ease-out'
             : 'opacity-0 duration-100 ease-in'
         )}
-        // The composer (Desk: the list) keeps the focus: Enter and the numbers still answer.
+        // The composer keeps the focus: Enter and the numbers still answer.
         onMouseDown={(e) => e.preventDefault()}
         onClick={onShow}
       >

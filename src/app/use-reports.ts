@@ -1,6 +1,6 @@
 // Each workspace's latest report, read from the host when the workspace comes on screen and
 // whenever one of its chats writes a new one, and the list of every workspace's latest (for
-// Desk and for arriving at a workspace not read yet). No polling. What the user has read is
+// the sidebar's stops and for arriving at a workspace not read yet). No polling. What the user has read is
 // kept in localStorage (report-seen.ts), so a restart knows what is new.
 import { invoke } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -131,8 +131,9 @@ export function useReports(workspaceId: string | undefined) {
       opensOnArrival({ report: arriving, unread: unreadOf(workspaceId, arriving) }),
     entry,
     entryOf,
-    /** Whether the workspace on screen has a Report tab (a report, or a read that failed). */
-    has: entry !== undefined && (entry.report !== null || entry.error !== null),
+    /** Whether the workspace on screen has a Report tab (a report, or a read that failed);
+     * while its own read runs, the list says, so the panel opens split at once. */
+    has: entry !== undefined && (arriving !== null || entry.error !== null),
     list: { ...list, retry: readList },
     /** Reads a workspace's report unless it is read already or being read. */
     load: (wsId: string) => {
@@ -143,8 +144,6 @@ export function useReports(workspaceId: string | undefined) {
       if (workspaceId !== undefined) read(workspaceId)
     },
     retryOf: read,
-    /** The report written at `at` in a workspace was on screen (Desk shows it). */
-    see,
     /** Whether the workspace on screen shows its Report tab right now. */
     watch: (on: boolean) => {
       const next = on && workspaceId !== undefined ? workspaceId : null

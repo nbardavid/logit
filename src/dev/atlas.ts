@@ -1,13 +1,13 @@
-// Desk (⌘0) across three projects, twelve workspaces, every group and state. A third project,
-// atlas (a booking back-office): cobalt's page stops on a question with screens and its chat
-// waits on it (the first row Desk opens on; answering it moves the row), olive has three steps
-// of screens to review, moss's PR is ready with its checks green, fern is at work on a page
-// just started (the ticket and what it understood). In logit, amber's chat
-// lives in fixtures.ts (a Bash permission over a question report), and its children get their
-// chats here: ochre waits on a question it never reported, sage finished a turn not read yet,
-// coral is at work. pragma-once (in French): basil is blocked with its chat closed (Reopen
-// resumes its session), violet's ready report is older than its chat. plum is done (its report
-// is in reports.ts). `?no-desk` leaves atlas and these chats out.
+// The sidebar's needs across three projects, twelve workspaces, every page stop. A third
+// project, atlas (a booking back-office): cobalt's page stops on a question with screens and
+// its chat waits on it (answering it in the chat moves the row on), olive has three steps of
+// screens to review, moss's PR is ready with its checks green, fern is at work on a page just
+// started (the ticket and what it understood). In logit, amber's chat lives in fixtures.ts (a
+// Bash permission over a question report), and its children get their chats here: ochre waits
+// on a question it never reported, sage finished a turn not read yet, coral is at work.
+// pragma-once (in French): basil is blocked with its chat closed, violet's ready report is
+// older than its chat (and violet is parked). plum is done (its report is in reports.ts).
+// `?no-atlas` leaves atlas and these chats out.
 import type { Catalog, ChatRecord, Workspace } from '../model/catalog'
 import type { Report } from '../model/report'
 
@@ -67,7 +67,7 @@ const workspaces = (now: number): Workspace[] =>
   }))
 
 /** The catalog with atlas added. */
-export function withDesk(catalog: Catalog, now: number): Catalog {
+export function withAtlas(catalog: Catalog, now: number): Catalog {
   return {
     chats: [...catalog.chats, ...chatRecords(now)],
     projects: [
@@ -103,15 +103,15 @@ const OCHRE_QUESTION = {
   multiSelect: false,
   options: [
     {
-      description: 'One place to follow what an orchestrator started, the sidebar stays short.',
-      label: 'Under their parent, in its Agents tab (Recommended)',
+      description: 'Each one is seen at a glance, under the workspace that started it.',
+      label: 'Open under their parent (Recommended)',
     },
     {
-      description: 'Seen at a glance, but the list grows with every run.',
-      label: 'In the sidebar, folded under the parent',
+      description: 'The sidebar stays short, but the work below is one click away.',
+      label: 'Folded under their parent',
     },
   ],
-  question: 'Once a child workspace leaves the sidebar, where does it show?',
+  question: 'How do sub-workspaces first show in the sidebar?',
 }
 
 const reportLines = (c: string, state: Report['state']) => [
@@ -149,8 +149,8 @@ const opening = (c: string, prompt: string) => [
   sent(`u-${c}-1`, prompt),
 ]
 
-/** What the host replays of the Desk's running chats. */
-export const DESK_LINES: Record<string, string[]> = {
+/** What the host replays of atlas's running chats. */
+export const ATLAS_LINES: Record<string, string[]> = {
   'chat-cobalt': [
     ...opening('cobalt', 'Cancelled trips need a refund flow; see ticket ATL-88.'),
     assistant('m-cobalt-1', [{ text: 'The cancellation screen is in place.', type: 'text' }]),
@@ -192,10 +192,10 @@ export const DESK_LINES: Record<string, string[]> = {
     LIVE,
   ],
   'chat-ochre': [
-    ...opening('ochre', 'Child workspaces should leave the sidebar; find them a place.'),
+    ...opening('ochre', 'Child workspaces should show under their parent in the sidebar.'),
     assistant('m-ochre-1', [
       {
-        text: 'Children are filtered out of the sidebar now. One thing to settle first.',
+        text: 'Children sit under their parent now. One thing to settle first.',
         type: 'text',
       },
     ]),
@@ -223,7 +223,7 @@ export const DESK_LINES: Record<string, string[]> = {
 }
 
 /** basil's chat, closed: its session, which Reopen resumes. */
-export const DESK_SESSIONS = (now: number) => [
+export const ATLAS_SESSIONS = (now: number) => [
   {
     cwd: PATHS.basil,
     firstPrompt: 'Le médecin veut le compte-rendu en PDF ; ticket #63.',
@@ -234,7 +234,7 @@ export const DESK_SESSIONS = (now: number) => [
   },
 ]
 
-export const DESK_TRANSCRIPTS: Record<string, string[]> = {
+export const ATLAS_TRANSCRIPTS: Record<string, string[]> = {
   'session-basil': [
     initAnswer('chat-basil'),
     systemInit('session-basil', 'claude-opus-5-5'),
@@ -250,7 +250,7 @@ export const DESK_TRANSCRIPTS: Record<string, string[]> = {
 }
 
 /** Their states in the host's list (amber's children are in orchestra.ts). */
-export const DESK_HOST_CHATS = [
+export const ATLAS_HOST_CHATS = [
   { alive: true, historyLen: 0, id: 'chat-cobalt', unread: false, waiting: true, working: true },
   { alive: true, historyLen: 0, id: 'chat-olive', unread: false, waiting: false, working: false },
   { alive: true, historyLen: 0, id: 'chat-moss', unread: false, waiting: false, working: false },
@@ -258,7 +258,7 @@ export const DESK_HOST_CHATS = [
 ]
 
 /** The pending questions, so answering one in the preview gets a reply. */
-export const DESK_ASKED: [string, { chatId: string; prompt: string; toolId: string }][] = [
+export const ATLAS_ASKED: [string, { chatId: string; prompt: string; toolId: string }][] = [
   ['perm-cobalt-ask', { chatId: 'chat-cobalt', prompt: 'the refund', toolId: 'tool-cobalt-ask' }],
   ['perm-ochre-ask', { chatId: 'chat-ochre', prompt: 'the children', toolId: 'tool-ochre-ask' }],
 ]
@@ -276,7 +276,7 @@ const ticketOf = (id: string, text: string) => [
 const STEPS = ['Investigation', 'Mockup', 'Code', 'On-screen test', 'PR'] as const
 
 /** atlas's pages: fern just started, cobalt's question, olive's review, moss's ready PR. */
-export function deskReports(now: number): Record<string, Report> {
+export function atlasReports(now: number): Record<string, Report> {
   const reports: Report[] = [
     {
       ...base('fern'),

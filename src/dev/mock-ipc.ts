@@ -10,7 +10,7 @@
 //   `?fail` a failing call (the error toast: Setup › Write it with a chat), `?question` the
 //   busy chat asks two questions (one multi-select) with AskUserQuestion, `?question=long` one
 //   question at every limit (long question, long labels and descriptions, four options);
-// - `?empty-inbox` nothing waiting or unread, and only done reports (Desk: "Nothing needs
+// - `?empty-inbox` nothing waiting or unread, and only done reports (⌘0: "Nothing needs
 //   you"), `?merged` amber's PR merged (Clean up with a full transcript to crumble),
 //   `?artifacts` ten pages on amber (two new), `?no-mcp` no MCP servers for `/mcp` (else one in
 //   each state, src/dev/mcp.ts);
@@ -21,12 +21,12 @@
 //   out), `?pr-merge-fail` refuses every merge (a review is required). Merging walks armed,
 //   merging (1.4 s), merged. Merged, a card whose PR is its own workspace's offers Delete
 //   workspace: amber's #128 in the `?prs` chat (`?merged` reads it merged; amber has changes,
-//   so it asks "Delete anyway"), moss's #418 in Desk (no changes: the row leaves), while #206,
+//   so it asks "Delete anyway"), moss's #418 in its Report tab (no changes: the row leaves), while #206,
 //   no workspace's, offers nothing; `?delete-fail` refuses every workspace deletion;
-// - task pages (src/dev/reports.ts, atlas's in src/dev/desk.ts). Without flags: amber mid-
+// - task pages (src/dev/reports.ts, atlas's in src/dev/atlas.ts). Without flags: amber mid-
 //   progress (working, its chat waiting on a permission, so the state line says so), coral a
 //   plan with today beside the mockup while working, violet a page in the old format (loaded
-//   as the host maps it), basil blocked, plum done, and in Desk fern just started, cobalt a
+//   as the host maps it), basil blocked, plum done, and in atlas fern just started, cobalt a
 //   question, olive screens to review, moss ready with its PR card and what is left.
 //   `?no-reports` none, `?report-slow` reads take 1.5 s (`=ms`; the loading state),
 //   `?report-fail` every read fails (the error state), `?report-new` amber's page just started
@@ -36,9 +36,18 @@
 //   waiting in its chat), `?report-answered` it was answered, `?report-done` violet finished
 //   without a PR, `?report-live-ask` amber's chat writes a question 5 s in (go elsewhere first:
 //   coming back to amber opens its Report tab), `?merged` amber shipped and merged;
-// - Desk (⌘0): twelve workspaces over three projects in every group and state
-//   (src/dev/desk.ts); `?no-desk` leaves out atlas, the third project, and the chats Desk adds;
+// - the sidebar's needs: twelve workspaces over three projects, their pages in every stop
+//   (src/dev/atlas.ts), so rows say Question, To review, PR ready and Blocked; each asks
+//   (amber tint, the count by Needs you, ⌘0) until opened, then is seen (kept in localStorage
+//   `logit.needs.seen`: clear it to see them all unread again). A page splits the area with
+//   its chat (cobalt, olive, amber: the Report tab at half width). violet is parked, folded in
+//   pragma-once's Parked group (`?no-parked`: among the others). `?no-atlas` leaves out atlas,
+//   the third project, and the chats it adds;
 //   `?send-fail` fails every write to a chat (an answer that could not go);
+// - sub-workspaces (src/dev/orchestra.ts): amber's chat started coral (working), sage (PR
+//   ready) and ochre (a Question, its chat waiting), nested under amber in the sidebar; coral
+//   started plum (finished, unread), and coral starts folded on a first visit (localStorage
+//   `logit.sidebar.kids-folded`), so its row shows the amber dot and count of what asks below;
 // - blocks an agent composes (src/dev/shown.ts): `?show` adds amber a chat "Show me the menu
 //   work" drawing every kind with the `show` tool (a PR link that becomes its card, a screen
 //   read slowly and one missing, a refused call as a tool error row, a last call in flight that
@@ -59,16 +68,17 @@ import type { ReportBlock } from '../report/blocks/types'
 
 import kitesScene from '../../src-tauri/backgrounds/kites.js?raw'
 import koiScene from '../../src-tauri/backgrounds/koi.js?raw'
-import { usageAnswer } from './context-usage'
+import { KIDS_FOLDED_KEY } from '../app/sidebar'
 import {
-  DESK_ASKED,
-  DESK_HOST_CHATS,
-  DESK_LINES,
-  DESK_SESSIONS,
-  DESK_TRANSCRIPTS,
-  deskReports,
-  withDesk,
-} from './desk'
+  ATLAS_ASKED,
+  ATLAS_HOST_CHATS,
+  ATLAS_LINES,
+  ATLAS_SESSIONS,
+  ATLAS_TRANSCRIPTS,
+  atlasReports,
+  withAtlas,
+} from './atlas'
+import { usageAnswer } from './context-usage'
 import { fakeArtifacts } from './fake-artifacts'
 import {
   assistant,
@@ -107,7 +117,7 @@ import {
 } from './fixtures'
 import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
-import { KID_HOST_CHATS, withKids } from './orchestra'
+import { KID_HOST_CHATS, kidReports, KIDS_FOLDED, withKids } from './orchestra'
 import { PR_CHAT, prMergeUrl, prReport, prViewUrl } from './pull-requests'
 import { answeredText, liveCalls, REPORT_QUESTION, reportFixtures } from './reports'
 import { SERVER_OUTPUT, serversAnswer } from './servers'
@@ -130,7 +140,7 @@ type Args = Record<string, unknown>
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty')
   ? { chats: [], projects: [], workspaces: [] }
-  : withKids(flags.has('no-desk') ? catalog() : withDesk(catalog(), Date.now()), Date.now())
+  : withKids(flags.has('no-atlas') ? catalog() : withAtlas(catalog(), Date.now()), Date.now())
 // `?wallpaper=Kites` opens on that chat background.
 if (flags.has('wallpaper')) SETTINGS.settings['ui.wallpaper'] = flags.get('wallpaper')
 if (flags.has('merged'))
@@ -147,6 +157,9 @@ if (flags.has('show')) {
   store.chats.push(SHOWN_CHAT(Date.now()))
   HOSTED_LINES['chat-shown'] = SHOWN_LINES
 }
+// violet waits on a client: parked, in pragma-once's folded Parked group (`?no-parked`: not).
+if (!flags.has('no-parked'))
+  for (const w of store.workspaces) if (w.id === 'ws-violet') w.paused = true
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 // When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
 const ACTIVE_AGO: Record<string, number> = {
@@ -158,14 +171,21 @@ for (const c of store.chats) {
   const ago = ACTIVE_AGO[c.id]
   if (ago !== undefined) Object.assign(c, { activeAt: Date.now() - ago })
 }
+// coral's sub-workspaces start folded, until this viewer unfolds them.
+try {
+  if (localStorage.getItem(KIDS_FOLDED_KEY) === null)
+    localStorage.setItem(KIDS_FOLDED_KEY, JSON.stringify(KIDS_FOLDED))
+} catch {
+  // Storage refused: every parent shows open.
+}
 const hostList = structuredClone(HOST_STATUS.list)
 hostList.chats.unshift(...KID_HOST_CHATS)
 if (flags.has('show')) hostList.chats.push(structuredClone(SHOWN_HOSTED))
-if (!flags.has('no-desk') && !flags.has('empty')) {
-  hostList.chats.push(...DESK_HOST_CHATS)
-  Object.assign(HOSTED_LINES, DESK_LINES)
-  Object.assign(TRANSCRIPTS, DESK_TRANSCRIPTS)
-  SESSIONS.push(...DESK_SESSIONS(Date.now()))
+if (!flags.has('no-atlas') && !flags.has('empty')) {
+  hostList.chats.push(...ATLAS_HOST_CHATS)
+  Object.assign(HOSTED_LINES, ATLAS_LINES)
+  Object.assign(TRANSCRIPTS, ATLAS_TRANSCRIPTS)
+  SESSIONS.push(...ATLAS_SESSIONS(Date.now()))
 }
 if (flags.has('long')) {
   const long = longFixture()
@@ -283,7 +303,7 @@ if (flags.has('report-ask'))
     prompt: 'the report question',
     toolId: 'tool-report-ask',
   })
-if (!flags.has('no-desk')) for (const [id, ask] of DESK_ASKED) asked.set(id, ask)
+if (!flags.has('no-atlas')) for (const [id, ask] of ATLAS_ASKED) asked.set(id, ask)
 let replies = 0
 
 /** Lines spread over `ms`, as Claude writes them. */
@@ -539,7 +559,8 @@ const reports: Record<string, Report> = flags.has('no-reports')
   : Object.fromEntries(
       Object.entries({
         ...reportFixtures(Date.now(), flags),
-        ...(flags.has('no-desk') ? {} : deskReports(Date.now())),
+        ...(flags.has('no-atlas') ? {} : atlasReports(Date.now())),
+        ...kidReports(Date.now()),
         ...(flags.has('prs') ? { 'ws-teal': prReport(Date.now()) } : {}),
         ...(flags.has('show') ? { 'ws-teal': blocksReport(Date.now()) } : {}),
       }).filter(([, r]) => !flags.has('empty-inbox') || r.state === 'done')

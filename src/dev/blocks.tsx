@@ -415,8 +415,8 @@ export function BlocksGallery() {
           <header>
             <h1 className="text-title font-semibold">Report blocks</h1>
             <p className="text-muted-foreground text-sm">
-              Every block an agent composes a report from, as Desk and the Report tab draw them: at
-              a report’s width (left) and in the narrow right panel (right).
+              Every block an agent composes a report from, as the Report tab and a chat draw them:
+              at a report’s width (left) and in the narrow right panel (right).
             </p>
           </header>
           {KINDS.map((k) => (
