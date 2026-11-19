@@ -2,13 +2,18 @@ import type { LeftBlock } from './types'
 
 import { BlockHead, has, Inline } from './primitives'
 
-/** What the user still has to do: a short list with empty boxes, theirs to tick in their head. */
+/**
+ * What the user still has to do: a short list with empty boxes, theirs to tick in their head.
+ * An empty `title` leaves the head out (a page's section names it already).
+ */
 export function Left({ items, title = 'Left for you' }: Omit<LeftBlock, 'kind'>) {
   const list = items.filter(has)
   if (list.length === 0) return null
   return (
     <section>
-      <BlockHead count={list.length > 1 ? list.length : undefined}>{title}</BlockHead>
+      {title !== '' && (
+        <BlockHead count={list.length > 1 ? list.length : undefined}>{title}</BlockHead>
+      )}
       <ul className="flex flex-col gap-2">
         {list.map((item, i) => (
           <li

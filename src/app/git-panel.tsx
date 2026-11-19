@@ -539,7 +539,13 @@ export function GitPanel(props: GitPanelProps) {
   if (shown === 'report' && props.report === null) shown = 'changes'
   const { report } = props
   const setView = props.onView
-  const reportCue = report !== null && report.unread && shown !== 'report' && report.state !== null
+  // A page at work moves often: only a stop the user has not read marks the tab.
+  const reportCue =
+    report !== null &&
+    report.unread &&
+    shown !== 'report' &&
+    report.state !== null &&
+    report.state !== 'working'
   const strip = useRef<HTMLDivElement>(null)
 
   const write = (failed: string, command: string, args: Record<string, unknown>) => {
@@ -604,7 +610,7 @@ export function GitPanel(props: GitPanelProps) {
                   <span className="animate-in fade-in grid size-[11px] place-items-center duration-160 ease-out">
                     <ReportDot
                       state={report.state}
-                      label={`New report: ${REPORT_STATE[report.state].word}`}
+                      label={`The page says: ${REPORT_STATE[report.state].word}`}
                     />
                   </span>
                 )

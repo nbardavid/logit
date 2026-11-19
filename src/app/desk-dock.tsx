@@ -12,7 +12,7 @@ import type { DeskRow } from './desk-model'
 import type { ChatTab, useChats } from './use-chats'
 
 import { type Permission, questionsOf, toolSummary } from '../chat/model'
-import { isWebUrl, openChoice, type Report } from '../model/report'
+import { isWebUrl, linksOf, type Report } from '../model/report'
 import { type CardHandle, QuestionCard } from './question-card'
 
 export type Hub = Pick<ReturnType<typeof useChats>, 'answer' | 'chats' | 'openSession' | 'send'>
@@ -187,7 +187,9 @@ function PermissionAsk({
 }
 
 const prLink = (report: Report | null) =>
-  report?.links.find((l) => isWebUrl(l.url) && /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(l.url))
+  (report === null ? [] : linksOf(report)).find(
+    (l) => isWebUrl(l.url) && /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(l.url)
+  )
 
 /** What the dock's keys reach: ⌘↩ its main action. */
 export interface DockKeys {
@@ -281,8 +283,10 @@ export function Answer({
       </Offer>
     )
   }
-  // A question the report asks with none pending in the chat: its text heads the reply.
-  const asked = report?.state === 'question' ? openChoice(report.choices)?.text : undefined
+  // A question the report asks with none pending in the chat: its text heads the reply, while
+  // it is what the row waits on (not once its chat went on, nor on a page at work).
+  const said = row.kind === 'question' ? report?.question?.trim() : undefined
+  const asked = said === '' ? undefined : said
   if (action === null && asked !== undefined) {
     return (
       <section aria-label={asked} className={cn(DOCK, 'flex flex-col')}>

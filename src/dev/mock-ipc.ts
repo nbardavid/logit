@@ -23,16 +23,26 @@
 //   workspace: amber's #128 in the `?prs` chat (`?merged` reads it merged; amber has changes,
 //   so it asks "Delete anyway"), moss's #418 in Desk (no changes: the row leaves), while #206,
 //   no workspace's, offers nothing; `?delete-fail` refuses every workspace deletion;
-// - reports (src/dev/reports.ts, atlas's in src/dev/desk.ts): `?no-reports` none,
-//   `?report-slow` reads take 1.5 s (`=ms`; the loading state), `?report-fail` every read fails
-//   (the error state), `?report-live` amber's chat writes a new report 5 s in (the tab's cue),
-//   `?report-ask` amber's chat waits on the report's question (AskUserQuestion),
-//   `?report-answered` it was answered, `?report-done` violet finished without a PR,
-//   `?report-live-ask` amber's chat writes a new question 5 s in (go elsewhere first: coming
-//   back to amber opens its Report tab);
+// - task pages (src/dev/reports.ts, atlas's in src/dev/desk.ts). Without flags: amber mid-
+//   progress (working, its chat waiting on a permission, so the state line says so), coral a
+//   plan with today beside the mockup while working, violet a page in the old format (loaded
+//   as the host maps it), basil blocked, plum done, and in Desk fern just started, cobalt a
+//   question, olive screens to review, moss ready with its PR card and what is left.
+//   `?no-reports` none, `?report-slow` reads take 1.5 s (`=ms`; the loading state),
+//   `?report-fail` every read fails (the error state), `?report-new` amber's page just started
+//   (its head only: the empty sections fold), `?report-live` amber's chat fills its page live
+//   (5 s in the result's first screen, 9 s in progress moves on and it asks for a review: the
+//   tab's cue, the section's wash, no jump), `?report-ask` amber's page asks (AskUserQuestion
+//   waiting in its chat), `?report-answered` it was answered, `?report-done` violet finished
+//   without a PR, `?report-live-ask` amber's chat writes a question 5 s in (go elsewhere first:
+//   coming back to amber opens its Report tab), `?merged` amber shipped and merged;
 // - Desk (⌘0): twelve workspaces over three projects in every group and state
 //   (src/dev/desk.ts); `?no-desk` leaves out atlas, the third project, and the chats Desk adds;
 //   `?send-fail` fails every write to a chat (an answer that could not go);
+// - blocks an agent composes (src/dev/shown.ts): `?show` adds amber a chat "Show me the menu
+//   work" drawing every kind with the `show` tool (a PR link that becomes its card, a screen
+//   read slowly and one missing, a refused call as a tool error row, a last call in flight that
+//   goes through 15 s after the app opens) and gives teal a report made of the agent's blocks;
 // - `?gallery` shows the UI primitives and `?blocks` every report block (src/dev/blocks.tsx)
 //   instead of the app.
 // Replies stream in over about two seconds; every other one asks to run a tool first. Stage,
@@ -45,6 +55,7 @@ import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import type { FileChange } from '../app/use-git'
 import type { Catalog, Workspace } from '../model/catalog'
 import type { Report } from '../model/report'
+import type { ReportBlock } from '../report/blocks/types'
 
 import kitesScene from '../../src-tauri/backgrounds/kites.js?raw'
 import koiScene from '../../src-tauri/backgrounds/koi.js?raw'
@@ -98,8 +109,16 @@ import { heavyFixture } from './heavy'
 import { mcpAnswer } from './mcp'
 import { KID_HOST_CHATS, withKids } from './orchestra'
 import { PR_CHAT, prMergeUrl, prReport, prViewUrl } from './pull-requests'
-import { answeredText, liveReport, REPORT_QUESTION, reportFixtures } from './reports'
+import { answeredText, liveCalls, REPORT_QUESTION, reportFixtures } from './reports'
 import { SERVER_OUTPUT, serversAnswer } from './servers'
+import {
+  blocksReport,
+  SHOWN_CHAT,
+  SHOWN_HOSTED,
+  SHOWN_LATER,
+  SHOWN_LINES,
+  shownImage,
+} from './shown'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
 interface Channel {
@@ -124,6 +143,10 @@ if (flags.has('prs')) {
   store.chats.push(PR_CHAT.record(Date.now()))
   TRANSCRIPTS['session-prs'] = PR_CHAT.transcript()
 }
+if (flags.has('show')) {
+  store.chats.push(SHOWN_CHAT(Date.now()))
+  HOSTED_LINES['chat-shown'] = SHOWN_LINES
+}
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 // When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
 const ACTIVE_AGO: Record<string, number> = {
@@ -137,6 +160,7 @@ for (const c of store.chats) {
 }
 const hostList = structuredClone(HOST_STATUS.list)
 hostList.chats.unshift(...KID_HOST_CHATS)
+if (flags.has('show')) hostList.chats.push(structuredClone(SHOWN_HOSTED))
 if (!flags.has('no-desk') && !flags.has('empty')) {
   hostList.chats.push(...DESK_HOST_CHATS)
   Object.assign(HOSTED_LINES, DESK_LINES)
@@ -198,7 +222,7 @@ function reportAskLines(): string[] {
         type: 'tool_use',
       },
     ]),
-    toolResult('tool-report', 'Reported (question, 0 screens).'),
+    toolResult('tool-report', 'Saved on the task’s page (question; set the head).'),
     assistant('m-report-ask', [
       {
         id: 'tool-report-ask',
@@ -279,6 +303,26 @@ function stop(chatId: string) {
 
 /** Chats in a turn (a reply being written, or a question waiting). */
 const working = new Set<string>(flags.has('empty-inbox') ? [] : ['chat-menus'])
+if (flags.has('show')) working.add('chat-shown')
+
+/** `?show`: the last `show` call goes through 15 s after the chat first opens. */
+let showing = false
+function showLater() {
+  if (showing) return
+  showing = true
+  setTimeout(() => {
+    for (const l of SHOWN_LATER) chats.get('chat-shown')?.onmessage(l)
+    working.delete('chat-shown')
+    // Opened again, the host replays it done.
+    HOSTED_LINES['chat-shown'] = [
+      ...SHOWN_LINES.slice(0, -1),
+      ...SHOWN_LATER,
+      ...SHOWN_LINES.slice(-1),
+    ]
+    const hosted = hostList.chats.find((c) => c.id === 'chat-shown')
+    if (hosted) hosted.working = false
+  }, 15_000)
+}
 interface Prompt {
   text: string
   uuid: string
@@ -497,6 +541,7 @@ const reports: Record<string, Report> = flags.has('no-reports')
         ...reportFixtures(Date.now(), flags),
         ...(flags.has('no-desk') ? {} : deskReports(Date.now())),
         ...(flags.has('prs') ? { 'ws-teal': prReport(Date.now()) } : {}),
+        ...(flags.has('show') ? { 'ws-teal': blocksReport(Date.now()) } : {}),
       }).filter(([, r]) => !flags.has('empty-inbox') || r.state === 'done')
     )
 
@@ -508,31 +553,45 @@ async function reportGet(workspace: string) {
   return structuredClone(reports[workspace] ?? null)
 }
 
-/** `report_list`: every workspace's report, newest first, without its screens' images. */
+/** `report_list`: every workspace's page, newest first, without its images (as the host). */
 async function reportList() {
   if (flags.has('report-slow') || flags.has('report-fail'))
     await new Promise((resolve) => setTimeout(resolve, SLOW_MS))
   if (flags.has('report-fail')) throw new Error('The host did not answer (report_list timed out).')
+  const bare = (blocks: ReportBlock[] | undefined) =>
+    blocks?.map((b) =>
+      b.kind === 'screens' ? { ...b, steps: b.steps.map((st) => ({ caption: st.caption })) } : b
+    )
   return Object.values(reports)
     .filter((r) => store.workspaces.some((w) => w.id === r.workspaceId))
     .toSorted((a, b) => b.at - a.at)
-    .map((r) => ({ ...r, screens: r.screens.map((s) => ({ step: s.step })) }))
+    .map((r) => {
+      const s = r.sections
+      const sections: Report['sections'] = { left: s.left, progress: s.progress }
+      for (const name of ['ticket', 'understood', 'plan', 'result'] as const)
+        if (s[name] !== undefined) sections[name] = bare(s[name])
+      return { ...r, sections }
+    })
 }
 
-/** `?report-live`: amber's chat calls the `report` tool, and the host keeps the new report. */
+/** `?report-live`, `?report-live-ask`: amber's chat calls `report` as it goes; the host keeps
+ * each call merged into its page. */
 if (flags.has('report-live') || flags.has('report-live-ask')) {
-  setTimeout(() => {
-    const asks = flags.has('report-live-ask')
-    reports['ws-amber'] = liveReport(Date.now(), asks)
-    const toolId = `toolu-report-${Date.now()}`
-    const input = { state: asks ? 'question' : 'review', title: 'Port the menus to Base UI' }
-    later(chats.get('chat-menus'), [
-      assistant(`m-${toolId}`, [
-        { id: toolId, input, name: 'mcp__logit__report', type: 'tool_use' },
-      ]),
-      toolResult(toolId, 'Report saved.'),
-    ])
-  }, 5000)
+  for (const call of liveCalls(flags.has('report-live-ask'))) {
+    setTimeout(() => {
+      const was = reports['ws-amber']
+      if (was === undefined) return
+      const page = call.page(was, Date.now())
+      reports['ws-amber'] = page
+      const toolId = `toolu-report-${Date.now()}`
+      later(chats.get('chat-menus'), [
+        assistant(`m-${toolId}`, [
+          { id: toolId, input: call.input, name: 'mcp__logit__report', type: 'tool_use' },
+        ]),
+        toolResult(toolId, `Saved on the task’s page (${page.state}).`),
+      ])
+    }, call.in)
+  }
 }
 
 /** The backgrounds folder: the two seeded scenes, as the app writes them on first launch. */
@@ -551,6 +610,8 @@ function handle(cmd: string, args: Args): unknown {
       return reportGet(str(args.workspace))
     case 'report_list':
       return reportList()
+    case 'shown_image':
+      return shownImage(str(args.cwd), str(args.path))
     case 'host_status':
       return { list: hostList, protocolOk: !flags.has('restart') }
     case 'claude_models':
@@ -564,6 +625,7 @@ function handle(cmd: string, args: Args): unknown {
       resumes.set(str(args.id), start?.resume ?? null)
       startModels.set(str(args.id), start?.model ?? '')
       if (args.start === null) later(channel, replayOf(str(args.id)))
+      if (args.start === null && args.id === 'chat-shown' && working.has('chat-shown')) showLater()
       if (flags.has('attention') && args.id === 'chat-notes')
         setTimeout(() => channel.onmessage(NOTES_ASK), 1500)
       return null

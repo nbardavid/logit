@@ -1,6 +1,15 @@
 import { expect, test } from 'bun:test'
 
-import { clampText, isStale, isWebUrl, leftAfterMerge, reportAge, ticketLink } from './report'
+import {
+  clampText,
+  isOutdated,
+  isStale,
+  isWebUrl,
+  leftAfterMerge,
+  linksOf,
+  reportAge,
+  ticketLink,
+} from './report'
 
 test('a report is stale only when the chat moved on well after it', () => {
   const at = 1_000_000_000
@@ -8,6 +17,31 @@ test('a report is stale only when the chat moved on well after it', () => {
   expect(isStale(at, at + 60_000)).toBe(false)
   expect(isStale(at, at + 6 * 60_000)).toBe(true)
   expect(isStale(at, at - 60_000)).toBe(false)
+})
+
+test('only a stop its chat clearly moved on from is out of date; working never is', () => {
+  const at = 1_000_000_000
+  const later = at + 30 * 60_000
+  for (const state of ['question', 'review', 'ready', 'blocked'] as const) {
+    expect(isOutdated({ at, state }, later)).toBe(true)
+    expect(isOutdated({ at, state }, at + 60_000)).toBe(false)
+  }
+  expect(isOutdated({ at, state: 'working' }, later)).toBe(false)
+  expect(isOutdated({ at, state: 'done' }, later)).toBe(false)
+})
+
+test("a page's links are its text blocks', the ticket's first", () => {
+  const link = (label: string) => ({ label, url: `https://x/${label}` })
+  const links = linksOf({
+    sections: {
+      result: [{ kind: 'text', links: [link('pr')] }],
+      ticket: [
+        { kind: 'text', links: [link('ticket')] },
+        { kind: 'callout', text: '', tone: 'note' },
+      ],
+    },
+  })
+  expect(links.map((l) => l.label)).toEqual(['ticket', 'pr'])
 })
 
 test('ages read as the sidebar says them, with "ago"', () => {

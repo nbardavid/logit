@@ -1,4 +1,4 @@
-// Desk's detail: the selected workspace's head (the Report tab's, saying where the workspace
+// Desk's detail: the selected workspace's head (the page's, saying where the workspace
 // stands) and the calm moments when nothing needs the user.
 import type { CSSProperties, ReactNode, RefObject } from 'react'
 
@@ -6,10 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 
-import { type Report, REPORT_STATE, reportAge } from '../model/report'
+import {
+  clampText,
+  linksOf,
+  type Report,
+  REPORT_LIMITS,
+  REPORT_STATE,
+  reportAge,
+} from '../model/report'
 import { type DeskGroup, type DeskKind, type DeskRow, isCurrent, KIND_TONE } from './desk-model'
-import { ReportHead, TicketRef } from './report-view'
-import { ProjectAvatar } from './sidebar'
+import { PageMeta, ReportHead } from './report-view'
 import { Dot } from './status-dot'
 
 type Groups = Record<DeskGroup, DeskRow[]>
@@ -53,12 +59,31 @@ const INK: Record<DeskKind, string> = {
   working: 'text-muted-foreground',
 }
 
-/** The head's state line: the row's mark and word, and since when. */
-function DeskStateLine({ now, row }: { row: DeskRow; now: number }) {
+/** The head's state line: the row's mark and word, the page's step while they agree, and
+ * since when. */
+function DeskStateLine({ now, report, row }: { row: DeskRow; report: Report | null; now: number }) {
+  const agrees = report !== null && isCurrent(row) && report.state === row.kind
+  const step = agrees ? clampText(report.step?.trim() ?? '', REPORT_LIMITS.step) : ''
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <RowMark kind={row.kind} />
-      <span className={cn('flex-none font-medium', INK[row.kind])}>{WORD[row.kind]}</span>
+      <span
+        key={row.kind}
+        className={cn(
+          'animate-in fade-in flex-none font-medium duration-160 ease-out',
+          INK[row.kind]
+        )}
+      >
+        {WORD[row.kind]}
+      </span>
+      {step !== '' && (
+        <span
+          key={step}
+          className="text-muted-foreground animate-in fade-in min-w-0 truncate duration-160 ease-out"
+        >
+          · {step}
+        </span>
+      )}
       {row.group !== 'working' && (
         <span className="text-faint flex-none" title={new Date(row.since).toLocaleString()}>
           · {reportAge(row.since, Math.max(now, Date.now()))}
@@ -68,7 +93,7 @@ function DeskStateLine({ now, row }: { row: DeskRow; now: number }) {
   )
 }
 
-/** The detail's head: where the workspace stands, its task, then its project and colour word. */
+/** The detail's head: its task, where the workspace stands, then project · colour · ticket. */
 export function StageHead({
   now,
   onOpenChat,
@@ -80,32 +105,19 @@ export function StageHead({
   now: number
   onOpenChat: (() => void) | null
 }) {
-  const ticket = report?.ticket ?? ''
-  const earlier = report !== null && !isCurrent(row) ? REPORT_STATE[report.state].word : null
   return (
     <ReportHead
       title={row.title}
-      stateLine={<DeskStateLine row={row} now={now} />}
+      stateLine={<DeskStateLine row={row} report={report} now={now} />}
       openTip="Go to its chat · ⌘↩"
       onOpenChat={onOpenChat}
       meta={
-        <div className="text-faint mt-1.5 flex min-w-0 items-center gap-1.5 text-xs">
-          <ProjectAvatar name={row.project} size="sm" />
-          <span className="text-muted-foreground min-w-0 truncate">{row.project}</span>
-          <span aria-hidden>·</span>
-          <span className="flex-none">{row.colour}</span>
-          {ticket !== '' && (
-            <>
-              <span aria-hidden>·</span>
-              <TicketRef ticket={ticket} links={report?.links ?? []} />
-            </>
-          )}
-          {earlier !== null && (
-            <span className="flex-none" title="The chat has moved on since this report">
-              · Report from earlier: {earlier}
-            </span>
-          )}
-        </div>
+        <PageMeta
+          project={row.project}
+          colour={row.colour}
+          ticket={report?.ticket}
+          links={report === null ? [] : linksOf(report)}
+        />
       }
     />
   )
@@ -153,8 +165,8 @@ export function NoReport({
           )}
           <p className="text-faint text-sm">
             {asks
-              ? 'No report: its chat asks you directly, below.'
-              : 'No report yet. Its agent writes one when it needs you or has something to show.'}
+              ? 'No page: its chat asks you directly, below.'
+              : 'No page yet. Its agent keeps one as it works, from the ticket to the result.'}
           </p>
         </div>
       </div>

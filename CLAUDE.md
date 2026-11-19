@@ -48,18 +48,30 @@ branding.
 - **Artifacts** Claude publishes (Claude Code's own `Artifact` tool, always on) open
   in the right panel's browser, logged in to claude.ai once: one Artifacts tab, the title
   opening a searchable list of them in the page's place. They never take the keyboard.
-- **Reports**: agents call logit's `report` tool to say where their work stands (question,
-  blocked, review, ready, done), with screens. The Report tab leads the right panel, and opens
-  by itself on arrival when the agent waits on the user and the report is unread.
+- **Reports**: each workspace has one page for its task, which its agent keeps with logit's
+  `report` tool from the start of the work to its end. Its head is a title, the ticket and a
+  state (working, question, review, ready, done, blocked) with an optional step; under it,
+  six sections in a fixed order: the ticket, what it understood, what it will do (the plan,
+  today beside the mockup), progress (its own steps, one wrapping line of marks), the result
+  (real screens, what ran, the PR) and what is left for the user. Each call sets only what it
+  gives: a section given replaces that section, the rest stays; `reset` starts a new page.
+  Sections are blocks (text, callout, steps, table, decisions, screens, left), the same ones
+  `show` draws in the chat without storing anything. Old pages load mapped onto the
+  sections. The Report tab leads the right panel and opens by itself on arrival when the page
+  waits on the user (question, blocked) unread. A page is never greyed: only a stopped state
+  (question, review, ready, blocked) whose chat clearly went on is outdated, and then only its
+  state line falls back to the chat's own signal; working never is.
 - **Desk** is a mode of the sidebar: one queue across every project of what the agents need
   from the user. "Code" and "Desk" sit at the sidebar's top under New workspace and Search,
   the active one marked, the amber count on Desk; ⌘0 toggles them, Esc in Desk returns to
   Code. Code is the list by project; Desk is the same rows in three groups (Needs you,
   Working, Quiet, which folds), each row naming its project quietly. The sidebar never folds
-  for it and ⌘S hides it as anywhere. The main area shows the selected one's report, read
-  there as seen; a pending question's card is the report's last item and scrolls with it
-  (out of view, a slim "Claude asks" line pinned at the bottom goes back to it), the other
-  answers pinned under the report as a slim dock; the open question is written once. Picking
+  for it and ⌘S hides it as anywhere. The main area shows the selected one's task page (the
+  same one as the Report tab), read there as seen; a pending question's card is the page's
+  last item and scrolls with it (out of view, a slim "Claude asks" line pinned at the bottom
+  goes back to it), the other answers pinned under the page as a slim dock; the open
+  question is written once. A page at work never puts its row in Needs you nor in the amber
+  count: the row goes where its chat's signal puts it, its dock the plain reply line. Picking
   a row selects it for Desk only; "Open chat" (⌘↩), or going back to Code, opens that
   workspace's chat.
   Answered, a row leaves and the next need is selected; with none left, "Nothing needs you".

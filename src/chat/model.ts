@@ -6,6 +6,7 @@ import { parseCommand } from './commands'
 import { type ContextUsage, parseUsage, USAGE } from './context-usage'
 import { isQuestionCall } from './questions'
 import { addShellTurn, BASH_IN, BASH_OUT, unescapeRow, withShellOutput } from './shell'
+import { isShown, SHOW_TOOL } from './shown'
 import { type Task, withTaskEvent } from './tasks'
 
 export { artifactUrl, newPublishes, type Published, publishedArtifacts } from './artifacts'
@@ -885,6 +886,7 @@ export function toolSummary(name: string, input: Record<string, unknown>, cwd: s
     Write: rel(str(input.file_path), cwd),
   }[name]
   if (pick !== undefined) return pick
+  if (name === SHOW_TOOL && Array.isArray(input.blocks)) return plural(input.blocks.length, 'block')
   const first = Object.values(input).find((v) => typeof v === 'string')
   return typeof first === 'string' ? first : ''
 }
@@ -931,8 +933,11 @@ const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'Write'])
 export const isFileEdit = (b: Block): b is Block & { kind: 'tool' } =>
   b.kind === 'tool' && FILE_TOOLS.has(b.name)
 
-/** Agent calls, file writes and questions (a card, then its answer) stand apart from the work. */
-const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b) || isQuestionCall(b)
+/**
+ * Agent calls, file writes, questions (a card, then its answer) and shown blocks stand apart
+ * from the work.
+ */
+const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b) || isQuestionCall(b) || isShown(b)
 
 /** A sub-agent, as its card and its own chat show it. */
 export interface AgentRun {
@@ -1165,6 +1170,7 @@ const STEP: Record<string, string> = {
   MultiEdit: 'Editing',
   NotebookEdit: 'Editing',
   Read: 'Reading',
+  [SHOW_TOOL]: 'Showing',
   Task: 'Running an agent',
   WebFetch: 'Fetching',
   WebSearch: 'Searching the web for',
@@ -1186,7 +1192,7 @@ export function liveStep(state: ChatState, cwd: string): { verb: string; target:
     const verb = STEP[block.name]
     if (verb === undefined) return { target: '', verb: `Using ${block.name}` }
     const target =
-      block.name === 'Agent' || block.name === 'Task'
+      block.name === 'Agent' || block.name === 'Task' || block.name === SHOW_TOOL
         ? ''
         : toolSummary(block.name, block.input, cwd)
     return { target: target.split('\n')[0] ?? '', verb }

@@ -75,8 +75,88 @@ prompt; tools take either. \
 This workspace's dev servers (the project's declared apps, on ports of their own so they never \
 touch the user's own dev servers): servers_start, then servers_wait until they are ready, \
 servers_status for their URLs, servers_logs when one fails, servers_stop when done. \
-Each time you stop for the user (and before asking a question), call report so they see where \
-this work stands without reading the chat.";
+Keep this task's page with report as the work goes: the ticket and what you understood first, \
+the plan before coding, progress at each step, the result at the end, and the state whenever it \
+changes (before asking a question too), so the user sees where it stands without reading the \
+chat. To put screenshots, a table or a list of steps in front of the user in this conversation, \
+call show; plain prose stays in your message.";
+
+const REPORT: &str = "The page of this task, beside this chat in logit and in the user's \
+overview of every workspace: one page from the start of the work to its end, filled in as you go, \
+so the user knows where it stands without reading the chat. Each call merges: a field you give \
+replaces its value, a section you give replaces that section, the rest stays (`reset` starts a \
+new page for new work). Call it once you have read the ticket (ticket, understood), before \
+coding (plan, progress), at each step (progress), at the end (result, left), and every time the \
+state changes, before asking a question too (the question itself goes through AskUserQuestion). \
+Write in the user's language, for someone who gives it a minute. Product choices are what the \
+person using the product sees, never how it is built: not \"memoised the total\", but \"the \
+total updates as you type\".";
+
+/// The kinds a section's block may be, for the sections that point to `result`'s shapes.
+const KINDS: [&str; 7] = [
+    "text",
+    "callout",
+    "steps",
+    "table",
+    "decisions",
+    "screens",
+    "left",
+];
+
+const SHOW: &str = "Draws blocks in this conversation, where you call it: screenshots, a \
+table, steps, decisions, a callout, a short list. For what reads better seen than told: \
+screens to look at (before/after, a flow), a comparison or key/value facts, what you ran and \
+how it went. Plain prose stays prose in your message; show is not the task's page (that is \
+report) and not a question (use AskUserQuestion). Nothing is stored: the blocks are this call's \
+arguments. Images are paths inside this worktree (png, jpg, jpeg, webp, 4 MB each, 16 per \
+call), read by the window when it draws them, so keep the files. Same blocks and limits as a \
+report section's.";
+
+/// A section made of blocks: the same kinds and shapes as `sections.result`, stated once there.
+fn section(description: &str) -> Value {
+    json!({
+        "type": "array",
+        "maxItems": crate::blocks::MAX_BLOCKS,
+        "description": format!("{description} Blocks of the same kinds and shapes as `result`."),
+        "items": { "type": "object", "properties": { "kind": { "type": "string", "enum": KINDS } }, "required": ["kind"] },
+    })
+}
+
+/// The `report` tool's input: the head, `reset`, the sections.
+fn report_schema() -> Value {
+    // [] clears a section.
+    let mut result = crate::blocks::schema("What came out: the real screens (screens), what you ran and how it went (steps), the PR's link (it becomes its card). Inline in text: **bold**, `code`, [label](https://…).");
+    if let Some(o) = result.as_object_mut() {
+        o.remove("minItems");
+    }
+    json!({
+        "type": "object",
+        "properties": {
+            "state": { "type": "string", "enum": crate::report::STATES, "description": "working: you go on, nothing is asked; question: you ask the user something; review: screens to look at before the PR; ready: the PR is ready; done: finished, no PR needed; blocked: you cannot go on (say why in summary). Required on the first call." },
+            "title": { "type": "string", "maxLength": crate::report::MAX_TITLE, "description": "A few words naming the work. Required on the first call." },
+            "summary": { "type": "string", "maxLength": crate::report::MAX_SUMMARY, "description": "The one sentence read in lists: where it stands, the question itself, or why blocked. Required on the first call." },
+            "ticket": { "type": "string", "description": "The ticket id, e.g. #335 or RAI-2051, if any (\"\" clears it). A link labelled with it makes it clickable." },
+            "step": { "type": "string", "maxLength": crate::report::MAX_STEP, "description": "A word or two for what you are on, read after the state: Working · code. A new state clears it." },
+            "reset": { "type": "boolean", "description": "True to start a new page (new work in this workspace): nothing of the old one stays." },
+            "sections": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "The page's sections, in reading order. Give only those that changed, each whole; [] clears one. Blocks: at most 12 per section, 16 images per section.",
+                "properties": {
+                    "ticket": section("What was asked, as written: the ticket's words or a tight quote, its link."),
+                    "understood": section("What the work is for and who uses it, the problem the person lives today as one concrete case; an assumption you made as a callout."),
+                    "plan": section("What you will do, written before coding: the solution in a few lines, the product choices made (decisions), what is set aside, today's screen beside the mockup (screens)."),
+                    "progress": { "type": "array", "maxItems": crate::report::MAX_PROGRESS, "description": "Your own steps for this task, in order, a word or two each (investigation, mockup, code, on-screen test, PR); at most one current. Send the whole list each time.", "items": { "type": "object", "properties": {
+                        "text": { "type": "string", "maxLength": crate::report::MAX_PROGRESS_TEXT },
+                        "status": { "type": "string", "enum": crate::report::PROGRESS },
+                    }, "required": ["text", "status"] } },
+                    "result": result,
+                    "left": { "type": "array", "maxItems": crate::blocks::MAX_ITEMS, "items": { "type": "string", "maxLength": crate::blocks::MAX_LINE }, "description": "What the user still has to do themselves (merge, a migration to apply), one line each." },
+                },
+            },
+        },
+    })
+}
 
 fn tools() -> Value {
     let workspace = json!({ "type": "string", "description": "A workspace's colour (e.g. amber), name or id." });
@@ -211,32 +291,16 @@ fn tools() -> Value {
         },
         {
             "name": "report",
-            "description": "Tells the user where this work stands, shown beside this chat in logit and in an overview of all workspaces, so they need not read the chat. Call it every time you stop for the user: before asking a question (the question itself still goes through AskUserQuestion), when screens are ready to look at, when the PR is ready, when the work is done without a PR, when blocked. A new report replaces the previous one. Write every text in the user's language, for someone who has not followed the work and gives it a minute. Product choices are what the person using the product will see or live, never how it is built: not \"memoised the total with useMemo\", but \"the total updates as you type\".",
+            "description": REPORT,
+            "inputSchema": report_schema(),
+        },
+        {
+            "name": "show",
+            "description": SHOW,
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    "state": { "type": "string", "enum": crate::report::STATES, "description": "question: you ask the user something; review: screens to look at before the PR; ready: the PR is ready; done: the work is finished and needs no PR; blocked: you cannot go on." },
-                    "title": { "type": "string", "maxLength": crate::report::MAX_TITLE, "description": "A few words naming the work." },
-                    "ticket": { "type": "string", "description": "The ticket id, e.g. #335 or RAI-2051, if any. A link whose label names it makes it clickable." },
-                    "summary": { "type": "string", "maxLength": crate::report::MAX_SUMMARY, "description": "The single most useful sentence, read in a list: the question itself, or what changed." },
-                    "feature": { "type": "string", "maxLength": crate::report::MAX_CONTEXT, "description": "What this screen or function is for and who uses it, 2-3 short lines. Leave it out when there is no product context (a refactor, a tooling change)." },
-                    "problem": { "type": "string", "maxLength": crate::report::MAX_CONTEXT, "description": "What the person lives today, as one concrete scenario. Leave it out with feature." },
-                    "choices": { "type": "array", "description": "Product choices made or asked (may be empty), each in terms of what the person sees. Not \"memoised the total with useMemo\"; yes \"the total updates as you type\".", "items": { "type": "object", "properties": {
-                        "text": { "type": "string", "maxLength": crate::report::MAX_CHOICE, "description": "The choice, in terms of what the person sees; for the open one, the question asked." },
-                        "setAside": { "type": "string", "description": "The option not taken." },
-                        "open": { "type": "boolean", "description": "True for the one choice you are asking the user about (with AskUserQuestion); only with state question, at most one." },
-                    }, "required": ["text"] } },
-                    "screens": { "type": "array", "description": "Screenshots per step (may be empty); at most 16 images, png/jpg/jpeg/webp, 4 MB each.", "items": { "type": "object", "properties": {
-                        "step": { "type": "string", "description": "What the step shows." },
-                        "before": { "type": "string", "description": "Image path before the change, absolute or relative to the worktree." },
-                        "after": { "type": "string", "description": "Image path after the change, absolute or relative to the worktree." },
-                    }, "required": ["step"] } },
-                    "links": { "type": "array", "description": "Links, such as the PR or the ticket: http or https URLs only.", "items": { "type": "object", "properties": {
-                        "label": { "type": "string" }, "url": { "type": "string", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
-                    }, "required": ["label", "url"] } },
-                    "left": { "type": "array", "items": { "type": "string" }, "description": "What is left for the user (merge, a migration to apply)." },
-                },
-                "required": ["state", "title", "summary"],
+                "properties": { "blocks": crate::blocks::schema("The blocks, drawn in order.") },
+                "required": ["blocks"],
             },
         },
     ])
@@ -259,6 +323,7 @@ fn call(chat: &str, params: &Value) -> Value {
         "servers_logs" => servers_logs(args),
         "servers_stop" => servers_stop(args),
         "report" => report(chat, args),
+        "show" => show(args),
         other => Err(format!("no tool {other}")),
     };
     match result {
@@ -361,6 +426,15 @@ fn report(chat: &str, args: &Value) -> Result<String, String> {
         args,
         now_ms(),
     )
+}
+
+fn show(args: &Value) -> Result<String, String> {
+    let h = here()?;
+    let n = crate::blocks::check_shown(std::path::Path::new(&h.workspace.path), args)?;
+    Ok(format!(
+        "Shown in the conversation ({n} block{}). Go on in your message; don't repeat what the blocks say.",
+        if n == 1 { "" } else { "s" }
+    ))
 }
 
 // The host, over its socket.
@@ -848,7 +922,8 @@ mod tests {
                 "servers_logs",
                 "servers_stop",
                 "chat_send",
-                "report"
+                "report",
+                "show"
             ]
         );
     }

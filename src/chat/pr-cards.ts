@@ -1,16 +1,19 @@
 // Where a chat's PR cards go: each PR once in the whole chat, under Claude's latest message
 // that links it (the freshest word on it is where the card helps; an old mention keeps its
 // link). A message still being written gets none until it is done: its link may be half-typed.
+// Blocks Claude shows (`show`) count as a message: a PR they link gets its card under them.
 import type { Block, Exchange } from './model'
 
 import { prLinksIn, type PrRef } from '../git/pr-link'
+import { isShown, shownBlocks, shownPrLinks } from './shown'
 
 // A message's text never changes once written: its links are found once.
 const found = new WeakMap<Block, PrRef[]>()
-function linksOf(block: Block & { kind: 'text' }): PrRef[] {
+function linksOf(block: Block): PrRef[] {
   let refs = found.get(block)
   if (refs === undefined) {
-    refs = prLinksIn(block.text)
+    if (block.kind === 'text') refs = prLinksIn(block.text)
+    else refs = block.kind === 'tool' ? shownPrLinks(shownBlocks(block.input)) : []
     found.set(block, refs)
   }
   return refs
@@ -25,7 +28,8 @@ export function chatPrCards(exchanges: readonly Exchange[]): Map<string, PrRef[]
   for (const ex of exchanges) {
     const writing = ex.live ? ex.blocks.at(-1) : undefined
     for (const it of ex.items) {
-      if (it.kind !== 'block' || it.block.kind !== 'text' || it.block === writing) continue
+      if (it.kind !== 'block' || it.block === writing) continue
+      if (it.block.kind !== 'text' && !isShown(it.block)) continue
       for (const ref of linksOf(it.block)) {
         // Deleted first: the map's order becomes the order of the latest mentions.
         latest.delete(ref.key)

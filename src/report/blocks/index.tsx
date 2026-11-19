@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
+import type { PrRef } from '../../git/pr-link'
 import type { ReportBlock } from './types'
 
 import { PrCards } from '../../cards/pr-card'
@@ -59,16 +60,24 @@ export function Block({ block }: { block: ReportBlock }): ReactNode {
 export function Blocks({
   actions = {},
   blocks,
+  cards,
   className,
+  prCards = true,
   start = 0,
 }: {
   blocks: readonly ReportBlock[]
   actions?: BlockActions
   className?: string
+  /** Each PR named gets its card under its block; false when the surface places them. */
+  prCards?: boolean
+  /** The cards under each block, placed already (a page places them across its sections). */
+  cards?: readonly PrRef[][]
   start?: number
 }) {
   // Each PR the report names shows once, as a live card under the block that names it.
-  const placed = placePrCards(blocks)
+  let placed: { blocks: readonly ReportBlock[]; cards: readonly PrRef[][] } = { blocks, cards: [] }
+  if (cards !== undefined) placed = { blocks, cards }
+  else if (prCards) placed = placePrCards(blocks)
   return (
     <BlockContext value={actions}>
       <div className={cn('flex flex-col gap-6 @min-[520px]/report:gap-8', className)}>

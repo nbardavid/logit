@@ -45,11 +45,13 @@ import {
   type TurnEnd,
 } from '../chat/model'
 import { cardSpot, chatPrCards } from '../chat/pr-cards'
+import { isShown } from '../chat/shown'
 import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
 import { AskedRecord, askedText, QuestionBar, useInView } from './question-line'
+import { ShownBlocks } from './shown-blocks'
 import { useSmoothText } from './smooth-text'
 import { Dot } from './status-dot'
 import { useWindow } from './use-window'
@@ -741,6 +743,16 @@ function ExchangeView({
         </div>
       )
     }
+    if (it.kind === 'block' && isShown(it.block))
+      return (
+        <div key={it.key} className={ENTER}>
+          <ShownBlocks
+            block={it.block}
+            cwd={cwd}
+            cards={cards.get(cardSpot(exchange.key, it.key)) ?? []}
+          />
+        </div>
+      )
     if (it.kind === 'block' && isFileEdit(it.block))
       return (
         <div key={it.key} className={ENTER}>

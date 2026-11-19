@@ -1,7 +1,8 @@
 // Desk (⌘0) across three projects, twelve workspaces, every group and state. A third project,
-// atlas (a booking back-office): cobalt reported a question with screens and its chat waits on
-// it (the first row Desk opens on; answering it moves the row), olive has three steps of screens
-// to review, moss's PR is ready with its checks green, fern is at work. In logit, amber's chat
+// atlas (a booking back-office): cobalt's page stops on a question with screens and its chat
+// waits on it (the first row Desk opens on; answering it moves the row), olive has three steps
+// of screens to review, moss's PR is ready with its checks green, fern is at work on a page
+// just started (the ticket and what it understood). In logit, amber's chat
 // lives in fixtures.ts (a Bash permission over a question report), and its children get their
 // chats here: ochre waits on a question it never reported, sage finished a turn not read yet,
 // coral is at work. pragma-once (in French): basil is blocked with its chat closed (Reopen
@@ -262,102 +263,185 @@ export const DESK_ASKED: [string, { chatId: string; prompt: string; toolId: stri
   ['perm-ochre-ask', { chatId: 'chat-ochre', prompt: 'the children', toolId: 'tool-ochre-ask' }],
 ]
 
-const base = (c: Colour) => ({
-  chatId: `chat-${c}`,
-  choices: [],
-  left: [],
-  links: [],
-  screens: [],
-  workspaceId: `ws-${c}`,
-})
+const base = (c: Colour) => ({ chatId: `chat-${c}`, workspaceId: `ws-${c}` })
 
-/** atlas's reports: cobalt's question, olive's review, moss's ready PR. */
+const ticketOf = (id: string, text: string) => [
+  {
+    kind: 'text' as const,
+    links: [{ label: id, url: `https://linear.app/atlas/issue/${id}` }],
+    paragraphs: [text],
+  },
+]
+
+const STEPS = ['Investigation', 'Mockup', 'Code', 'On-screen test', 'PR'] as const
+
+/** atlas's pages: fern just started, cobalt's question, olive's review, moss's ready PR. */
 export function deskReports(now: number): Record<string, Report> {
   const reports: Report[] = [
     {
+      ...base('fern'),
+      at: now - 2 * MIN,
+      sections: {
+        ticket: ticketOf(
+          'ATL-97',
+          'Searching the bookings list takes 4 s at the end of the month. Agents give up and scroll.'
+        ),
+        understood: [
+          {
+            feature: 'Agents searching the bookings list while a customer waits on the phone.',
+            kind: 'context',
+            problem: 'Each search takes about 4 s once the month has a few thousand bookings.',
+          },
+          {
+            kind: 'callout',
+            text: 'Only the bookings list is slow; the customers list answers at once, so the index is the likely cause.',
+            title: 'Assumed',
+            tone: 'assumption',
+          },
+        ],
+      },
+      state: 'working',
+      step: 'investigation',
+      summary: 'Profiling the search query first.',
+      ticket: 'ATL-97',
+      title: 'Faster search on the bookings list',
+      updated: { ticket: now - 3 * MIN, understood: now - 2 * MIN },
+    },
+    {
       ...base('cobalt'),
       at: now - 24 * MIN,
-      choices: [
-        {
-          open: false,
-          setAside: 'a separate cancellations page',
-          text: 'Cancel from the booking page itself',
-        },
-        { open: true, text: COBALT_QUESTION.question },
-        {
-          open: false,
-          setAside: 'only the agent who took the booking',
-          text: 'Any agent can cancel, the log says who',
-        },
-      ],
-      feature: 'Agents cancel a trip from the booking page while the customer is on the phone.',
-      problem:
-        'Today a cancelled trip keeps the customer’s money until someone remembers to refund it by hand, sometimes weeks later.',
-      screens: [
-        {
-          after: shot({
-            button: { label: 'Cancel trip', new: true },
-            rows: 5,
-            title: 'Booking B-2291',
-          }),
-          before: shot({ button: { label: 'Edit' }, rows: 5, title: 'Booking B-2291' }),
-          step: 'The booking page',
-        },
-      ],
+      question: COBALT_QUESTION.question,
+      sections: {
+        plan: [
+          {
+            items: [
+              {
+                setAside: 'a separate cancellations page',
+                text: 'Cancel from the booking page itself',
+              },
+              {
+                setAside: 'only the agent who took the booking',
+                text: 'Any agent can cancel, the log says who',
+              },
+            ],
+            kind: 'decisions',
+          },
+        ],
+        progress: [
+          { status: 'done', text: 'Investigation' },
+          { status: 'done', text: 'Cancel button' },
+          { status: 'current', text: 'Refund' },
+          { status: 'todo', text: 'On-screen test' },
+          { status: 'todo', text: 'PR' },
+        ],
+        result: [
+          {
+            kind: 'screens',
+            steps: [
+              {
+                after: shot({
+                  button: { label: 'Cancel trip', new: true },
+                  rows: 5,
+                  title: 'Booking B-2291',
+                }),
+                before: shot({ button: { label: 'Edit' }, rows: 5, title: 'Booking B-2291' }),
+                caption: 'The booking page',
+              },
+            ],
+          },
+        ],
+        ticket: ticketOf('ATL-88', 'Cancelled trips need a refund flow, from the booking page.'),
+        understood: [
+          {
+            feature:
+              'Agents cancel a trip from the booking page while the customer is on the phone.',
+            kind: 'context',
+            problem:
+              'Today a cancelled trip keeps the customer’s money until someone remembers to refund it by hand, sometimes weeks later.',
+          },
+        ],
+      },
       state: 'question',
       summary: 'Cancelling works from the booking page; how the money goes back is yours to pick.',
       ticket: 'ATL-88',
       title: 'Refund flow for cancelled trips',
+      updated: { plan: now - 50 * MIN, progress: now - 24 * MIN, result: now - 26 * MIN },
     },
     {
       ...base('olive'),
       at: now - 12 * MIN,
-      choices: [
-        {
-          open: false,
-          setAside: 'a field over the bookings list only',
-          text: 'Search sits in the top bar, on every page (⌘K)',
-        },
-        {
-          open: false,
-          setAside: '"New quote" first',
-          text: 'Each result has two buttons: "Open" first, "New quote" after',
-        },
-        {
-          open: false,
-          setAside: 'internal notes too, too much noise',
-          text: 'It searches booking number, customer name and destination',
-        },
-        { open: false, setAside: 'hidden', text: 'Cancelled bookings come last, greyed out' },
-      ],
-      feature: 'Agents find a booking by name, number or city while a customer is on the line.',
-      problem: 'Today they scroll the list or filter column by column: about a minute per call.',
-      screens: [
-        {
-          after: shot({ button: { label: 'New quote' }, search: { new: true }, title: 'Bookings' }),
-          before: shot({ button: { label: 'New quote' }, title: 'Bookings' }),
-          step: 'The top bar',
-        },
-        {
-          after: shot({
-            results: ['B-2291 · Martin, Claire', 'B-2304 · Martinez, Noé', 'B-2187 · Martel, Ana'],
-            rows: 5,
-            search: { text: 'mart' },
-            title: 'Bookings',
-          }),
-          before: shot({
-            rows: 4,
-            strip: { label: 'Booking    ·    Customer    ·    City    ·    Filter' },
-            title: 'Bookings',
-          }),
-          step: 'Finding a booking',
-        },
-        {
-          after: shot({ dimFrom: 4, search: {}, title: 'Bookings' }),
-          before: shot({ search: {}, title: 'Bookings' }),
-          step: 'Cancelled bookings',
-        },
-      ],
+      sections: {
+        plan: [
+          {
+            items: [
+              {
+                setAside: 'a field over the bookings list only',
+                text: 'Search sits in the top bar, on every page (⌘K)',
+              },
+              {
+                setAside: '"New quote" first',
+                text: 'Each result has two buttons: "Open" first, "New quote" after',
+              },
+              {
+                setAside: 'internal notes too, too much noise',
+                text: 'It searches booking number, customer name and destination',
+              },
+              { setAside: 'hidden', text: 'Cancelled bookings come last, greyed out' },
+            ],
+            kind: 'decisions',
+          },
+        ],
+        progress: STEPS.map((text, i) => ({ status: i < 4 ? 'done' : 'todo', text })),
+        result: [
+          {
+            kind: 'screens',
+            steps: [
+              {
+                after: shot({
+                  button: { label: 'New quote' },
+                  search: { new: true },
+                  title: 'Bookings',
+                }),
+                before: shot({ button: { label: 'New quote' }, title: 'Bookings' }),
+                caption: 'The top bar',
+              },
+              {
+                after: shot({
+                  results: [
+                    'B-2291 · Martin, Claire',
+                    'B-2304 · Martinez, Noé',
+                    'B-2187 · Martel, Ana',
+                  ],
+                  rows: 5,
+                  search: { text: 'mart' },
+                  title: 'Bookings',
+                }),
+                before: shot({
+                  rows: 4,
+                  strip: { label: 'Booking    ·    Customer    ·    City    ·    Filter' },
+                  title: 'Bookings',
+                }),
+                caption: 'Finding a booking',
+              },
+              {
+                after: shot({ dimFrom: 4, search: {}, title: 'Bookings' }),
+                before: shot({ search: {}, title: 'Bookings' }),
+                caption: 'Cancelled bookings',
+              },
+            ],
+          },
+        ],
+        ticket: ticketOf('ATL-93', 'Agents need to search the bookings list.'),
+        understood: [
+          {
+            feature:
+              'Agents find a booking by name, number or city while a customer is on the line.',
+            kind: 'context',
+            problem:
+              'Today they scroll the list or filter column by column: about a minute per call.',
+          },
+        ],
+      },
       state: 'review',
       summary:
         'A search in the top bar finds a booking in three letters, from any page. Three screens to check before the PR.',
@@ -367,42 +451,50 @@ export function deskReports(now: number): Record<string, Report> {
     {
       ...base('moss'),
       at: now - 35 * MIN,
-      blocks: [
-        { items: ['Run the seat migration on production after the merge'], kind: 'left' },
-        {
-          branch: 'logit/moss',
-          ci: 'passing',
-          kind: 'pr',
-          number: 418,
-          review: 'approved',
-          title: 'Seat map on the coach booking',
-          url: 'https://github.com/atlas/booking/pull/418',
-        },
-        {
-          items: [
-            { detail: '412 of 412', status: 'done', text: 'Unit tests pass' },
-            { detail: '18 of 18', status: 'done', text: 'Booking flow passes end to end' },
-            { status: 'done', text: 'Lint and types pass' },
-          ],
-          kind: 'steps',
-        },
-        {
-          items: [
-            {
-              setAside: 'a list of seat numbers',
-              text: 'The customer picks a seat on a drawn map',
-            },
-            { setAside: 'no hold', text: 'A seat is held 10 minutes while the customer pays' },
-          ],
-          kind: 'decisions',
-        },
-      ],
-      links: [
-        {
-          label: 'PR #418 · Seat map on the coach booking',
-          url: 'https://github.com/atlas/booking/pull/418',
-        },
-      ],
+      sections: {
+        left: ['Merge the PR', 'Run the seat migration on production after the merge'],
+        plan: [
+          {
+            items: [
+              {
+                setAside: 'a list of seat numbers',
+                text: 'The customer picks a seat on a drawn map',
+              },
+              { setAside: 'no hold', text: 'A seat is held 10 minutes while the customer pays' },
+            ],
+            kind: 'decisions',
+          },
+        ],
+        progress: STEPS.map((text) => ({ status: 'done', text })),
+        result: [
+          {
+            kind: 'text',
+            lead: 'The seat map is in the coach booking, and the PR is green and reviewed.',
+            links: [
+              {
+                label: 'PR #418 · Seat map on the coach booking',
+                url: 'https://github.com/atlas/booking/pull/418',
+              },
+            ],
+          },
+          {
+            items: [
+              { detail: '412 of 412', status: 'done', text: 'Unit tests pass' },
+              { detail: '18 of 18', status: 'done', text: 'Booking flow passes end to end' },
+              { status: 'done', text: 'Lint and types pass' },
+            ],
+            kind: 'steps',
+          },
+        ],
+        ticket: ticketOf('ATL-79', 'Coach bookings need a seat map.'),
+        understood: [
+          {
+            feature: 'Customers booking a coach seat online or on the phone.',
+            kind: 'context',
+            problem: 'Seats are given in order; families end up apart.',
+          },
+        ],
+      },
       state: 'ready',
       summary: 'Checks are green and the PR is reviewed; the migration on production stays yours.',
       ticket: 'ATL-79',

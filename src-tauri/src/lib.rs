@@ -1,4 +1,5 @@
 pub mod backgrounds;
+pub mod blocks;
 pub mod browser;
 pub mod chat;
 pub mod git;
@@ -179,6 +180,7 @@ pub fn run() {
             store::workspace_pause,
             store::chat_save,
             store::artifact_add,
+            blocks::shown_image,
             report::report_get,
             report::report_list,
             store::artifact_close,

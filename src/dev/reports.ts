@@ -1,11 +1,16 @@
-// The browser preview's agent reports (`report_get`), one per state. amber (logit) asks a
-// question (an open choice; `?report-ask` its chat waits on it, `?report-answered` it was
-// answered), violet's PR is ready with a migration left to run (older than its chat, so it reads
-// as "Earlier"; `?report-done` finished without a PR), basil is blocked, plum is done with what
-// it did, coral (in amber's Agents tab) says everything at the limits, only with `?long`.
-// `?merged`: amber's report is a ready PR, now merged. atlas's reports are in desk.ts. The
-// screens are drawn here as SVG: a booking back-office (`shot`) and logit itself (`logitShot`).
-import type { Report } from '../model/report'
+// The browser preview's task pages (`report_get`), one per moment of a task. amber (logit) is
+// mid-way, at its on-screen test (`?report-new` its page just started, head only;
+// `?report-ask` its chat waits on the page's question, `?report-answered` it was answered;
+// `?report-live` it fills its result 5 s in and stops on screens to review 4 s later;
+// `?report-live-ask` it asks 5 s in; `?merged` its PR is ready, then merged). coral (in amber's
+// Agents tab) has written its plan, today beside the mockup, while at work (`?long`: every
+// section at its limits). violet's is a page saved before sections, its PR ready and older than
+// its chat (`?report-done` finished without a PR), basil is blocked, plum is done. atlas's pages
+// are in desk.ts. The screens are drawn here as SVG: a booking back-office (`shot`) and logit
+// itself (`logitShot`).
+import type { Report, ReportProgress } from '../model/report'
+
+import { fromLegacy, type LegacyReport } from './legacy'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -256,7 +261,10 @@ export const MENU_STEP = {
   step: 'The tab menu: "Move to" opens on hover',
 }
 
-/** The question amber's chat asks with AskUserQuestion, as its report says it. */
+/** The same, as a screens block's step. */
+const MENU_SCREEN = { after: MENU_STEP.after, before: MENU_STEP.before, caption: MENU_STEP.step }
+
+/** The question amber's chat asks with AskUserQuestion, as its page says it. */
 export const REPORT_QUESTION = {
   header: 'Submenus',
   multiSelect: false,
@@ -274,35 +282,97 @@ export const REPORT_QUESTION = {
   question: 'How should a submenu open: on hover, or only on click and →?',
 }
 
-const ask = (now: number): Report => ({
+/** A task's steps: those before `at` done, `at` current, the rest to do. */
+export const stepsAt = (names: readonly string[], at: number): ReportProgress[] =>
+  names.map((text, i) => {
+    let status: ReportProgress['status'] = 'todo'
+    if (i < at) status = 'done'
+    else if (i === at) status = 'current'
+    return { status, text }
+  })
+
+const STEPS = ['Investigation', 'Mockup', 'Code', 'On-screen test', 'PR'] as const
+
+const ISSUE = { label: 'Issue #212', url: 'https://github.com/nbardavid/logit/issues/212' }
+
+/** amber's page from its start: the issue, what it understood, its plan. */
+const menus = (now: number): Report => ({
   at: now - 3 * MIN,
   chatId: 'chat-menus',
-  choices: [
-    {
-      open: false,
-      setAside: 'anchored under the row it belongs to',
-      text: 'A right-click menu opens where the pointer is',
-    },
-    { open: true, text: REPORT_QUESTION.question },
-    {
-      open: false,
-      setAside: 'Esc closing every level at once',
-      text: 'Esc closes one level at a time',
-    },
-  ],
-  feature:
-    'Every menu in logit: the tab and sidebar right-click menus, the model picker, ⌘P. People open them dozens of times an hour.',
-  left: [],
-  links: [{ label: 'Issue #212', url: 'https://github.com/nbardavid/logit/issues/212' }],
-  problem:
-    'The old menus took the focus from the composer, so typing after a menu went nowhere, and a right-click on a tab sometimes opened two menus.',
-  screens: [],
-  state: 'question',
-  summary:
-    'Every menu now runs on Base UI and gives the focus back to the composer. One choice is left: how a submenu opens.',
+  sections: {
+    plan: [
+      {
+        kind: 'text',
+        lead: 'Every menu moves to Base UI’s Menu, which hands the focus back to where it came from.',
+        paragraphs: [
+          'One `Menu` component serves the tab menu, the sidebar’s right-click and the model picker; ⌘P keeps its own list.',
+        ],
+      },
+      {
+        items: [
+          {
+            setAside: 'anchored under the row it belongs to',
+            text: 'A right-click menu opens where the pointer is',
+          },
+          { setAside: 'Esc closing every level at once', text: 'Esc closes one level at a time' },
+        ],
+        kind: 'decisions',
+      },
+    ],
+    progress: stepsAt(STEPS, 3),
+    ticket: [
+      {
+        kind: 'text',
+        links: [ISSUE],
+        paragraphs: [
+          'Menus steal the focus: after picking a model, typing goes nowhere until you click the composer again. Right-clicking a tab sometimes opens two menus.',
+        ],
+      },
+    ],
+    understood: [
+      {
+        feature:
+          'Every menu in logit: the tab and sidebar right-click menus, the model picker, ⌘P. People open them dozens of times an hour.',
+        kind: 'context',
+        problem:
+          'The old menus took the focus from the composer, so typing after a menu went nowhere, and a right-click on a tab sometimes opened two menus.',
+      },
+    ],
+  },
+  state: 'working',
+  step: 'on-screen test',
+  summary: 'Every menu runs on Base UI; trying them on screen now.',
+  ticket: '#212',
+  title: 'Port the menus to Base UI',
+  updated: {
+    plan: now - 40 * MIN,
+    progress: now - 3 * MIN,
+    ticket: now - 52 * MIN,
+    understood: now - 50 * MIN,
+  },
+  workspaceId: 'ws-amber',
+})
+
+/** `?report-new`: amber's page as its first call leaves it, the head alone. */
+const started = (now: number): Report => ({
+  at: now - MIN,
+  chatId: 'chat-menus',
+  sections: {},
+  state: 'working',
+  step: 'investigation',
+  summary: 'Reading how the menus are built today.',
   ticket: '#212',
   title: 'Port the menus to Base UI',
   workspaceId: 'ws-amber',
+})
+
+/** `?report-ask`, `?report-answered`: amber stopped on how a submenu opens. */
+const asking = (now: number): Report => ({
+  ...menus(now),
+  state: 'question',
+  step: undefined,
+  summary:
+    'Every menu now runs on Base UI and gives the focus back to the composer. One choice is left: how a submenu opens.',
 })
 
 /** The lab's drafts list, for violet's screens (pragma-once's reports are in French). */
@@ -321,7 +391,8 @@ const DRAFTS = {
   title: 'Brouillons',
 }
 
-const ready = (now: number): Report => ({
+/** violet's page, saved before pages had sections: the host maps it when it reads it. */
+const readyBefore = (now: number): LegacyReport => ({
   at: now - 26 * HOUR,
   chatId: 'chat-tiles',
   choices: [
@@ -370,21 +441,98 @@ const ready = (now: number): Report => ({
   workspaceId: 'ws-violet',
 })
 
+const ETAPES = ['Lecture du code', 'Bouton PDF', 'Vérification à l’écran', 'PR'] as const
+
 const blocked = (now: number): Report => ({
   at: now - 50 * MIN,
   chatId: '',
-  choices: [],
-  feature: 'Le compte-rendu imprimable d’un bilan, envoyé au médecin traitant.',
-  left: ['Se connecter au labo de test (code reçu par SMS), puis dire « c’est bon » dans le chat'],
-  links: [{ label: 'Labo de test', url: 'https://test.labo-app.fr/login' }],
-  problem: 'Le médecin reçoit le compte-rendu par fax ; il le veut en PDF.',
-  screens: [],
+  sections: {
+    left: [
+      'Se connecter au labo de test (code reçu par SMS), puis dire « c’est bon » dans le chat',
+    ],
+    plan: [
+      {
+        items: [
+          {
+            setAside: 'un PDF par analyse',
+            text: 'Un seul PDF par bilan, toutes analyses comprises',
+          },
+        ],
+        kind: 'decisions',
+      },
+    ],
+    progress: stepsAt(ETAPES, 2),
+    ticket: [
+      {
+        kind: 'text',
+        links: [{ label: 'Labo de test', url: 'https://test.labo-app.fr/login' }],
+        paragraphs: ['Le Dr Faure veut recevoir le compte-rendu en PDF, plus par fax.'],
+      },
+    ],
+    understood: [
+      {
+        feature: 'Le compte-rendu imprimable d’un bilan, envoyé au médecin traitant.',
+        kind: 'context',
+        problem: 'Le médecin reçoit le compte-rendu par fax ; il le veut en PDF.',
+      },
+    ],
+  },
   state: 'blocked',
   summary:
     'Le bouton PDF est écrit ; je ne peux pas le vérifier à l’écran sans me connecter au labo de test.',
   ticket: '#63',
   title: 'Compte-rendu en PDF',
   workspaceId: 'ws-basil',
+})
+
+/** coral's plan: the right panel today, beside the mockup of its Agents tab. */
+const agentsTab = (now: number): Report => ({
+  at: now - 4 * MIN,
+  chatId: 'chat-coral',
+  sections: {
+    plan: [
+      {
+        kind: 'text',
+        lead: 'A third tab in the right panel lists the workspaces this chat started, as a tree.',
+      },
+      {
+        kind: 'screens',
+        steps: [
+          {
+            after: logitShot({ ring: { h: 18, w: 60, x: 400, y: 6 } }),
+            before: logitShot({}),
+            caption: 'The right panel',
+          },
+        ],
+        title: 'Today and the mockup',
+      },
+      {
+        items: [
+          {
+            setAside: 'a list per project',
+            text: 'Children show under the chat that started them',
+          },
+          { setAside: 'no stop', text: 'Each child has a stop button on hover' },
+        ],
+        kind: 'decisions',
+      },
+    ],
+    progress: stepsAt(STEPS, 2),
+    understood: [
+      {
+        feature: 'Someone who lets a chat split work into several workspaces.',
+        kind: 'context',
+        problem:
+          'The workspaces it starts fill the sidebar, with nothing saying which chat started them.',
+      },
+    ],
+  },
+  state: 'working',
+  step: 'code',
+  summary: 'The plan is written; drawing the tree now.',
+  title: 'Agents tab in the right panel',
+  updated: { plan: now - 4 * MIN, progress: now - 4 * MIN, understood: now - 9 * MIN },
+  workspaceId: 'ws-coral',
 })
 
 const LONG =
@@ -394,31 +542,53 @@ const LONG =
 // oxlint-disable-next-line typescript/no-misused-spread -- code points, as the host counts
 const upTo = (n: number) => [...LONG.repeat(3)].slice(0, n).join('')
 
+const STATUSES = ['done', 'done', 'failed', 'skipped', 'done', 'current'] as const
+
+/** `?long`: coral's page with every section at its limits. */
 const long = (now: number): Report => ({
   at: now - 31 * MIN,
   chatId: 'chat-coral',
-  choices: Array.from({ length: 6 }, (_, i) => ({
-    open: i === 3,
-    setAside: i % 2 === 0 ? LONG : undefined,
-    text: upTo(i === 3 ? 120 : 60 + i * 12),
-  })),
-  feature: upTo(300),
-  left: [LONG, 'Rien d’autre'],
-  links: [
-    { label: LONG.slice(0, 120), url: 'https://github.com/nbardavid/logit/pull/999' },
-    // Older reports, written before the host checked links: never opened.
-    { label: 'Courte', url: 'not a url' },
-  ],
-  problem: upTo(300),
-  screens: [
-    { after: shot({ title: 'Un écran tout neuf' }), step: 'Un écran qui n’existait pas' },
-    { before: shot({ title: 'Ancien écran' }), step: `Un écran qui disparaît. ${LONG}` },
-    {
-      after: shot({ button: { label: 'Exporter CSV', new: true }, title: 'Réservations' }),
-      before: shot({ title: 'Réservations' }),
-      step: 'La liste des réservations',
-    },
-  ],
+  question: upTo(120),
+  sections: {
+    left: [LONG, 'Rien d’autre'],
+    plan: [
+      {
+        items: Array.from({ length: 6 }, (_, i) => ({
+          setAside: i % 2 === 0 ? LONG : undefined,
+          text: upTo(60 + i * 12),
+        })),
+        kind: 'decisions',
+      },
+    ],
+    progress: Array.from({ length: 12 }, (_, i) => ({
+      status: STATUSES[i] ?? 'todo',
+      text: upTo(i % 3 === 0 ? 40 : 12 + i),
+    })),
+    result: [
+      {
+        kind: 'screens',
+        steps: [
+          { after: shot({ title: 'Un écran tout neuf' }), caption: 'Un écran qui n’existait pas' },
+          { before: shot({ title: 'Ancien écran' }), caption: `Un écran qui disparaît. ${LONG}` },
+          {
+            after: shot({ button: { label: 'Exporter CSV', new: true }, title: 'Réservations' }),
+            before: shot({ title: 'Réservations' }),
+            caption: 'La liste des réservations',
+          },
+        ],
+      },
+      {
+        kind: 'text',
+        links: [
+          { label: LONG.slice(0, 120), url: 'https://github.com/nbardavid/logit/pull/999' },
+          // Older pages, written before the host checked links: never opened.
+          { label: 'Courte', url: 'not a url' },
+        ],
+      },
+    ],
+    ticket: [{ kind: 'text', paragraphs: [LONG, LONG] }],
+    understood: [{ feature: upTo(300), kind: 'context', problem: upTo(300) }],
+  },
   state: 'question',
   summary: upTo(200),
   ticket: 'RAI-20551-AVEC-UN-NUMERO-TRES-LONG',
@@ -428,61 +598,96 @@ const long = (now: number): Report => ({
 
 /** `?report-done`: violet's work, finished without a PR (a setting changed on the server). */
 const done = (now: number): Report => ({
-  ...ready(now),
-  choices: [
-    {
-      open: false,
-      setAside: 'suppression définitive tout de suite',
-      text: 'Plus de 90 jours : à la corbeille, pas supprimés',
-    },
-  ],
-  feature: undefined,
-  left: ['Vérifier demain matin que la liste ne compte plus que 1 300 brouillons'],
-  links: [{ label: 'Ticket #48', url: 'https://pragma-once.fr/board/48' }],
-  problem: undefined,
-  screens: [],
+  at: now - 26 * HOUR,
+  chatId: 'chat-tiles',
+  sections: {
+    left: ['Vérifier demain matin que la liste ne compte plus que 1 300 brouillons'],
+    plan: [
+      {
+        items: [
+          {
+            setAside: 'suppression définitive tout de suite',
+            text: 'Plus de 90 jours : à la corbeille, pas supprimés',
+          },
+        ],
+        kind: 'decisions',
+      },
+    ],
+    progress: [
+      { status: 'done', text: 'Lecture des réglages' },
+      { status: 'skipped', text: 'Code' },
+      { status: 'done', text: 'Réglage en prod' },
+    ],
+    ticket: [
+      {
+        kind: 'text',
+        links: [{ label: 'Ticket #48', url: 'https://pragma-once.fr/board/48' }],
+        paragraphs: ['Les vieux brouillons encombrent la liste.'],
+      },
+    ],
+  },
   state: 'done',
   summary: 'Le délai est passé à 90 jours dans les réglages du labo de prod ; aucun code à merger.',
+  ticket: '#48',
+  title: 'Brouillons anciens à la corbeille',
+  workspaceId: 'ws-violet',
 })
 
 /** `?merged`: amber's PR is ready, then merged; merging was all that was left, and a check. */
 const shipped = (now: number): Report => ({
-  ...ask(now),
-  choices: ask(now).choices.filter((c) => !c.open),
-  left: ['Merge the PR', 'Try the tab menu on a second display'],
-  links: [
-    { label: 'PR #128', url: 'https://github.com/nbardavid/logit/pull/128' },
-    { label: 'Issue #212', url: 'https://github.com/nbardavid/logit/issues/212' },
-  ],
+  ...menus(now),
+  sections: {
+    ...menus(now).sections,
+    left: ['Merge the PR', 'Try the tab menu on a second display'],
+    progress: stepsAt(STEPS, 5),
+    result: [
+      { kind: 'screens', steps: [MENU_SCREEN] },
+      {
+        kind: 'text',
+        links: [{ label: 'PR #128', url: 'https://github.com/nbardavid/logit/pull/128' }],
+      },
+    ],
+  },
   state: 'ready',
+  step: undefined,
   summary: 'Every menu runs on Base UI, and a submenu opens on hover after 150 ms.',
 })
 
 /** plum, done: the agent tree's tests, with what it did and what it found on the way. */
 const tested = (now: number): Report => ({
   at: now - 7 * MIN,
-  blocks: [
-    {
-      items: [
-        { detail: 'agent-tree.test.ts, 14 tests', status: 'done', text: 'Wrote the tree’s tests' },
-        { status: 'done', text: 'Fixed the child that lost its parent' },
-        { detail: '611 of 611', status: 'done', text: 'Ran the whole suite' },
-        { status: 'done', text: 'Lint and format pass' },
-      ],
-      kind: 'steps',
-    },
-    {
-      kind: 'callout',
-      text: 'A child whose parent chat was closed showed at the top level of the tree. It now stays under its workspace; one of the new tests holds it.',
-      title: 'Found on the way',
-      tone: 'note',
-    },
-  ],
   chatId: 'chat-plum',
-  choices: [],
-  left: [],
-  links: [],
-  screens: [],
+  sections: {
+    progress: stepsAt(['Read the tree', 'Tests', 'Fix', 'Whole suite'], 4),
+    result: [
+      {
+        items: [
+          {
+            detail: 'agent-tree.test.ts, 14 tests',
+            status: 'done',
+            text: 'Wrote the tree’s tests',
+          },
+          { status: 'done', text: 'Fixed the child that lost its parent' },
+          { detail: '611 of 611', status: 'done', text: 'Ran the whole suite' },
+          { status: 'done', text: 'Lint and format pass' },
+        ],
+        kind: 'steps',
+      },
+      {
+        kind: 'callout',
+        text: 'A child whose parent chat was closed showed at the top level of the tree. It now stays under its workspace; one of the new tests holds it.',
+        title: 'Found on the way',
+        tone: 'note',
+      },
+    ],
+    understood: [
+      {
+        feature: 'The agent tree in the right panel: the workspaces a chat started.',
+        kind: 'context',
+        problem: 'Nothing tests it, and a child sometimes leaves its parent.',
+      },
+    ],
+  },
   state: 'done',
   summary:
     'The agent tree has its tests: 14 new ones, all green, and the bug they caught is fixed.',
@@ -490,16 +695,23 @@ const tested = (now: number): Report => ({
   workspaceId: 'ws-plum',
 })
 
-/** Every fixture report, by workspace. */
+/** amber's page as the flags start it. */
+function amber(now: number, flags: URLSearchParams): Report {
+  if (flags.has('merged')) return shipped(now)
+  if (flags.has('report-new')) return started(now)
+  if (flags.has('report-ask') || flags.has('report-answered')) return asking(now)
+  return menus(now)
+}
+
+/** Every fixture page, by workspace. */
 export function reportFixtures(now: number, flags: URLSearchParams): Record<string, Report> {
   return Object.fromEntries(
     [
-      flags.has('merged') ? shipped(now) : ask(now),
-      flags.has('report-done') ? done(now) : ready(now),
+      amber(now, flags),
+      flags.has('report-done') ? done(now) : fromLegacy(readyBefore(now)),
       blocked(now),
       tested(now),
-      // The stress report only with `?long`: it must not be the first thing Desk shows.
-      ...(flags.has('long') ? [long(now)] : []),
+      flags.has('long') ? long(now) : agentsTab(now),
     ].map((r) => [r.workspaceId, r])
   )
 }
@@ -510,18 +722,78 @@ export const answeredText = (answers: Record<string, string>) =>
     .map(([q, a]) => `"${q}"="${a}"`)
     .join(', ')}. You can now continue with the user's answers in mind.`
 
-/** A newer report for amber, as `?report-live` writes it a few seconds in: screens to review. */
-export function liveReport(now: number, asks = false): Report {
-  const was = ask(now)
-  // `?report-live-ask`: a new question, written while you are elsewhere.
-  if (asks) return { ...was, at: now }
-  const choices = was.choices.map((c) => ({ ...c, open: false }))
-  return {
-    ...was,
-    at: now,
-    choices,
-    screens: [MENU_STEP],
-    state: 'review',
-    summary: 'A submenu now opens on hover after 150 ms; here is the tab menu before and after.',
-  }
+/** One call amber's chat makes to `report`: what it sends, and the page the host keeps. */
+export interface LiveCall {
+  /** When, from the app's start (ms). */
+  in: number
+  input: Record<string, unknown>
+  page: (was: Report, now: number) => Report
+}
+
+/**
+ * `?report-live`: amber fills its result while it works (5 s in), then stops on screens to
+ * review (9 s). `?report-live-ask`: it asks how a submenu opens (5 s in).
+ */
+export function liveCalls(asks: boolean): LiveCall[] {
+  if (asks)
+    return [
+      {
+        in: 5000,
+        input: { state: 'question', summary: REPORT_QUESTION.question },
+        page: (was, now) => ({
+          ...was,
+          at: now,
+          question: REPORT_QUESTION.question,
+          state: 'question',
+          step: undefined,
+          summary: 'Every menu runs on Base UI. One choice is left: how a submenu opens.',
+        }),
+      },
+    ]
+  const first = MENU_SCREEN
+  return [
+    {
+      in: 5000,
+      input: { sections: { result: [{ kind: 'screens', steps: ['…'] }] } },
+      page: (was, now) => ({
+        ...was,
+        at: now,
+        sections: { ...was.sections, result: [{ kind: 'screens', steps: [first] }] },
+        updated: { ...was.updated, result: now },
+      }),
+    },
+    {
+      in: 9000,
+      input: {
+        sections: { progress: ['…'], result: ['…'] },
+        state: 'review',
+        summary: 'A submenu now opens on hover after 150 ms.',
+      },
+      page: (was, now) => ({
+        ...was,
+        at: now,
+        sections: {
+          ...was.sections,
+          progress: stepsAt(STEPS, 4).map((p) =>
+            p.status === 'current' ? { ...p, status: 'todo' } : p
+          ),
+          result: [
+            { kind: 'screens', steps: [first] },
+            {
+              items: [
+                { detail: '611 of 611', status: 'done', text: 'Tests pass' },
+                { status: 'done', text: 'Tried each menu by keyboard and mouse' },
+              ],
+              kind: 'steps',
+            },
+          ],
+        },
+        state: 'review',
+        step: undefined,
+        summary:
+          'A submenu now opens on hover after 150 ms; here is the tab menu before and after.',
+        updated: { ...was.updated, progress: now, result: now },
+      }),
+    },
+  ]
 }

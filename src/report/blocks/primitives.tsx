@@ -19,7 +19,15 @@ export interface BlockActions {
   onZoom?: (zoom: Zoom, from: HTMLButtonElement) => void
   /** The workspace's folder, where gh reads and merges the report's PRs; absent, home. */
   cwd?: string
+  /** Reads a screen the blocks name by path (a chat's `show`); absent, they are URLs. */
+  image?: (src: string) => Shot
 }
+
+/** A screen read from disk: on its way, there, or not to be had (and why). */
+export type Shot =
+  | { state: 'loading' }
+  | { state: 'ready'; url: string }
+  | { state: 'missing'; reason: string }
 
 export const BlockContext = createContext<BlockActions>({})
 export const useBlockActions = () => use(BlockContext)

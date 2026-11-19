@@ -235,6 +235,75 @@ Claude's questions (`app/question-card.tsx`) are the agent speaking, not a form.
 - **Motion**: the question rises with the transcript (280ms settle). Answered, the card folds
   away (180ms, height and fade, the column's gap with it) while its one-line record rises.
 
+### The task page
+
+A workspace's report is one page for its task, kept by its agent from the start of the work
+to its end (`app/report-view.tsx`, from `report/from-report.ts`). The Report tab and Desk draw
+the same component; only the surface around it differs.
+
+- **Head**: the title (`text-title`), then one quiet line
+  "project · colour · ticket" (`text-faint`, the ticket a link when the page links it) with
+  Open chat at its end. The state line (the state's dot, word and step: "Working · code", then
+  the age) sits at the title's right when there is room, above it when not.
+- **Lead**: the summary, as a text block's lead. Blocked, the summary is the reason, drawn as a risk
+  callout in its place. A question the page asks comes next in the Report tab; Desk writes it
+  once, as the card at the page's end.
+- **Six sections, always in this order**: The ticket, What I understood, What I will do,
+  Progress, Result, Left for you. Each is a row under a hairline (`border-t`, 20px above and
+  below): its label (`text-sm` medium, with when it was set in `text-faint` beside it) in a
+  132px column at the left from 560px of page width, above the content below that.
+- **Progress** is one line that wraps (16px between steps, 8px between lines), each step its
+  mark and its words: the checks' marks for done, failed (red ink) and skipped (struck,
+  faint); a hollow ring for what is to come; the working loader on the current step while the
+  chat works, a solid dot when it does not. The current step is `font-medium`.
+- **Empty sections**: one not written yet keeps its row and its label in `muted-foreground`,
+  with "Not yet" in `text-label` as its content, so the page has the same shape from its first
+  call. When two or more empty ones close the page, they fold into a single row: "Still to
+  come", then their labels joined by " · ". A page just started is a head and one quiet line,
+  not a column of blanks.
+- **A section set again** while on screen: its content rises in place (`block-in`) and a
+  `bg-hover` wash fades from it over 1.6s, a little wider than the row, so the eye finds what
+  changed. The page keeps the section the reader was looking at where it was (the scroll is
+  corrected by hand: WKWebView has no scroll anchoring), so nothing jumps.
+- **Never greyed**: a page whose state no longer holds (a stop the chat went on from) keeps
+  every section as it was; only its state line gives the chat's own signal ("Working",
+  "Waiting for you", "Finished", "Idle").
+
+### Report blocks
+
+A section is a column of blocks (`report/blocks/`), and `show` draws the same blocks inline
+in a chat. One set of components serves Desk, the Report tab and the chat.
+
+- **Kinds an agent may send**: text, callout, steps, table, decisions, screens and left.
+  The others belong to logit. A question goes through AskUserQuestion, a PR is a link that
+  becomes its card, and context (the feature and the problem side by side) is how a page
+  written before sections shows its old fields. Each kind does one job:
+  - text: paragraphs and links;
+  - callout: a note, an assumption or a risk the reader must not miss;
+  - steps: what was run and how it went (done, failed or skipped, with a detail);
+  - table: a comparison;
+  - decisions: choices already made, each with what was set aside;
+  - screens: a before/after pair, one screen, or a numbered flow;
+  - left: what the user still has to do.
+
+  No new kinds without the owner.
+
+- **Never decoration**: a block exists because prose would read worse. A list of three short
+  facts stays a sentence. A callout is for a real risk, not for emphasis. One table, not one
+  per fact.
+- **In a chat** (`app/shown-blocks.tsx`), the blocks sit in the text column at the transcript's
+  rhythm and rise with it. While the call runs, it is the usual tool row ("Showing…"). A
+  refused call is the usual tool error row. A PR the blocks link gets its card under them,
+  once per chat, by the chat's own rule; its link leaves the links line.
+- **Screens in a chat** are files in the worktree, read on demand. While one loads, its frame
+  holds the place as a `bg-active` pulse with the screen's aspect, so nothing jumps; the image
+  fades in over it in 160ms. When a file can't be read, a dashed `chrome` box in the same frame
+  says "Image not found" (or "Image not shown" for any other reason) and names the file in
+  mono, with the full reason on hover. A report's screens are copied beside it and drawn at
+  once.
+- **Narrow**: the blocks follow their `@container/report` width. A pair of screens stacks
+  below 420px. A table scrolls sideways inside its frame, never the page.
+
 ## Checking
 
 Every UI change is checked in the browser preview (`bun run web:dev`, see CLAUDE.md) at

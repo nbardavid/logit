@@ -5,7 +5,7 @@ import type { Signal } from '../model/catalog'
 import type { Tone } from './status-dot'
 
 import { REPORT_TOOL } from '../chat/reports'
-import { isStale, type Report } from '../model/report'
+import { isOutdated, type Report } from '../model/report'
 
 export type DeskGroup = 'needs' | 'working' | 'quiet'
 
@@ -57,20 +57,22 @@ export interface DeskRow extends DeskInput {
   since: number
 }
 
-/** The report still describes the workspace: none of its chats moved on long after it, its PR
- * is not merged, and the user has not answered past it. */
+/** The page still describes the workspace: it does not stop on a state its chats moved on from
+ * long after, its PR is not merged, and the user has not answered past it. */
 export const isCurrent = (i: DeskInput) =>
-  i.report !== null && !isStale(i.report.at, i.activeAt) && i.merged !== true && !i.answered
+  i.report !== null && !isOutdated(i.report, i.activeAt) && i.merged !== true && !i.answered
 
 export function placeOf(i: DeskInput): Pick<DeskRow, 'group' | 'kind' | 'since'> {
   const reportAt = i.report?.at ?? i.activeAt
   if (i.pending !== null) return { group: 'needs', kind: i.pending, since: reportAt }
   if (i.signal === 'working') return { group: 'working', kind: 'working', since: i.activeAt }
   const current = isCurrent(i)
-  const state = current ? (i.report?.state ?? null) : null
+  // A page at work says nothing the chat's own signal does not: the row goes where it puts it.
+  const working = i.report?.state === 'working'
+  const state = current && !working ? (i.report?.state ?? null) : null
   if (state !== null && state !== 'done') return { group: 'needs', kind: state, since: reportAt }
-  // A turn ended with a result not read yet, and no report written in it: "Finished".
-  if (i.signal === 'done' && (!current || (i.report?.at ?? 0) < i.activeAt))
+  // A turn ended with a result not read yet, and no stop written in it: "Finished".
+  if (i.signal === 'done' && (state === null || (i.report?.at ?? 0) < i.activeAt))
     return { group: 'needs', kind: 'finished', since: i.activeAt }
   return {
     group: 'quiet',

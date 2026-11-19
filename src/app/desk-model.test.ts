@@ -19,10 +19,7 @@ const MIN = 60_000
 const report = (state: Report['state'], at: number): Report => ({
   at,
   chatId: 'c',
-  choices: [],
-  left: [],
-  links: [],
-  screens: [],
+  sections: {},
   state,
   summary: '',
   title: 't',
@@ -81,6 +78,29 @@ test('work in progress is working; current review and ready need the user; done 
   const stale = ws('a', { activeAt: 10 + 30 * MIN, report: report('review', 10) })
   expect(placeOf(stale).group).toBe('quiet')
   expect(placeOf(ws('a'))).toMatchObject({ group: 'quiet', kind: 'idle' })
+})
+
+test('a page at work never needs the user: its row goes where the chat puts it', () => {
+  const page = report('working', 10)
+  expect(placeOf(ws('a', { activeAt: 20, report: page, signal: 'working' }))).toMatchObject({
+    group: 'working',
+    kind: 'working',
+  })
+  // The chat stopped and its turn is unread: finished, whatever the page still says.
+  expect(placeOf(ws('a', { activeAt: 20, report: page, signal: 'done' }))).toMatchObject({
+    group: 'needs',
+    kind: 'finished',
+  })
+  expect(placeOf(ws('a', { activeAt: 20, report: page }))).toMatchObject({
+    group: 'quiet',
+    kind: 'idle',
+  })
+  // Never out of date, however long its chat runs: its title still names the row.
+  const long = ws('a', { activeAt: 10 + 60 * MIN, report: { ...page, title: 'Refunds' } })
+  expect(rowTitle(long)).toBe('Refunds')
+  const groups = deskGroups([ws('a', { report: page }), ws('b', { report: report('review', 5) })])
+  expect(groups.needs.map((r) => r.id)).toEqual(['b'])
+  expect(rowTone(null, deskGroups([ws('a', { report: page })]).quiet[0])).toBeNull()
 })
 
 test('a turn finished and unread, with no newer report, is "Finished"', () => {

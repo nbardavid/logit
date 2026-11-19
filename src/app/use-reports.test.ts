@@ -7,12 +7,7 @@ import { opensOnArrival, type ReportEntry, settle } from './use-reports'
 const report = (at: number): Report => ({
   at,
   chatId: 'c',
-  choices: [],
-  feature: '',
-  left: [],
-  links: [],
-  problem: '',
-  screens: [],
+  sections: {},
   state: 'ready',
   summary: '',
   title: 't',
@@ -36,7 +31,7 @@ test('arriving at a workspace opens its report only when it asks something unrea
   expect(opensOnArrival(asking('blocked', true))).toBe(true)
   // Read already: the usual tab stays.
   expect(opensOnArrival(asking('question', false))).toBe(false)
-  for (const state of ['review', 'ready', 'done'] as const) {
+  for (const state of ['working', 'review', 'ready', 'done'] as const) {
     expect(opensOnArrival(asking(state, true))).toBe(false)
   }
   expect(opensOnArrival(entry(null))).toBe(false)

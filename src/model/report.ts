@@ -1,45 +1,59 @@
-// An agent's report (logit's MCP `report` tool): what it did, told for someone who has a
-// minute. Product choices first: agents are usually right on the code, less often on what
-// the person will see.
+// A task's page (logit's MCP `report` tool): one per workspace, kept from the start of the
+// work to its end and filled in by its agent as it goes, so someone with a minute knows where
+// it stands. Its head says the state; six sections in a fixed order say the rest. A page
+// written before sections loads already mapped onto them (`report.rs`).
 import type { ReportBlock } from '../report/blocks/types'
 
-export type ReportState = 'question' | 'review' | 'ready' | 'done' | 'blocked'
+export type ReportState = 'working' | 'question' | 'review' | 'ready' | 'done' | 'blocked'
 
-export interface ReportChoice {
-  /** What the agent chose (or, when `open`, the question it asks). */
+/** The states where the agent stopped for the user. */
+export const STOP_STATES: readonly ReportState[] = ['question', 'review', 'ready', 'blocked']
+
+export type ProgressStatus = 'done' | 'current' | 'todo' | 'failed' | 'skipped'
+
+export interface ReportProgress {
   text: string
-  /** The option it left out, if one was weighed. */
-  setAside?: string
-  /** The question asked in the chat: shown as its own card, never among the choices made. */
-  open: boolean
+  status: ProgressStatus
 }
 
-export interface ReportScreen {
-  step: string
-  /** `data:` image URLs. */
-  before?: string
-  after?: string
+/** The page's sections, in reading order. */
+export const SECTIONS = ['ticket', 'understood', 'plan', 'progress', 'result', 'left'] as const
+
+export type SectionName = (typeof SECTIONS)[number]
+
+/** Each section, absent while not written (or cleared). Images are `data:` URLs. */
+export interface ReportSections {
+  /** What was asked, as written. */
+  ticket?: ReportBlock[]
+  /** What the work is for, the problem, what was assumed. */
+  understood?: ReportBlock[]
+  /** The solution, the product choices, today beside the mockup. */
+  plan?: ReportBlock[]
+  /** The agent's own steps for this task. */
+  progress?: ReportProgress[]
+  /** The real screens, what was run, the PR. */
+  result?: ReportBlock[]
+  /** What the user still has to do. */
+  left?: string[]
 }
 
 export interface Report {
   workspaceId: string
   chatId: string
-  /** When it was written (ms). */
+  /** The last call (ms). */
   at: number
   state: ReportState
   ticket?: string
   title: string
+  /** The one sentence lists read: where it stands, the question, why blocked. */
   summary: string
-  /** Left out when the work has no product context. */
-  feature?: string
-  problem?: string
-  choices: ReportChoice[]
-  screens: ReportScreen[]
-  links: { label: string; url: string }[]
-  left: string[]
-  /** The body as blocks the agent composed, drawn after the summary in place of the fixed
-   * fields' layout (src/report/blocks). Absent, the fixed fields map onto blocks. */
-  blocks?: ReportBlock[]
+  /** A word or two for the current step: "Working · code". */
+  step?: string
+  /** A page written the old way: the question its open choice asked. */
+  question?: string
+  sections: ReportSections
+  /** When each section was last set (ms). */
+  updated?: Partial<Record<SectionName, number>>
 }
 
 /** The state's word and its status tone, as the sidebar's dots say it. */
@@ -49,10 +63,20 @@ export const REPORT_STATE = {
   question: { tone: 'waiting', word: 'Question' },
   ready: { tone: 'done', word: 'PR ready' },
   review: { tone: 'waiting', word: 'Screens to review' },
-} as const satisfies Record<ReportState, { tone: 'failing' | 'waiting' | 'done'; word: string }>
+  working: { tone: 'working', word: 'Working' },
+} as const satisfies Record<
+  ReportState,
+  { tone: 'failing' | 'waiting' | 'done' | 'working'; word: string }
+>
 
 /** Most characters per text, as the host checks them (`report.rs`). */
-export const REPORT_LIMITS = { choice: 120, context: 300, summary: 200, title: 60 } as const
+export const REPORT_LIMITS = {
+  choice: 120,
+  context: 300,
+  step: 24,
+  summary: 200,
+  title: 60,
+} as const
 
 /** A text cut to `max` characters (not UTF-16 units), with an ellipsis when cut. */
 export function clampText(text: string, max: number): string {
@@ -66,12 +90,6 @@ export function clampText(text: string, max: number): string {
         .trimEnd()}…`
 }
 
-/** The choices the agent made, in its order: the open one is a question, not a choice. */
-export const madeChoices = (choices: readonly ReportChoice[]) => choices.filter((c) => !c.open)
-
-/** The question the report asks, if any (the host allows one). */
-export const openChoice = (choices: readonly ReportChoice[]) => choices.find((c) => c.open)
-
 /** Only web links open (the host checks it too). */
 export function isWebUrl(url: string): boolean {
   try {
@@ -82,11 +100,22 @@ export function isWebUrl(url: string): boolean {
   }
 }
 
+export interface ReportLink {
+  label: string
+  url: string
+}
+
+/** Every link the page's text blocks give, the ticket's section first. */
+export const linksOf = (report: Pick<Report, 'sections'>): ReportLink[] =>
+  (['ticket', 'understood', 'plan', 'result'] as const).flatMap((name) =>
+    (report.sections[name] ?? []).flatMap((b) => (b.kind === 'text' ? (b.links ?? []) : []))
+  )
+
 /** The link that is the ticket: its label names it, or its address ends on its number. */
 export function ticketLink(
   ticket: string | undefined,
-  links: Report['links']
-): Report['links'][number] | undefined {
+  links: readonly ReportLink[]
+): ReportLink | undefined {
   const id = ticket?.trim().toLowerCase() ?? ''
   if (id === '') return undefined
   const bare = id.replace(/^#/, '')
@@ -121,6 +150,16 @@ const STALE_MS = 5 * 60_000
 /** The workspace's chats were active well after the report was written. */
 export const isStale = (at: number, chatActiveAt: number | undefined) =>
   chatActiveAt !== undefined && chatActiveAt - at > STALE_MS
+
+/**
+ * The page's state no longer says where the work stands: the agent stopped for the user
+ * (question, review, ready, blocked) and its chat clearly went on since. Working and done
+ * never are; the page itself stays as it is, only its state line changes.
+ */
+export const isOutdated = (
+  report: Pick<Report, 'at' | 'state'>,
+  chatActiveAt: number | undefined
+) => STOP_STATES.includes(report.state) && isStale(report.at, chatActiveAt)
 
 /** "just now", "4m ago", "3h ago", "2d ago", "5w ago". */
 export function reportAge(at: number, now: number): string {

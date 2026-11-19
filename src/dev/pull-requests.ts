@@ -270,41 +270,55 @@ The transcript windowing PR is slow to answer: ${PR_STATES.slow}. The long one i
     ]),
 }
 
-/** `?prs`: teal's report names PRs every way an agent can: a `pr` block, its text, its links. */
+/** `?prs`: teal's page names PRs every way an agent can: a `pr` block, its text, its links,
+ * across its sections (each PR's card once, under the first block naming it). */
 export const prReport = (now: number): Report => ({
   at: now - 4 * 60_000,
-  blocks: [
-    {
-      kind: 'text',
-      lead: 'The PR card is in, and the three PRs it rests on are listed with it.',
-      paragraphs: [
-        `The chime (${PR_STATES.failing}) fails two checks GitHub does not require; it can go, at your risk.`,
-      ],
-    },
-    {
-      branch: 'feat/pr-cards',
-      ci: 'passing',
-      kind: 'pr',
-      number: 201,
-      review: 'approved',
-      title: 'Show a live card for every pull request an agent links',
-      url: PR_STATES.passing,
-    },
-    {
-      kind: 'callout',
-      text: `The composer fix, ${PR_STATES.running}, waits on its end-to-end checks.`,
-      tone: 'note',
-    },
-  ],
   chatId: 'chat-notes',
-  choices: [],
-  left: [],
-  links: [
-    { label: 'The composer fix', url: PR_STATES.running },
-    { label: 'Terminal search (draft)', url: PR_STATES.draft },
-    { label: 'Design notes', url: 'https://www.figma.com/file/pr-cards' },
-  ],
-  screens: [],
+  sections: {
+    plan: [
+      {
+        kind: 'text',
+        links: [{ label: 'Design notes', url: 'https://www.figma.com/file/pr-cards' }],
+        paragraphs: [`The cards rest on the composer fix, ${PR_STATES.running}.`],
+      },
+    ],
+    progress: [
+      { status: 'done', text: 'Card' },
+      { status: 'done', text: 'Merge' },
+      { status: 'done', text: 'PR' },
+    ],
+    result: [
+      {
+        kind: 'text',
+        lead: 'The PR card is in, and the three PRs it rests on are listed with it.',
+        paragraphs: [
+          `The chime (${PR_STATES.failing}) fails two checks GitHub does not require; it can go, at your risk.`,
+        ],
+      },
+      {
+        branch: 'feat/pr-cards',
+        ci: 'passing',
+        kind: 'pr',
+        number: 201,
+        review: 'approved',
+        title: 'Show a live card for every pull request an agent links',
+        url: PR_STATES.passing,
+      },
+      {
+        kind: 'callout',
+        text: `The composer fix, ${PR_STATES.running}, waits on its end-to-end checks.`,
+        tone: 'note',
+      },
+      {
+        kind: 'text',
+        links: [
+          { label: 'The composer fix', url: PR_STATES.running },
+          { label: 'Terminal search (draft)', url: PR_STATES.draft },
+        ],
+      },
+    ],
+  },
   state: 'ready',
   summary: 'Every PR an agent links shows as a live card, with one Merge.',
   title: 'Live PR cards',

@@ -16,13 +16,13 @@ import {
 import { cn } from '@/lib/utils'
 
 import type { Catalog, Project, Signal, Workspace } from '../model/catalog'
+import type { Report } from '../model/report'
 import type { CardHandle } from './question-card'
 import type { ChatTab } from './use-chats'
 import type { Reports } from './use-reports'
 
 import { type ChatState, liveStep, questionsOf, toolSummary } from '../chat/model'
 import { reportAsk } from '../chat/reports'
-import { openChoice, type Report } from '../model/report'
 import { signalsOf } from './agent-tree'
 import {
   Answer,
@@ -75,7 +75,7 @@ function sayOf(chats: readonly ChatTab[], wsId: string, report: Report | null): 
     if (asked !== undefined) return asked
     return `${wait.toolName} ${toolSummary(wait.toolName, wait.input, chat.cwd)}`.trim()
   }
-  const open = report?.state === 'question' ? openChoice(report.choices)?.text : undefined
+  const open = report?.state === 'question' ? report.question?.trim() : undefined
   if (open !== undefined && open !== '') return open
   if (report !== null && report.summary !== '') return report.summary
   const latest = chats
@@ -189,7 +189,8 @@ export function useDesk(
     setSel(groups.needs[0]?.id ?? null)
   }
   const row = rows.find((r) => r.id === sel) ?? null
-  if (sel !== null && row === null && started) setSel(null)
+  // The selected workspace is gone (deleted from its card): on to the first that needs you.
+  if (sel !== null && row === null && started) setSel(groups.needs[0]?.id ?? null)
 
   // After an answer went, once its row has left "Needs you": the next one that needs you.
   const leaving = useRef<{ id: string; before: string[] } | null>(null)
@@ -526,6 +527,8 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
             cwd={row.path}
             ask={ask}
             chatActiveAt={row.activeAt}
+            signal={row.signal}
+            working={row.group === 'working'}
             merged={row.merged}
             showAsk={ask.kind === 'answered'}
             head={head}

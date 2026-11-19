@@ -33,7 +33,7 @@ import { RightPanel } from './app/right-panel'
 import { stepPane } from './app/settings-pane'
 import { SettingsView } from './app/settings-view'
 import { SidePeek } from './app/side-peek'
-import { diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
+import { colourWord, diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
@@ -992,7 +992,10 @@ export function App() {
                       onOpenFile: openFile,
                       path: ws.path,
                       pr: git.pr,
-                      report: reportTab(reports, wsChats, git.pr, (id) => selectTab(ws.id, id)),
+                      report: reportTab(reports, wsChats, git.pr, (id) => selectTab(ws.id, id), {
+                        colour: colourWord(ws.path),
+                        project: project?.name,
+                      }),
                       setup: (
                         <Dock
                           ws={ws}

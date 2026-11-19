@@ -1,12 +1,42 @@
+import { ImageOffIcon } from 'lucide-react'
+
 import { cn } from '@/lib/utils'
 
 import type { ScreensBlock, ScreenStep } from './types'
 
-import { BlockHead, has, useBlockActions } from './primitives'
+import { BlockHead, has, type Shot, useBlockActions } from './primitives'
 
 const SIDE_WORD = { after: 'After', before: 'Before' } as const
 
 type Side = 'before' | 'after'
+
+/** A screen that can't be drawn yet, or at all: the frame's place, so nothing jumps. */
+function Placeholder({ shot, src }: { shot: Shot; src: string }) {
+  if (shot.state === 'loading')
+    return (
+      <div
+        role="img"
+        aria-label="Loading the screen"
+        className="bg-active aspect-[16/10] animate-pulse rounded-lg motion-reduce:animate-none"
+      />
+    )
+  if (shot.state !== 'missing') return null
+  const name = src.split('/').at(-1) ?? src
+  return (
+    <div
+      role="img"
+      aria-label={`Screen not shown: ${shot.reason}`}
+      title={shot.reason}
+      className="bg-chrome border-border text-faint flex aspect-[16/10] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 text-center text-xs"
+    >
+      <ImageOffIcon className="size-4" strokeWidth={1.5} />
+      <span className="text-muted-foreground font-medium">
+        {/no file/i.test(shot.reason) ? 'Image not found' : 'Image not shown'}
+      </span>
+      <span className="max-w-full truncate font-mono">{name}</span>
+    </div>
+  )
+}
 
 /** One screen in its rounded frame: a click shows it larger. */
 function Frame({
@@ -20,6 +50,7 @@ function Frame({
   word: string | null
   onOpen: ((from: HTMLButtonElement) => void) | null
 }) {
+  const { image } = useBlockActions()
   if (!has(src)) {
     return (
       <div className="bg-chrome border-border text-faint hidden aspect-[16/10] place-items-center rounded-lg border border-dashed text-xs @min-[420px]/report:grid">
@@ -27,23 +58,32 @@ function Frame({
       </div>
     )
   }
+  const shot: Shot = image === undefined ? { state: 'ready', url: src } : image(src)
   return (
     <figure className="group/frame min-w-0">
-      <button
-        type="button"
-        disabled={onOpen === null}
-        className="frame bg-background block w-full cursor-zoom-in overflow-hidden rounded-lg disabled:cursor-default"
-        aria-label={`${word ?? 'Screen'}: view larger`}
-        onClick={(e) => onOpen?.(e.currentTarget)}
-      >
-        <img
-          src={src}
-          alt={word ?? 'Screen'}
-          draggable={false}
-          loading="lazy"
-          className="block aspect-[16/10] w-full object-cover object-top"
-        />
-      </button>
+      {shot.state === 'ready' ? (
+        <button
+          type="button"
+          disabled={onOpen === null}
+          className="frame bg-background block w-full cursor-zoom-in overflow-hidden rounded-lg disabled:cursor-default"
+          aria-label={`${word ?? 'Screen'}: view larger`}
+          onClick={(e) => onOpen?.(e.currentTarget)}
+        >
+          <img
+            src={shot.url}
+            alt={word ?? 'Screen'}
+            draggable={false}
+            loading="lazy"
+            className={cn(
+              'block aspect-[16/10] w-full object-cover object-top',
+              // Read from disk after the block rose: it fades in over its placeholder's place.
+              image !== undefined && 'animate-in fade-in duration-160'
+            )}
+          />
+        </button>
+      ) : (
+        <Placeholder shot={shot} src={src} />
+      )}
       {word !== null && (
         <figcaption className="mt-2 flex items-center gap-1.5 text-xs leading-4">
           <span
