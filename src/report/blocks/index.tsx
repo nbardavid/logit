@@ -1,5 +1,5 @@
 // The report as blocks: one renderer over an ordered list, each block its own component.
-// Nothing here knows Desk; a block takes plain data and, at most, asks to zoom or open a link.
+// Nothing here knows its surface; a block takes plain data and, at most, asks to zoom or open a link.
 import type { CSSProperties, ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'

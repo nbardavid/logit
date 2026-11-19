@@ -57,24 +57,34 @@ branding.
   gives: a section given replaces that section, the rest stays; `reset` starts a new page.
   Sections are blocks (text, callout, steps, table, decisions, screens, left), the same ones
   `show` draws in the chat without storing anything. Old pages load mapped onto the
-  sections. The Report tab leads the right panel and opens by itself on arrival when the page
-  waits on the user (question, blocked) unread. A page is never greyed: only a stopped state
+  sections. A workspace with a page splits the area: its chat on the left, the right panel
+  on the right at about half the width while the Report tab (or a published page) is shown, the
+  other tabs keeping the narrow panel (the divider drags, each width is kept, ⌥⌘B folds it),
+  the Report tab leading, git, servers and artifacts as tabs beside it. Switching workspace
+  switches both halves. The question is asked only in the chat's inline card; the page shows
+  its state, never the question a second time. A page is never greyed: only a stopped state
   (question, review, ready, blocked) whose chat clearly went on is outdated, and then only its
   state line falls back to the chat's own signal; working never is.
-- **Desk** is a mode of the sidebar: one queue across every project of what the agents need
-  from the user. "Code" and "Desk" sit at the sidebar's top under New workspace and Search,
-  the active one marked, the amber count on Desk; ⌘0 toggles them, Esc in Desk returns to
-  Code. Code is the list by project; Desk is the same rows in three groups (Needs you,
-  Working, Quiet, which folds), each row naming its project quietly. The sidebar never folds
-  for it and ⌘S hides it as anywhere. The main area shows the selected one's task page (the
-  same one as the Report tab), read there as seen; a pending question's card is the page's
-  last item and scrolls with it (out of view, a slim "Claude asks" line pinned at the bottom
-  goes back to it), the other answers pinned under the page as a slim dock; the open
-  question is written once. A page at work never puts its row in Needs you nor in the amber
-  count: the row goes where its chat's signal puts it, its dock the plain reply line. Picking
-  a row selects it for Desk only; "Open chat" (⌘↩), or going back to Code, opens that
-  workspace's chat.
-  Answered, a row leaves and the next need is selected; with none left, "Nothing needs you".
+- **The sidebar says who needs the user.** No separate mode: each row says its page's stop in
+  one quiet word (Question, To review, PR ready, Blocked) before the colour word. Only what is
+  unread asks: the amber tint and the bold title last until the user opens that workspace,
+  and come back on a new page stop, a new wait or a new finished turn. "Needs you", under
+  Search, holds the ink count of unread rows; ⌘0 (or a click on it) goes to the next one in
+  sidebar order, wrapping, and says "Nothing needs you" for a moment when none is left.
+  Right-click Park puts a workspace aside: parked rows sit in a "Parked" group at the foot of
+  their project, folded by default with its count, and never count, flash or tint. Sending a
+  message unparks. Park is the catalog's `paused` flag (kept like the name); what was seen is
+  kept per window in localStorage.
+- **Sub-workspaces live in the sidebar.** A workspace a chat starts with logit's MCP
+  (`workspace_create`) is a full row right under the workspace that started it, indented
+  behind a hairline elbow (no colour bars, no avatars), its own children under it the same
+  way. It has its own state, stop word, unread and menu, counts in "Needs you" on its own, and
+  ⌘0, ⌘1–9 and ⌥⌘↑/↓ go through it in sidebar order; a parent's row speaks only for its own
+  chats, never rolls its children up. A parent shows how many sit under it with a chevron and
+  folds them (open by default, kept per window); folded, an amber dot and count say what
+  below asks. Parking a parent parks its children with it (still nested); a child can be
+  parked alone. Deleting a parent leaves its children as rows of their own. There is no
+  Agents tab: in-chat sub-agents (Claude Code's Task) stay cards in the transcript.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. Two dialogs only: the composer, and Settings (⌘,), a window with its sections down
   its left side, over the app without a veil so a chat background and its blur show as they
@@ -91,7 +101,7 @@ branding.
   pretend to be another client (`cli`, `claude-vscode`).
 - **It feels native**:
   - keyboard first: ⌘N, ⌘T chat, ⇧⌘T terminal, ⌘W (twice if the agent is working), ⌘P,
-    ⌘0 Desk, ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
+    ⌘0 next that needs you, ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
     ⌘S (⌘B too) the sidebar, which slides out over the content from the left edge while hidden,
     ⌥⌘B, ⌘G, ⌘, settings;
   - no browser context menu;

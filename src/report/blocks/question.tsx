@@ -14,7 +14,7 @@ const STATUS = {
 
 /**
  * The question the agent waits on, read-only: numbered options that weigh the same until one
- * is picked, the recommended one marked. Desk answers it in its dock instead.
+ * is picked, the recommended one marked. The Report tab leaves it out: the chat's card asks it.
  */
 export function Question({
   answer = [],

@@ -88,7 +88,7 @@ export function pageOf(
   o: {
     ask?: ReportAsk
     merged?: boolean
-    /** Draw the question here (false where the surface asks it itself, as Desk does). */
+    /** Draw the question here (false where it is asked elsewhere: the Report tab leaves it to the chat's card). */
     question?: boolean
   } = {}
 ): Page {

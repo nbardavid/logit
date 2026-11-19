@@ -7,30 +7,35 @@ export interface Layout {
   sideWidth: number | null
   /** Null until the panel is dragged: it then follows the window (`GIT_WIDTH`). */
   gitWidth: number | null
-  /** The panel's width while it shows a page; null follows the window (`BROWSER_WIDTH`). */
-  browserWidth: number | null
+  /** The panel's width while it shows the task page or a published page; null splits the area
+   * right of the sidebar in half. */
+  splitWidth: number | null
 }
 
 const KEY = 'logit.layout'
 const DEFAULTS: Layout = {
-  browserWidth: null,
   gitOpen: true,
   gitWidth: null,
   sideOpen: true,
   sideWidth: null,
+  splitWidth: null,
 }
-export const LIMITS = { browser: [360, 1200], git: [220, 520], side: [220, 420] } as const
+export const LIMITS = {
+  git: [220, 520],
+  side: [220, 420],
+  split: [340, 1400],
+} as const
 /** The panels' widths until dragged: a share of the window, within reason. */
 export const SIDE_WIDTH = 'clamp(220px, 18vw, 260px)'
 export const GIT_WIDTH = 'clamp(280px, 24vw, 420px)'
-/** A page needs room: about half the window. */
-export const BROWSER_WIDTH = 'clamp(420px, 45vw, 1100px)'
 const between = (min: number, share: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(window.innerWidth * share)))
 /** The same in pixels, for the splitters to say. */
 export const sideWidthNow = () => between(220, 0.18, 260)
 export const gitWidthNow = () => between(280, 0.24, 420)
-export const browserWidthNow = () => between(420, 0.45, 1100)
+/** Half the area right of the sidebar (`side` px, its hairline included), as CSS and in px. */
+export const splitWidth = (side: string) => `calc((100vw - ${side}) / 2)`
+export const splitWidthNow = (side: number) => Math.round((window.innerWidth - side) / 2)
 /** What earlier versions saved as the default widths: a width equal to one was never dragged. */
 const OLD_GIT_DEFAULT = 280
 const OLD_SIDE_DEFAULTS = new Set([232, 260])
@@ -46,8 +51,6 @@ function load(): Layout {
       Math.min(max, Math.max(min, v))
     return {
       ...stored,
-      browserWidth:
-        stored.browserWidth === null ? null : clamp(stored.browserWidth, LIMITS.browser),
       gitWidth:
         stored.gitWidth === null || stored.gitWidth === OLD_GIT_DEFAULT
           ? null
@@ -56,6 +59,7 @@ function load(): Layout {
         stored.sideWidth === null || OLD_SIDE_DEFAULTS.has(stored.sideWidth)
           ? null
           : clamp(stored.sideWidth, LIMITS.side),
+      splitWidth: stored.splitWidth === null ? null : clamp(stored.splitWidth, LIMITS.split),
     }
   } catch {
     return DEFAULTS

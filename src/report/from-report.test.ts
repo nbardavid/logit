@@ -55,7 +55,7 @@ test('blocked leads with its reason; a question shows only while it is the state
   expect(pageOf(asked).asks).toEqual([
     { kind: 'question', options: [], question: 'Which colour?', status: 'asked' },
   ])
-  // Where the surface asks it itself (Desk), it is written once, there.
+  // Where it is asked elsewhere (the chat's card, beside the Report tab), it is written once, there.
   expect(pageOf(asked, { question: false }).asks).toEqual([])
   expect(pageOf({ ...asked, state: 'review' }).asks).toEqual([])
 })

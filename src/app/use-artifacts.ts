@@ -66,8 +66,8 @@ export function useArtifacts(o: Options) {
   const ws = o.catalog.workspaces.find((w) => w.id === o.workspaceId)
   const tabs = browserTabs([...(ws?.artifacts ?? []), ...fake.fakes])
   const id = o.workspaceId
-  // A workspace an agent started opens on its tree; any other on its changes.
-  const fallback = ws?.parentChat === undefined ? 'changes' : 'agents'
+  // A workspace with a task page opens on it, beside its chat; any other on its changes.
+  const fallback: PanelView = o.reports.has ? 'report' : 'changes'
   const asked = (id === undefined ? undefined : views[id]) ?? fallback
   const last = id === undefined ? null : (lasts[id] ?? null)
   const view = shownView(asked, o.hasPr, tabs, last, o.reports.has)
@@ -87,13 +87,6 @@ export function useArtifacts(o: Options) {
     },
     [id]
   )
-  /** Another workspace's view, for when it comes on screen (the Agents tree opens its rows on
-   * their own Agents tab). */
-  const setViewOf = useCallback(
-    (wsId: string, next: PanelView) => setViews((s) => ({ ...s, [wsId]: next })),
-    []
-  )
-
   // A page on screen is read (its "new" dot goes), and is the one Artifacts opens next time.
   const onScreen = isBrowser(view) ? tabs.find((a) => a.url === view.browser) : undefined
   const unseen = o.visible && onScreen !== undefined && isNew(onScreen)
@@ -139,5 +132,5 @@ export function useArtifacts(o: Options) {
   /** The chat an artifact came from, by its title ('' when unknown). */
   const chatOf = (a: Artifact) => o.catalog.chats.find((c) => c.id === a.chatId)?.title ?? ''
 
-  return { chatOf, close, published, setView, setViewOf, tabs, view }
+  return { chatOf, close, published, setView, tabs, view }
 }

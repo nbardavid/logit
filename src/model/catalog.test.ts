@@ -9,7 +9,6 @@ import {
   descendants,
   isNew,
   strongest,
-  withoutChildren,
   type Workspace,
 } from './catalog'
 
@@ -79,8 +78,4 @@ test('a workspace an agent made sits under its parent, not in the sidebar', () =
   const children = childrenOf(catalog)
   expect(children['root']?.map((w) => w.id)).toEqual(['kid'])
   expect(descendants(children, 'root').map((w) => w.id)).toEqual(['kid', 'grand'])
-  expect(withoutChildren(byProject(catalog), catalog)['p']?.map((w) => w.id)).toEqual([
-    'root',
-    'orphan',
-  ])
 })

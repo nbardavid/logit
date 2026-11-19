@@ -39,9 +39,9 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift            |
 | Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)          |
 | Chat background (picked, or changed)            | 300ms     | ease-out    | fade in; the scene then plays at 24 fps, cell by cell |
-| Sidebar: Code ↔ Desk                            | 160ms     | ease-out    | the two lists cross-fade, 4px slide toward the mode   |
-| Desk: a row arrives                             | 240ms     | settle      | fade + 6px rise                                       |
-| Desk: an answered row leaves                    | 300ms     | settle      | fade, 16px drift right, height folds                  |
+| Task page splits in (a workspace with a page)   | 200ms     | ease-in-out | the right panel's width slides to half, as panels do  |
+| Sidebar: Parked group folds / unfolds           | 180ms     | ease-in-out | grid rows and fade, the chevron turns                 |
+| "Needs you": ⌘0 finds nothing                   | 160ms     | ease-out    | label cross-fades to "Nothing needs you", 1.6s, back  |
 
 - "settle" is `--ease-settle` (`cubic-bezier(0.2, 0, 0, 1)`): long, soft landings.
 - Animate `opacity` and `transform`; animate size only where the layout must move.
@@ -86,17 +86,17 @@ Every size in a component comes from this scale; no `text-[13.5px]` and the like
 font; mono (`font-mono`, Geist Mono) only for code, tool commands, counts and branch names,
 never for file names.
 
-| Utility      | Size / line | Weight    | Use                                                                 |
-| ------------ | ----------- | --------- | ------------------------------------------------------------------- |
-| `text-2xs`   | 11 / 14     | 500       | badges and inbox counts only                                        |
-| `text-xs`    | 12 / 16     | 400 / 500 | ages, hints, section labels, footers, counts, chips, shortcuts      |
-| `text-sm`    | 13 / 18     | 400 / 500 | all chrome: sidebar, tabs, menus, file rows, buttons (the body)     |
-| `text-base`  | 14 / 22     | 400 / 600 | user bubble, composer text, top-bar title, PR status, card titles   |
-| `.md`        | 15 / 24     | 400       | Claude's answers (h1 18/26, h2 16/24, h3–h4 15/24, all 600)         |
-| `text-md`    | 15 / 24     | 400 / 500 | prose outside markdown on a stage: Desk's question, choices (15/22) |
-| `text-title` | 18 / 26     | 600       | a report's title on a stage (Desk's detail)                         |
-| `text-lg`    | 20 / 28     | 600       | empty-state titles only                                             |
-| mono         | 12.5 / 20   | 400       | code blocks; 13 for inline code in prose, 12 inline in chrome       |
+| Utility      | Size / line | Weight    | Use                                                               |
+| ------------ | ----------- | --------- | ----------------------------------------------------------------- |
+| `text-2xs`   | 11 / 14     | 500       | badges and inbox counts only                                      |
+| `text-xs`    | 12 / 16     | 400 / 500 | ages, hints, section labels, footers, counts, chips, shortcuts    |
+| `text-sm`    | 13 / 18     | 400 / 500 | all chrome: sidebar, tabs, menus, file rows, buttons (the body)   |
+| `text-base`  | 14 / 22     | 400 / 600 | user bubble, composer text, top-bar title, PR status, card titles |
+| `.md`        | 15 / 24     | 400       | Claude's answers (h1 18/26, h2 16/24, h3–h4 15/24, all 600)       |
+| `text-md`    | 15 / 24     | 400 / 500 | prose outside markdown: a question card's question (15/22)        |
+| `text-title` | 18 / 26     | 600       | a report's title (the Report tab)                                 |
+| `text-lg`    | 20 / 28     | 600       | empty-state titles only                                           |
+| mono         | 12.5 / 20   | 400       | code blocks; 13 for inline code in prose, 12 inline in chrome     |
 
 `text-2xs` and `text-lg` carry their weight; the others take `font-medium` or
 `font-semibold` where the table allows.
@@ -214,9 +214,9 @@ Claude's questions (`app/question-card.tsx`) are the agent speaking, not a form.
 
 - **The question** reads in the text column: its short header as a `text-xs` faint eyebrow
   above (with "Pick any" for a multi-select), then the question in `text-md`, medium. No box
-  around it in a chat; in Desk the card is the box.
+  around it.
 - **The options** are one grouped list, a hairline between rows, in the cards' frame
-  (`rounded-lg` hairline on `background`); in Desk's card, rows run flush under a hairline. Each
+  (`rounded-lg` hairline on `background`). Each
   row is padded 14 / 10: a 20px number cap (`rounded-sm` hairline, `text-xs` faint), the label
   `text-base` regular ink, the description under it `text-sm` muted. Both wrap, never cut.
   "Recommended" is a `text-xs` faint word at the row's right, on the label's line.
@@ -226,28 +226,52 @@ Claude's questions (`app/question-card.tsx`) are the agent speaking, not a form.
   single-choice question answers on click; a hint line under it says so, with Skip as a quiet
   text action. Several questions or a multi-select add a progress count and one Send. A free
   answer typed while other questions wait shows as a picked row of its own (a pencil cap).
-  Desk has no composer: the card's foot is its free answer, as the reply line ends every dock
-  state.
-- **Where it stands**: the last item of the transcript (Desk: of the report, 40px under it, in
-  its column), scrolling with it. Scrolled out of view, one slim "Claude asks" line stands at
+- **Asked once**: the chat's card is the only place a question is asked. The task page beside
+  it shows its state ("Question"), never the question again.
+- **Where it stands**: the last item of the transcript, scrolling with it. Scrolled out of view, one slim "Claude asks" line stands at
   the bottom (over the composer in a chat) and goes back to it; a digit picked from the
   keyboard while it is away scrolls it into view.
 - **Motion**: the question rises with the transcript (280ms settle). Answered, the card folds
   away (180ms, height and fade, the column's gap with it) while its one-line record rises.
 
+### Sidebar needs
+
+What the agents need from the user lives in the sidebar rows, not in a mode of its own.
+
+- **The stop word**: a row whose page stops says it in one word (Question, To review, PR
+  ready, Blocked) before the colour word, `text-xs`. Unread, it is `font-medium` in the
+  stop's ink (warn, critical, good); seen, `muted-foreground`.
+- **Unread only**: the tint and the bold title last until the workspace is opened. Opening it
+  marks it seen while it renders, so the row never flashes as the user arrives.
+- **Needs you**, a nav row under Search: the ink `text-2xs` count of unread rows, or ⌘0 as
+  a `Kbd` when none. A click or ⌘0 goes to the next; with none, the label cross-fades to
+  "Nothing needs you" in place for 1.6s.
+- **Parked** rows close their project, under a "Parked N" label row with a chevron, folded by
+  default (kept per window). Parked rows sit at half opacity and show only the working
+  loader: no word, no tint, no count.
+- **Sub-workspaces** sit under their parent, each level 18px in, a 1px `line-strong` elbow
+  from the parent's mark column into the child's mark (rounded corner, rails running on past
+  rows while a sibling follows); a child's tint starts at its indent. The parent's meta leads
+  with its count and a 12px chevron (turned down while open); the hover tools hold the same
+  count as the fold button. Folding slides each row's height (`FOLD`, 180ms); folded, a
+  waiting dot and the count of what asks below, in warn ink, replace the plain count. The row
+  on screen never hides: its parents stay open.
+
 ### The task page
 
 A workspace's report is one page for its task, kept by its agent from the start of the work
-to its end (`app/report-view.tsx`, from `report/from-report.ts`). The Report tab and Desk draw
-the same component; only the surface around it differs.
+to its end (`app/report-view.tsx`, from `report/from-report.ts`). It is the Report tab, which
+leads the right panel; shown, it (like a published page) opens the panel split at about half the
+area right of the sidebar (`layout.splitWidth` once dragged; the chat keeps its minimum), the
+other tabs keeping the narrow width (`layout.gitWidth`), so the
+page reads from 340px up: below 560px its section labels go above their content.
 
 - **Head**: the title (`text-title`), then one quiet line
   "project · colour · ticket" (`text-faint`, the ticket a link when the page links it) with
   Open chat at its end. The state line (the state's dot, word and step: "Working · code", then
   the age) sits at the title's right when there is room, above it when not.
 - **Lead**: the summary, as a text block's lead. Blocked, the summary is the reason, drawn as a risk
-  callout in its place. A question the page asks comes next in the Report tab; Desk writes it
-  once, as the card at the page's end.
+  callout in its place. A question the page asks is not drawn: the chat beside it asks it.
 - **Six sections, always in this order**: The ticket, What I understood, What I will do,
   Progress, Result, Left for you. Each is a row under a hairline (`border-t`, 20px above and
   below): its label (`text-sm` medium, with when it was set in `text-faint` beside it) in a
@@ -272,7 +296,7 @@ the same component; only the surface around it differs.
 ### Report blocks
 
 A section is a column of blocks (`report/blocks/`), and `show` draws the same blocks inline
-in a chat. One set of components serves Desk, the Report tab and the chat.
+in a chat. One set of components serves the Report tab and the chat.
 
 - **Kinds an agent may send**: text, callout, steps, table, decisions, screens and left.
   The others belong to logit. A question goes through AskUserQuestion, a PR is a link that

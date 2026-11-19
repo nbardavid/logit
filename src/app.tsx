@@ -1,20 +1,17 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
-import { agentTree, kidsNote, signalsOf } from './app/agent-tree'
 import { notify, playChosenSound, waitingAttention } from './app/attention'
 import { browserId } from './app/browser-tabs'
 import { readChatSettings, saveChatSettings } from './app/chat-settings'
 import { ChatView } from './app/chat-view'
 import { cleanupOf, useCardCleanup } from './app/cleanup-effect'
-import { ContextMenu, type MenuItem, type MenuState, useNoBrowserMenu } from './app/context-menu'
-import { Desk, deskChat, deskSide, useDesk } from './app/desk'
+import { ContextMenu, type MenuState, useNoBrowserMenu } from './app/context-menu'
 import { Dock } from './app/dock'
 import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
 import { GitMode } from './app/git-mode'
@@ -30,10 +27,12 @@ import { reportTab } from './app/report-view'
 import { resumeTarget, type Session } from './app/resume'
 import { type CommandPick, ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
+import { rowMenuItems } from './app/row-menu'
 import { stepPane } from './app/settings-pane'
 import { SettingsView } from './app/settings-view'
 import { SidePeek } from './app/side-peek'
 import { colourWord, diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
+import { parentsOf, signalsOf, treeRows } from './app/sidebar-tree'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
@@ -49,6 +48,7 @@ import { HOST_BLOCKED, useHost } from './app/use-host'
 import { useLaunches } from './app/use-launches'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
+import { needsOf, useNeedsSeen } from './app/use-needs'
 import { useQuotas } from './app/use-quotas'
 import { useReports } from './app/use-reports'
 import { useSetupRun } from './app/use-setup-run'
@@ -78,14 +78,12 @@ const EMPTY_TITLE = 'text-foreground text-lg'
 /** A key cap on the ink button. */
 const KBD_INK = 'text-white/60'
 
-const copy = (text: string) => void navigator.clipboard.writeText(text)
-
 export function App() {
   const [removing, markRemoving] = useLeaving()
   const store = useCatalog(removing)
   const { catalog, project, projects, status, workspace: ws } = store
   const projectId = project?.id ?? null
-  const [mode, setMode] = useState<'normal' | 'git' | 'desk'>('normal')
+  const [mode, setMode] = useState<'normal' | 'git'>('normal')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
   // Where the new-tab menu drops from.
@@ -104,14 +102,17 @@ export function App() {
   const [armed, setArmed] = useState<string | null>(null)
   const [activeByWs, setActiveByWs] = useState<Record<string, string>>({})
   const [attention, setAttention] = useState<Attention | null>(null)
+  // ⌘0 with nothing waiting on the user: counted, so the sidebar says so once more.
+  const [nothingNeeds, setNothingNeeds] = useState(0)
+  const [needsSeen, setNeedsSeen] = useNeedsSeen()
   const keys = useRef({
     /** Opens the attention toast's chat, when one is up. */
     attention: (): boolean => false,
     close: () => {},
     compose: () => {},
-    /** Desk back to Code, on a row's workspace (the selected one), on that chat when given. */
-    leaveDesk: (_row?: Parameters<typeof deskChat>[1] | null, _chatId?: string | null) => {},
     newTab: (_kind: 'chat' | 'terminal') => {},
+    /** ⌘0: the next workspace that asks something the user has not seen. */
+    nextNeed: () => {},
     stepTab: (_step: 1 | -1) => {},
     stepWorkspace: (_step: 1 | -1) => {},
     toWorkspace: (_index: number) => {},
@@ -132,7 +133,6 @@ export function App() {
     [catalog, removing]
   )
   useCardCleanup(catalog.workspaces, () => removal)
-  // An agent's workspaces leave the sidebar for their parent's Agents tab.
   const selectWs = (pid: string, wid: string | null) => {
     setMode('normal')
     store.select(pid, wid)
@@ -258,7 +258,6 @@ export function App() {
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
   const git = useGit(ws?.path, paths, settled)
-  const desk = useDesk({ catalog, chats, git, mode, projects, reports, workspaces })
   const quotas = useQuotas()
   const { layout, update } = useLayout()
   const artifacts = useArtifacts({
@@ -287,8 +286,7 @@ export function App() {
         // The diff is a page: Esc leaves it, unless something sits over it.
         const over = overlay !== null || composeIn !== null || ctxMenu !== null
         if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
-        if (mode === 'desk') keys.current.leaveDesk()
-        else setMode('normal')
+        setMode('normal')
       } else if (e.ctrlKey && e.key === 'Tab')
         // In Settings, ⌃Tab steps through its panes.
         (settingsOpen ? stepPane : keys.current.stepTab)(e.shiftKey ? -1 : 1)
@@ -304,8 +302,7 @@ export function App() {
       // e.code: with Option held, e.key is the composed character.
       else if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
       else if (e.code === 'KeyS' || e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
-      // On Desk, Desk takes ⌘0 back to Code.
-      else if (e.code === 'Digit0') setMode('desk')
+      else if (e.code === 'Digit0') keys.current.nextNeed()
       else if (e.key === 'p') setOverlay('projects')
       else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
       else if (e.key === 'w') keys.current.close()
@@ -474,54 +471,18 @@ export function App() {
     store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
   }
   const rowMenu = (row: RowMenu) => {
-    const path = row.kind === 'project' ? row.project.path : row.workspace.path
-    const items: MenuItem[] = []
-    if (row.kind === 'project')
-      items.push({ label: 'New workspace…', run: () => setComposeIn(row.project.id) })
-    items.push({ label: 'Show in Finder', run: async () => revealItemInDir(path) })
-    items.push({ label: 'Copy path', run: () => copy(path) })
-    if (row.kind === 'workspace') {
-      const { branch, id, name } = row.workspace
-      const paused = row.workspace.paused === true
-      const pause = () => store.pauseWorkspace(id, !paused).catch(fail(`Couldn't update ${name}`))
-      items.push({ label: 'Copy branch name', run: () => copy(branch) })
-      const toggle = { label: paused ? 'Resume' : 'Pause', run: pause }
-      items.unshift({ label: 'Rename', run: () => setRenamingWs(id) }, toggle, 'separator')
-    }
-    if (row.kind === 'project') {
-      const owned = workspaces[row.project.id] ?? []
-      items.push('separator', {
-        confirm: {
-          button: 'Close project',
-          text: `Close ${row.project.name}? It leaves the app; its folder and worktrees stay on disk.`,
-        },
-        danger: true,
-        label: 'Close project…',
-        run: async () => {
-          await store.removeProject(row.project.id)
-          for (const w of owned) closeRemoved(w)
-        },
-      })
-    }
-    if (row.kind === 'workspace') {
-      const w = row.workspace
-      const dirty = (git.changes[w.path]?.length ?? 0) > 0
-      items.push('separator', {
-        confirm: {
-          button: dirty ? 'Delete anyway' : 'Delete',
-          cautious: true,
-          text: dirty
-            ? `${w.name} has uncommitted changes. Deleting it discards them and removes its worktree folder. The branch ${w.branch} stays.`
-            : `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.${kidsNote(catalog, w)}`,
-          ...((signals[w.id] === 'working' || signals[w.id] === 'waiting') && {
-            warning: ' · Claude is working',
-          }),
-        },
-        danger: true,
-        label: 'Delete workspace…',
-        run: () => removeWorkspace(w, dirty),
-      })
-    }
+    const items = rowMenuItems(row, {
+      catalog,
+      changes: git.changes,
+      closeRemoved,
+      compose: setComposeIn,
+      fail,
+      removeWorkspace,
+      rename: setRenamingWs,
+      signals,
+      store,
+      workspaces,
+    })
     setCtxMenu({ items, x: row.x, y: row.y })
   }
 
@@ -546,25 +507,40 @@ export function App() {
   }
 
   const signals = signalsOf(catalog.workspaces, chats.chats)
-  const tree = agentTree({
+  // Each project's rows in tree order (a sub-workspace under the one that started it), the
+  // parked ones closing the list, folded under "Parked".
+  const parents = parentsOf(catalog)
+  const lists = Object.fromEntries(
+    Object.entries(workspaces).map(([pid, list]) => [
+      pid,
+      [
+        ...treeRows(
+          list.filter((w) => w.paused !== true),
+          parents
+        ),
+        ...treeRows(
+          list.filter((w) => w.paused === true),
+          parents
+        ),
+      ].map((r) => r.ws),
+    ])
+  )
+  /** Every workspace, in sidebar order: ⌘1–9, ⌥⌘↑/↓ and ⌘0 go through it. */
+  const order = projects.flatMap((p) => lists[p.id] ?? [])
+  const needs = needsOf({
     catalog,
-    chats: sidebarChats,
-    diffs,
-    menu: rowMenu,
-    onOpen: selectWs,
-    onRenamed: renamed,
-    projects,
-    renamingId: renamingWs,
-    setViewOf: artifacts.setViewOf,
+    chats: chats.chats,
+    here: mode === 'normal' && !settingsOpen ? (ws?.id ?? null) : null,
+    mergedOf: git.mergedOf,
+    order,
+    reports,
+    seen: needsSeen,
+    setSeen: setNeedsSeen,
     signals,
-    workspaces,
-    ws,
   })
-  /** Every workspace, in sidebar order: ⌘1–9 and ⌥⌘↑/↓ go through it. */
-  const order = projects.flatMap((p) => tree.lists[p.id] ?? [])
   keys.current = {
     attention: () => {
-      if (attention === null || questionHere || mode === 'desk') return false
+      if (attention === null || questionHere) return false
       goTo(attention.projectId, attention.workspaceId, attention.chatId)
       setAttention(null)
       return true
@@ -573,12 +549,20 @@ export function App() {
       if (active !== undefined && mode === 'normal') requestClose(active.id)
     },
     compose: () => projectId !== null && setComposeIn(projectId),
-    leaveDesk: (r = desk.row, chatId = r && deskChat(chats.chats, r)) => {
-      if (r === null) setMode('normal')
-      else if (chatId === null) selectWs(r.projectId, r.id)
-      else goTo(r.projectId, r.id, chatId)
-    },
     newTab: (kind: 'chat' | 'terminal') => createTab(kind),
+    nextNeed: () => {
+      const id = needs.next()
+      const target = order.find((w) => w.id === id)
+      if (target === undefined) {
+        setNothingNeeds((n) => n + 1)
+        return
+      }
+      const waiting = chats.chats.find(
+        (c) => c.record.workspaceId === target.id && c.state.pending.length > 0
+      )
+      if (waiting) goTo(target.projectId, target.id, waiting.record.id)
+      else selectWs(target.projectId, target.id)
+    },
     stepTab: (step) => {
       const next = stepThrough(
         tabItems.map((t) => t.id),
@@ -747,7 +731,7 @@ export function App() {
       place={mode === 'normal' ? ws?.name : undefined}
       sideOpen={layout.sideOpen}
       gitOpen={gitOpen}
-      canDiff={ws !== undefined && mode !== 'desk'}
+      canDiff={ws !== undefined}
       noChanges={mode === 'normal' && changes?.length === 0}
       gitMode={mode === 'git'}
       onShowSide={() => update({ sideOpen: true })}
@@ -796,32 +780,34 @@ export function App() {
     <div className="relative flex flex-none flex-col">
       {bar}
       {hostBar}
-      {/* Not on Desk: what asks is in its list. */}
-      {!layout.sideOpen && mode !== 'desk' && attentionToast}
+      {!layout.sideOpen && attentionToast}
     </div>
   )
-  const pageTitle = {
-    desk: 'Desk',
-    git: `${ws?.name ?? ''} · Diff`,
-    normal: undefined,
-  }[mode]
+  const pageTitle = mode === 'git' ? `${ws?.name ?? ''} · Diff` : undefined
 
   const sideWidth = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
 
   const sidebar = (
     <Sidebar
-      desk={deskSide(desk, catalog, reports, setMode, () => keys.current.leaveDesk())}
+      needs={{
+        count: needs.count,
+        nothing: nothingNeeds,
+        onNext: () => keys.current.nextNeed(),
+        stops: needs.stops,
+        unread: needs.unread,
+      }}
       width={sideWidth}
       page={settingsOpen ? 'settings' : null}
       foot={<Quotas cache={quotas.cache} error={quotas.error} />}
-      dock={layout.sideOpen && mode !== 'desk' && attentionToast}
+      dock={layout.sideOpen && attentionToast}
       projects={projects}
-      workspaces={tree.lists}
-      signals={tree.signals}
+      workspaces={lists}
+      parents={parents}
+      signals={signals}
       diffs={diffs}
       chats={sidebarChats}
       projectId={projectId}
-      workspaceId={tree.rootId}
+      workspaceId={ws?.id ?? null}
       onSelect={selectWs}
       onProjects={() => setOverlay('projects')}
       onNewProject={() => void newProject()}
@@ -976,12 +962,12 @@ export function App() {
                 </main>
                 <RightPanel
                   open={layout.gitOpen && ws !== undefined}
+                  split={reports.has}
                   layout={layout}
                   update={update}
                   artifacts={artifacts}
                   panel={
                     ws && {
-                      agents: tree.agents,
                       branch: git.branch,
                       changes,
                       claude: claudeHere,
@@ -1020,15 +1006,6 @@ export function App() {
                 changes={changes ?? []}
                 file={changes?.find((f) => f.path === gitFile?.path)}
                 onSelect={setGitFile}
-              />
-            )}
-            {mode === 'desk' && (
-              <Desk
-                desk={desk}
-                hub={chats}
-                reports={reports}
-                onOpen={(r, c) => keys.current.leaveDesk(r, c)}
-                onNew={() => keys.current.compose()}
               />
             )}
             {mode === 'git' && ws === undefined && (

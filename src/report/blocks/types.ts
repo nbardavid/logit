@@ -1,6 +1,6 @@
 // A report as an ordered list of typed blocks an agent composes. Plain, serialisable data
-// only (strings, numbers, arrays, image URLs): the same list draws on Desk's stage, in the
-// right panel's Report tab, and later in a chat's transcript. DESIGN.md › Report blocks says
+// only (strings, numbers, arrays, image URLs): the same list draws in the right panel's
+// Report tab and in a chat's transcript (`show`). DESIGN.md › Report blocks says
 // when to reach for each; a new kind is added there, never improvised in a surface.
 
 /** Lead and paragraphs. Inline: **bold**, `code`, [label](https://…). */
@@ -28,7 +28,7 @@ export interface DecisionsBlock {
   items: { text: string; setAside?: string }[]
 }
 
-/** The one question the agent waits on. Desk asks it in its dock; elsewhere it shows here. */
+/** The one question the agent waits on; the Report tab leaves it to the chat's card. */
 export interface QuestionBlock {
   kind: 'question'
   question: string

@@ -118,10 +118,10 @@
   /* The user bubble, composer text, the top bar's title, PR status, card titles. */
   --text-base: 14px;
   --text-base--line-height: 22px;
-  /* Prose outside markdown: a report's lead, Desk's question and its choices. */
+  /* Prose outside markdown: a report's lead, a question and its choices. */
   --text-md: 15px;
   --text-md--line-height: 24px;
-  /* A report's title (Desk's detail, the Report tab); semibold. */
+  /* A report's title (the Report tab); semibold. */
   --text-title: 18px;
   --text-title--line-height: 26px;
   /* Empty-state titles only. */
