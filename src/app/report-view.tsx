@@ -291,8 +291,10 @@ export function ReportPane({
   meta,
   onOpenChat,
   onRetry,
+  scrollRef,
   showAsk,
   stateLine,
+  tail,
 }: {
   entry: ReportEntry | undefined
   chatActiveAt?: number
@@ -307,6 +309,9 @@ export function ReportPane({
   showAsk?: boolean
   stateLine?: ReactNode
   head?: ReactNode
+  /** After the report, in its column and scrolling with it: Desk's question card. */
+  tail?: ReactNode
+  scrollRef?: RefObject<HTMLDivElement | null>
 }) {
   const [zoom, setZoom] = useState<Zoom | null>(null)
   const from = useRef<HTMLButtonElement | null>(null)
@@ -375,7 +380,10 @@ export function ReportPane({
 
   return (
     <div ref={pane} className="relative min-h-0 flex-1">
-      <div className={cn('h-full overflow-x-hidden overflow-y-auto', className)}>{body}</div>
+      <div ref={scrollRef} className={cn('h-full overflow-x-hidden overflow-y-auto', className)}>
+        {body}
+        {tail}
+      </div>
       {zoom !== null && report !== null && host !== null && (
         <ZoomedShot host={host} zoom={zoom} onZoom={setZoom} onClose={close} />
       )}

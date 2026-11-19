@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -44,7 +45,7 @@ import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
 import { clipboardImages, readImage } from './pasted-images'
 import { PixelWipe } from './pixel-wipe'
-import { QuestionCard } from './question-card'
+import { type CardHandle, numbersOf, QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
 import { ChatVeil } from './wallpaper'
 
@@ -337,6 +338,27 @@ export function ChatView({
   // Nothing can be typed: Claude has stopped, or an old host holds the chat.
   const off = blocked || state.status === 'exited'
 
+  // A question is drawn in the transcript, as its last item: memoized, so typing here leaves
+  // the transcript alone. The composer answers it too (`card`).
+  const card = useRef<CardHandle | null>(null)
+  const answerRef = useRef(onAnswer)
+  answerRef.current = onAnswer
+  const stopping = state.stopping
+  const questionCard = useMemo(() => {
+    const asked = permission ? questionsOf(permission) : null
+    if (permission === undefined || asked === null) return null
+    return (
+      <QuestionCard
+        key={permission.requestId}
+        handle={card}
+        permission={permission}
+        questions={asked}
+        disabled={stopping}
+        onAnswer={(choice, answers) => answerRef.current(permission, choice, answers)}
+      />
+    )
+  }, [permission, stopping])
+
   // A chat navigated to takes the keys, question pending or not; a question arriving in the
   // chat you look at leaves the focus where it is, and its answer gives it back.
   useEffect(() => {
@@ -498,6 +520,17 @@ export function ChatView({
 
   const submit = (line = draft) => {
     const text = line.trim()
+    // A question waiting: Enter sends what is picked, and words are a free answer to it.
+    // A command, the shell or an image still go as a prompt.
+    const plain = images.length === 0 && !text.startsWith('/') && !text.startsWith('!')
+    if (questions !== null && plain && !state.stopping && !off) {
+      const ns = numbersOf(text)
+      if (text === '') card.current?.submit()
+      else if (ns) card.current?.numbers(ns)
+      else card.current?.type(text)
+      edit('')
+      return
+    }
     if ((text === '' && images.length === 0) || off) return
     // `!` runs the rest in the worktree; the images wait for the next prompt.
     if (onShell && text.startsWith('!')) {
@@ -585,6 +618,7 @@ export function ChatView({
   if (blocked) placeholder = 'Read-only until the background process restarts'
   else if (state.status === 'exited') placeholder = 'Claude has stopped'
   else if (shellMode) placeholder = 'Enter a command'
+  else if (questions !== null) placeholder = 'Answer Claude, or type an option’s number'
 
   return (
     <div className="relative isolate flex min-h-0 flex-1 flex-col" ref={root}>
@@ -606,6 +640,7 @@ export function ChatView({
           state={state}
           blocked={blocked}
           intro={intro}
+          question={questionCard}
           onOpenAgent={openAgent}
           onOpenFile={openFile}
         />
@@ -616,15 +651,6 @@ export function ChatView({
         {/* The column's 720px and 16px either side: 752px of composer. */}
         <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
           <RunningAgents runs={runningAgents(state)} onOpen={openAgent} onStop={onStopTask} />
-          {permission !== undefined && questions !== null && (
-            <QuestionCard
-              key={permission.requestId}
-              permission={permission}
-              questions={questions}
-              disabled={state.stopping}
-              onAnswer={(choice, answers) => onAnswer(permission, choice, answers)}
-            />
-          )}
           {permission !== undefined && questions === null && (
             <PermissionCard
               cwd={cwd}

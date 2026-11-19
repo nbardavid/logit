@@ -2,11 +2,13 @@
 // block kind, a terminal, git changes with a PR, quotas. Dev only (see mock-ipc.ts).
 
 import type { FileChange } from '../app/use-git'
+import type { Question } from '../chat/model'
 import type { Catalog } from '../model/catalog'
 
 import { claudeSnapshot, type QuotaCache } from '../model/quota'
 import { AGENT_RUNNING_LINES, NOTES_WORK } from './agents'
 import INIT from './claude-init.json'
+import { LONG_QUESTIONS, QUESTIONS } from './questions'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -341,34 +343,13 @@ const MENUS = [
 ]
 
 /** `?question`: the busy chat asks with AskUserQuestion instead of running the tests. */
-const QUESTIONS = [
-  {
-    header: 'Scope',
-    multiSelect: false,
-    options: [
-      { description: 'Only the files this branch touched.', label: 'Changed files' },
-      { description: 'Slower, catches what the menus broke elsewhere.', label: 'Whole suite' },
-    ],
-    question: 'Which tests should I run?',
-  },
-  {
-    header: 'Fixes',
-    multiSelect: true,
-    options: [
-      { description: 'Commit nothing, list what fails.', label: 'Report only' },
-      { description: 'Patch what fails in the menus.', label: 'Fix menus' },
-      { description: 'Patch the snapshot files too.', label: 'Update snapshots' },
-    ],
-    question: 'What may I change?',
-  },
-]
-export const QUESTION_ASK = [
+const questionAsk = (questions: readonly Question[]) => [
   assistant('m-menus-ask', [
-    { id: 'tool-ask', input: { questions: QUESTIONS }, name: 'AskUserQuestion', type: 'tool_use' },
+    { id: 'tool-ask', input: { questions }, name: 'AskUserQuestion', type: 'tool_use' },
   ]),
   line({
     request: {
-      input: { questions: QUESTIONS },
+      input: { questions },
       permission_suggestions: [],
       subtype: 'can_use_tool',
       tool_name: 'AskUserQuestion',
@@ -378,6 +359,8 @@ export const QUESTION_ASK = [
     type: 'control_request',
   }),
 ]
+export const QUESTION_ASK = questionAsk(QUESTIONS)
+export const LONG_QUESTION_ASK = questionAsk(LONG_QUESTIONS)
 
 /** A chat that finished while nobody looked: `done` in the sidebar. */
 const NOTES = [

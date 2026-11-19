@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { answerOf, digitTarget, splitRecommended } from './question-card'
+import { answerOf, digitTarget, freeTarget, numbersOf, splitRecommended } from './question-card'
 
 const q = (multiSelect: boolean) => ({ header: '', multiSelect, options: [], question: 'Q?' })
 
@@ -37,4 +37,20 @@ test('a digit picks in the focused question, else the first unanswered, else the
   expect(digitTarget(qs, ['a', 'c'], -1, 1)).toEqual({ label: 'a', question: 0 })
   expect(digitTarget(qs, ['', ''], 1, 1)).toEqual({ label: 'c', question: 1 })
   expect(digitTarget(qs, ['', ''], -1, 5)).toBe(null)
+})
+
+test('a composer line of option numbers picks them; anything else is a free answer', () => {
+  expect(numbersOf('2')).toEqual([2])
+  expect(numbersOf(' 1 3 ')).toEqual([1, 3])
+  expect(numbersOf('1, 3')).toEqual([1, 3])
+  expect(numbersOf('2 levels max')).toBe(null)
+  expect(numbersOf('10')).toBe(null)
+  expect(numbersOf('')).toBe(null)
+})
+
+test('a free answer goes to the focused question, else the first open, else the last', () => {
+  expect(freeTarget(['', ''], -1)).toBe(0)
+  expect(freeTarget(['a', ''], -1)).toBe(1)
+  expect(freeTarget(['a', 'b'], -1)).toBe(1)
+  expect(freeTarget(['', ''], 1)).toBe(1)
 })

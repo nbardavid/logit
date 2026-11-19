@@ -57,9 +57,11 @@ branding.
   Code. Code is the list by project; Desk is the same rows in three groups (Needs you,
   Working, Quiet, which folds), each row naming its project quietly. The sidebar never folds
   for it and ⌘S hides it as anywhere. The main area shows the selected one's report, read
-  there as seen, the answer card pinned full width at the bottom and the report scrolling
-  above it; the open question comes first in it and is written once. Picking a row selects it
-  for Desk only; "Open chat" (⌘↩), or going back to Code, opens that workspace's chat.
+  there as seen; a pending question's card is the report's last item and scrolls with it
+  (out of view, a slim "Claude asks" line pinned at the bottom goes back to it), the other
+  answers pinned under the report as a slim dock; the open question is written once. Picking
+  a row selects it for Desk only; "Open chat" (⌘↩), or going back to Code, opens that
+  workspace's chat.
   Answered, a row leaves and the next need is selected; with none left, "Nothing needs you".
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. Two dialogs only: the composer, and Settings (⌘,), a window with its sections down

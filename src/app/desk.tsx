@@ -1,7 +1,7 @@
 // Desk (⌘0): one queue of what every agent needs from the user, across every project. A mode
 // of the sidebar: its list turns into every workspace in three groups (needs you, working,
-// quiet), and the content area shows the selected one's report with, pinned under it, what
-// answers it. This file holds the queue's state (`useDesk`) and that content (`Desk`).
+// quiet), and the content area shows the selected one's report with what answers it: its
+// question's card as the report's last item, else a slim dock pinned under it. This file holds the queue's state (`useDesk`) and that content (`Desk`).
 import { invoke } from '@tauri-apps/api/core'
 import { CheckIcon } from 'lucide-react'
 import {
@@ -13,6 +13,8 @@ import {
   useState,
 } from 'react'
 
+import { cn } from '@/lib/utils'
+
 import type { Catalog, Project, Signal, Workspace } from '../model/catalog'
 import type { CardHandle } from './question-card'
 import type { ChatTab } from './use-chats'
@@ -22,7 +24,16 @@ import { type ChatState, liveStep, questionsOf, toolSummary } from '../chat/mode
 import { reportAsk } from '../chat/reports'
 import { openChoice, type Report } from '../model/report'
 import { signalsOf } from './agent-tree'
-import { Answer, type DockKeys, type Hub, replyChat, waitingChat, waitOf } from './desk-dock'
+import {
+  Answer,
+  askOf,
+  DeskQuestion,
+  type DockKeys,
+  type Hub,
+  replyChat,
+  waitingChat,
+  waitOf,
+} from './desk-dock'
 import {
   type DeskGhost,
   deskGroups,
@@ -33,6 +44,7 @@ import {
   nextNeed,
 } from './desk-model'
 import { Calm, NoReport, StageHead } from './desk-stage'
+import { askedText, QuestionBar, useInView } from './question-line'
 import { ReportPane } from './report-view'
 import { listable, type Session } from './resume'
 import { colourWord, type DeskSide, useNow, workspaceFacts } from './sidebar'
@@ -130,7 +142,10 @@ export function deskInputs(o: {
   })
 }
 
-/** The answer dock, where the keyboard goes to answer: leaving it hands the keys back to the list. */
+/**
+ * Where the keyboard goes to answer (the dock, or the question's card in the report): leaving
+ * it hands the keys back to the list.
+ */
 const DOCK_ATTR = 'data-desk-dock'
 const leaveDock = () => {
   const el = document.activeElement
@@ -295,7 +310,7 @@ interface Props {
   onNew: () => void
 }
 
-/** Desk's content: the selected workspace's report, the answer pinned under it, and its keys. */
+/** Desk's content: the selected workspace's report, what answers it, and its keys. */
 export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
   const { chats } = hub
   const { deliver, failed, groups, loading, row, sent } = desk
@@ -303,6 +318,23 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
   const dock = useRef<HTMLDivElement>(null)
   const card = useRef<CardHandle | null>(null)
   const dockKeys = useRef<DockKeys>({})
+
+  // A question's card ends the report and scrolls with it; out of view, one slim line stands
+  // for it at the bottom, as in a chat.
+  const asking = row === null || loading ? null : askOf(chats, row.id)
+  const scroller = useRef<HTMLDivElement>(null)
+  const cardBox = useRef<HTMLDivElement>(null)
+  const askKey = `${row?.id ?? ''}:${asking?.wait.requestId ?? ''}`
+  const away = !useInView(cardBox, scroller, asking !== null, askKey)
+  /** Brings the card into view: its top, or as much of it as fits above the slim line. */
+  const reveal = () => {
+    const el = scroller.current
+    const box = cardBox.current
+    if (!el || !box) return
+    const top = box.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+    const end = top + box.offsetHeight + 24 - el.clientHeight
+    el.scrollTo({ behavior: reduced() ? 'auto' : 'smooth', top: Math.min(top - 24, end) })
+  }
 
   // Its report: read when selected (the list has it without images), and read once shown.
   const entry = row === null ? undefined : reports.entryOf(row.id)
@@ -339,15 +371,17 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
     desk.select(shown[next]?.id ?? null)
   }
   const focusAnswer = () => {
-    const target = dock.current?.querySelector<HTMLElement>(
+    const target = (asking === null ? dock : cardBox).current?.querySelector<HTMLElement>(
       '[role="alertdialog"], [data-answer]:not(:disabled), button:not(:disabled)'
     )
-    target?.focus()
+    // The card scrolls into view smoothly rather than jumping to the focus.
+    target?.focus({ preventScroll: asking !== null })
+    if (asking !== null && away) reveal()
   }
   const inCard = (el: Element | null) => el?.closest('[role="alertdialog"][data-request]') != null
 
-  const keys = useRef({ desk, focusAnswer, move, onOpen })
-  keys.current = { desk, focusAnswer, move, onOpen }
+  const keys = useRef({ away, desk, focusAnswer, move, onOpen, reveal })
+  keys.current = { away, desk, focusAnswer, move, onOpen, reveal }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
@@ -356,7 +390,7 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
       const el = e.target instanceof HTMLElement ? e.target : null
       // A dialog over Desk (a zoomed screen, ⌘P, the composer) keeps its keys.
       if (el?.closest('[role="dialog"]') != null) return
-      const inDock = el !== null && dock.current?.contains(el) === true
+      const inDock = el?.closest(`[${DOCK_ATTR}]`) != null
       const typing = el?.matches('input, textarea, [contenteditable="true"]') === true
       // The sidebar's Desk rows are the list: keys there are the list's.
       const onRow = el?.closest('[data-desk-row]') != null
@@ -391,6 +425,8 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
         return
       }
       if (e.metaKey || e.ctrlKey || e.altKey || typing) return
+      // A pick in the card scrolled away (the card takes the key): it comes into view.
+      if (inCard(el) && k.away && /^[1-9]$/.test(e.key)) k.reveal()
       if (inDock) {
         if (e.key !== 'ArrowLeft' || inCard(el)) return
         leaveDock()
@@ -440,75 +476,124 @@ export function Desk({ desk, hub, onNew, onOpen, reports }: Props) {
     const head = (
       <StageHead row={row} report={report ?? row.report} now={now} onOpenChat={openChat} />
     )
+    /** What a send shows over its answer: why it failed above it, "Sent" on it. */
+    const framed = (answer: ReactNode) => (
+      <>
+        {failed?.id === row.id && (
+          <p
+            role="alert"
+            className="bg-critical-wash text-critical-ink mb-2 rounded-md px-2.5 py-1.5 text-xs break-words select-text"
+          >
+            Couldn’t send it ({failed.error}). Open its chat to answer there.
+          </p>
+        )}
+        {answer}
+        {sent === row.id && (
+          <div className="bg-background/90 animate-in fade-in absolute inset-0 z-10 grid place-items-center rounded-lg duration-120">
+            <span className="text-good-ink flex items-center gap-1.5 text-sm font-medium">
+              <span className="animate-in zoom-in-75 duration-160 ease-out">
+                <CheckIcon className="size-4" strokeWidth={2.4} />
+              </span>
+              Sent
+            </span>
+          </div>
+        )}
+      </>
+    )
+    // The question's card: the report's last item, in its column, a breath under it.
+    const tail = asking !== null && (
+      <div
+        ref={cardBox}
+        key={asking.wait.requestId}
+        {...{ [DOCK_ATTR]: '' }}
+        className="block-in relative mt-10"
+        style={{ '--i': 3 } as CSSProperties}
+      >
+        {framed(<DeskQuestion ask={asking} card={card} hub={hub} deliver={deliver(row)} />)}
+      </div>
+    )
+    // Under the card, room for the slim line over it; else the dock clears the last block.
+    const bottom = asking === null ? 'pb-8' : 'pb-16'
     detail = (
       <div
         key={row.id}
-        className="animate-in fade-in flex min-h-0 flex-1 flex-col duration-160 ease-out"
+        className="animate-in fade-in relative flex min-h-0 flex-1 flex-col duration-160 ease-out"
       >
         {showReport ? (
           <ReportPane
             entry={entry?.loading === true && report === null ? undefined : entry}
-            className="px-8 pt-6 pb-8 [&>*]:mx-auto [&>*]:max-w-[720px]"
+            className={`px-8 pt-6 ${bottom} [&>*]:mx-auto [&>*]:max-w-[720px]`}
             ask={ask}
             chatActiveAt={row.activeAt}
             merged={row.merged}
             showAsk={ask.kind === 'answered'}
             head={head}
+            scrollRef={scroller}
+            tail={tail}
             onOpenChat={openChat}
             onRetry={() => reports.retryOf(row.id)}
           />
         ) : (
-          <NoReport row={row} now={now} onOpen={() => open(row)} />
-        )}
-        <div className="relative flex max-h-[58%] flex-none flex-col px-5 pb-4">
-          {/* The report runs under the card's top edge, fading out: no seam. */}
-          <div
-            aria-hidden
-            className="from-background pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t to-transparent"
+          <NoReport
+            row={row}
+            now={now}
+            className={bottom}
+            scrollRef={scroller}
+            tail={tail}
+            onOpen={() => open(row)}
           />
-          <div
-            ref={dock}
-            {...{ [DOCK_ATTR]: '' }}
-            className="relative -mx-3 -mb-3 min-h-0 overflow-y-auto px-3 pt-1 pb-3"
-          >
+        )}
+        {asking === null ? (
+          <div className="relative flex max-h-[58%] flex-none flex-col px-5 pb-4">
+            {/* The report runs under the dock's top edge, fading out: no seam. */}
             <div
-              key={`${row.id}:${waiting?.record.id ?? ''}`}
-              className="block-in relative mx-auto max-w-[744px]"
-              style={{ '--i': 3 } as CSSProperties}
+              aria-hidden
+              className="from-background pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-t to-transparent"
+            />
+            <div
+              ref={dock}
+              {...{ [DOCK_ATTR]: '' }}
+              className="relative -mx-3 -mb-3 min-h-0 overflow-y-auto px-3 pt-1 pb-3"
             >
-              {failed?.id === row.id && (
-                <p
-                  role="alert"
-                  className="bg-critical-wash text-critical-ink mb-2 rounded-md px-2.5 py-1.5 text-xs break-words select-text"
-                >
-                  Couldn’t send it ({failed.error}). Open its chat to answer there.
-                </p>
-              )}
-              <Answer
-                row={row}
-                report={report ?? row.report}
-                chats={chats}
-                hub={hub}
-                card={card}
-                keys={dockKeys}
-                deliver={deliver(row)}
-                reopening={reopening === row.id}
-                onReopen={() => reopen(row)}
-                onOpen={(id) => onOpen(row, id)}
-              />
-              {sent === row.id && (
-                <div className="bg-background/90 animate-in fade-in absolute inset-0 z-10 grid place-items-center rounded-lg duration-120">
-                  <span className="text-good-ink flex items-center gap-1.5 text-sm font-medium">
-                    <span className="animate-in zoom-in-75 duration-160 ease-out">
-                      <CheckIcon className="size-4" strokeWidth={2.4} />
-                    </span>
-                    Sent
-                  </span>
-                </div>
-              )}
+              <div
+                key={`${row.id}:${waiting?.record.id ?? ''}`}
+                className="block-in relative mx-auto max-w-[744px]"
+                style={{ '--i': 3 } as CSSProperties}
+              >
+                {framed(
+                  <Answer
+                    row={row}
+                    report={report ?? row.report}
+                    chats={chats}
+                    hub={hub}
+                    keys={dockKeys}
+                    deliver={deliver(row)}
+                    reopening={reopening === row.id}
+                    onReopen={() => reopen(row)}
+                    onOpen={(id) => onOpen(row, id)}
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Scrolled away from the card, the report fades out under its slim line. */}
+            <div
+              aria-hidden
+              className={cn(
+                'from-background pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t to-transparent transition-opacity',
+                away ? 'opacity-100 duration-140 ease-out' : 'opacity-0 duration-100 ease-in'
+              )}
+            />
+            <QuestionBar
+              line={askedText(asking.wait)}
+              away={away}
+              onShow={reveal}
+              className="px-8"
+            />
+          </>
+        )}
       </div>
     )
   }

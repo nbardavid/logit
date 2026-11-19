@@ -1,6 +1,6 @@
 // Desk's detail: the selected workspace's head (the Report tab's, saying where the workspace
 // stands) and the calm moments when nothing needs the user.
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -112,12 +112,34 @@ export function StageHead({
 }
 
 /** A workspace with no report: what its chats say, as the lead, under the same head. */
-export function NoReport({ now, onOpen, row }: { row: DeskRow; now: number; onOpen: () => void }) {
-  // A question or a tool the chat waits on is asked in the dock below, written once.
+export function NoReport({
+  className,
+  now,
+  onOpen,
+  row,
+  scrollRef,
+  tail,
+}: {
+  row: DeskRow
+  now: number
+  onOpen: () => void
+  /** After the lead, in its column: the question card. */
+  tail?: ReactNode
+  scrollRef?: RefObject<HTMLDivElement | null>
+  /** The bottom padding, cleared for what is pinned under it. */
+  className?: string
+}) {
+  // A question or a tool the chat waits on is asked below (the card, the dock), written once.
   const asks = row.kind === 'question' || row.kind === 'permission'
   const said = asks ? '' : (row.say?.trim() ?? '')
   return (
-    <div className="@container/report min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-8 [&>*]:mx-auto [&>*]:max-w-[720px]">
+    <div
+      ref={scrollRef}
+      className={cn(
+        '@container/report min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-8 [&>*]:mx-auto [&>*]:max-w-[720px]',
+        className
+      )}
+    >
       <div className="flex flex-col gap-4">
         <StageHead row={row} report={null} now={now} onOpenChat={onOpen} />
         <div className="block-in flex flex-col gap-2" style={{ '--i': 1 } as CSSProperties}>
@@ -136,6 +158,7 @@ export function NoReport({ now, onOpen, row }: { row: DeskRow; now: number; onOp
           </p>
         </div>
       </div>
+      {tail}
     </div>
   )
 }

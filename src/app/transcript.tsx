@@ -35,6 +35,7 @@ import {
   groupSummary,
   isAgentCall,
   isFileEdit,
+  isQuestionCall,
   type Item,
   type Keyed,
   liveStep,
@@ -48,6 +49,7 @@ import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
+import { AskedRecord, askedText, QuestionBar, useInView } from './question-line'
 import { useSmoothText } from './smooth-text'
 import { Dot } from './status-dot'
 import { useWindow } from './use-window'
@@ -730,6 +732,15 @@ function ExchangeView({
           <AgentCard run={run} cwd={cwd} onOpen={onOpenAgent} />
         </div>
       )
+    if (it.kind === 'block' && isQuestionCall(it.block)) {
+      // Still asked: its card is the transcript's last item.
+      if (it.block.result === undefined && it.block.stopped !== true) return null
+      return (
+        <div key={it.key} className={ENTER}>
+          <AskedRecord block={it.block} />
+        </div>
+      )
+    }
     if (it.kind === 'block' && isFileEdit(it.block))
       return (
         <div key={it.key} className={ENTER}>
@@ -848,6 +859,8 @@ interface Props {
   watch?: boolean
   /** A sub-agent's card: its own chat. Without it, agent calls show as plain tool rows. */
   onOpenAgent?: (id: string) => void
+  /** The question Claude waits on (its card), drawn as the transcript's last item. */
+  question?: ReactNode
 }
 
 /**
@@ -900,6 +913,7 @@ export const Transcript = memo(function Transcript({
   onOpenAgent,
   onOpenFile,
   place,
+  question,
   state,
   watch = false,
 }: Props) {
@@ -948,6 +962,26 @@ export const Transcript = memo(function Transcript({
     setFollowing(true)
     el.scrollTo({ behavior: smooth(), top: el.scrollHeight })
   }
+
+  // The question's card, scrolled out of view, leaves one slim line above the composer.
+  const asking = question !== undefined && question !== null
+  const tail = useRef<HTMLDivElement>(null)
+  const inView = useInView(tail, scroller, asking)
+  const away = asking && !inView
+  const askedLine = askedText(permission)
+  // Answered, the card folds away (180ms) while its one-line record rises in its place.
+  const lastQuestion = useRef<ReactNode>(null)
+  if (asking) lastQuestion.current = question
+  const [, cleared] = useState(0)
+  useEffect(() => {
+    if (asking || lastQuestion.current === null) return
+    const t = setTimeout(() => {
+      lastQuestion.current = null
+      cleared((n) => n + 1)
+    }, 200)
+    return () => clearTimeout(t)
+  }, [asking])
+  const tailQuestion = asking ? question : lastQuestion.current
 
   return (
     <div className="@container relative flex min-h-0 flex-1 flex-col">
@@ -1008,6 +1042,21 @@ export const Transcript = memo(function Transcript({
               {state.errors.at(-1)}
             </div>
           )}
+          {tailQuestion !== null && (
+            // The column's gap folds with it (-mt-6 / pt-6): nothing jumps once it is gone.
+            <div
+              ref={tail}
+              inert={!asking}
+              className={cn(
+                '-mt-6 grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
+                asking ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="flex flex-col pt-6">{tailQuestion}</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* Scrolled up, the text fades out under the ↓ instead of running into it. */}
@@ -1023,11 +1072,11 @@ export const Transcript = memo(function Transcript({
         <button
           type="button"
           aria-label="Jump to latest"
-          aria-hidden={following}
-          tabIndex={following ? -1 : 0}
+          aria-hidden={following || away}
+          tabIndex={following || away ? -1 : 0}
           className={cn(
             'bg-background text-faint hover:bg-hover hover:text-foreground inline-flex size-7 items-center justify-center rounded-md border transition-[color,background-color] duration-120 @min-[840px]:-ml-11',
-            following
+            following || away
               ? 'opacity-0 transition-opacity duration-100 ease-in'
               : 'animate-in fade-in slide-in-from-bottom-[4px] pointer-events-auto duration-140 ease-out'
           )}
@@ -1036,6 +1085,7 @@ export const Transcript = memo(function Transcript({
           <ChevronDownIcon className="size-3.5" />
         </button>
       </div>
+      {asking && <QuestionBar line={askedLine} away={away} onShow={toLatest} />}
     </div>
   )
 })

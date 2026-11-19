@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils'
 
 /**
  * A shortcut as a plain glyph, `⌘N`, `⇧⌘T`: no box, faint, sans. On the ink button, pass
- * `text-white/60`. The one boxed cap left is ⌘P's footer legend (picker.tsx, `KbdBox`).
+ * `text-white/60`. The boxed caps are ⌘P's footer legend (picker.tsx, `KbdBox`) and an
+ * option row's number (question-card.tsx).
  */
 function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
   return (

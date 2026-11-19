@@ -1,4 +1,5 @@
-// Desk's dock: what answers the selected workspace, pinned under its report.
+// What answers the selected workspace in Desk: its question's card, the last thing in its
+// report; or the dock pinned under the report (a reply, a permission, an offer), slim.
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ArrowUpIcon, ArrowUpRightIcon, MessageSquareIcon } from 'lucide-react'
 import { type ReactNode, type RefObject, useState } from 'react'
@@ -34,6 +35,44 @@ export function replyChat(chats: readonly ChatTab[], row: DeskRow) {
     (a, b) => (b.record.activeAt ?? b.record.createdAt) - (a.record.activeAt ?? a.record.createdAt)
   )[0]
   return writer ?? latest
+}
+
+/** The question a workspace's chat waits on, with that chat: null when none is asked. */
+export function askOf(chats: readonly ChatTab[], wsId: string) {
+  const chat = waitingChat(chats, wsId)
+  const wait = waitOf(chat)
+  const questions = wait === undefined ? null : questionsOf(wait)
+  return chat === undefined || wait === undefined || questions === null
+    ? null
+    : { chat, questions, wait }
+}
+
+/** The question's card, as Desk draws it at the end of the report. */
+export function DeskQuestion({
+  ask,
+  card,
+  deliver,
+  hub,
+}: {
+  ask: NonNullable<ReturnType<typeof askOf>>
+  card: RefObject<CardHandle | null>
+  deliver: (run: () => Promise<void>) => void
+  hub: Hub
+}) {
+  const { chat, questions, wait } = ask
+  return (
+    <QuestionCard
+      key={wait.requestId}
+      scoped
+      handle={card}
+      permission={wait}
+      questions={questions}
+      disabled={false}
+      onAnswer={(choice, answers) =>
+        deliver(async () => hub.answer(chat.record.id, wait, choice, answers))
+      }
+    />
+  )
 }
 
 /** The card every answer sits on: the chat composer's, white with its hairline and shadow. */
@@ -155,9 +194,11 @@ export interface DockKeys {
   primary?: { label: string; run: () => void }
 }
 
-/** What answers a workspace from the Desk, pinned under its report: one action per kind. */
+/**
+ * What answers a workspace from the Desk, pinned under its report: one action per kind. A
+ * question is not one of them: its card ends the report (`DeskQuestion`).
+ */
 export function Answer({
-  card,
   chats,
   deliver,
   hub,
@@ -174,7 +215,6 @@ export function Answer({
   hub: Hub
   /** Runs a send at once: the row moves on once it went, or shows why it did not. */
   deliver: (run: () => Promise<void>) => void
-  card: RefObject<CardHandle | null>
   keys: RefObject<DockKeys>
   onOpen: (chatId: string | null) => void
   onReopen: () => void
@@ -184,21 +224,7 @@ export function Answer({
   const wait = waitOf(waiting)
   const questions = wait === undefined ? null : questionsOf(wait)
   keys.current = {}
-  if (waiting !== undefined && wait !== undefined && questions !== null) {
-    return (
-      <QuestionCard
-        key={wait.requestId}
-        scoped
-        handle={card}
-        permission={wait}
-        questions={questions}
-        disabled={false}
-        onAnswer={(choice, answers) =>
-          deliver(async () => hub.answer(waiting.record.id, wait, choice, answers))
-        }
-      />
-    )
-  }
+  if (questions !== null) return null
   if (waiting !== undefined && wait !== undefined) {
     const answer = (choice: 'allow' | 'deny') =>
       deliver(async () => hub.answer(waiting.record.id, wait, choice))

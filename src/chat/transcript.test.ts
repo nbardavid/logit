@@ -73,6 +73,14 @@ describe('the collapse rule', () => {
     expect(shape(exchanges(live, true)[0]?.items ?? [])).toEqual(['G1', 'tool'])
   })
 
+  test('a question stands apart (its card, then its answer), asked or answered', () => {
+    const turns = [user('u'), said('a', [tool('Read'), tool('AskUserQuestion'), text('Ok')])]
+    expect(shape(exchanges(turns, false)[0]?.items ?? [])).toEqual(['G1', 'tool', 'text'])
+    const asking: Block = { id: 'q', input: {}, json: '', kind: 'tool', name: 'AskUserQuestion' }
+    const live = [user('u'), said('a', [tool('Read'), asking], false)]
+    expect(shape(exchanges(live, true, new Set(['q']))[0]?.items ?? [])).toEqual(['G1', 'tool'])
+  })
+
   test('a file written stands apart as its badge, finished or live', () => {
     const turns = [
       user('u'),

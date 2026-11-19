@@ -31,6 +31,7 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | Composer dialog                                 | 180ms     | ease-out    | fade + 6px rise; veil fades                           |
 | New message / block / card                      | 200–280ms | ease-out    | fade + 6px rise                                       |
 | Expand / collapse (tool rows, "Show all")       | 180ms     | ease-in-out | height + fade, no jump                                |
+| A question answered (its card folds away)       | 180ms     | ease-in-out | height + fade; its one-line record rises in its place |
 | Tabs: open, close, reorder                      | 160ms     | ease-out    | width and position slide; neighbours make room        |
 | Panels (sidebar ⌘S, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way          |
 | Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                      |
@@ -152,8 +153,8 @@ Controls inside bars: `h-7`.
 ### Primitives
 
 - `Kbd` (`components/ui/kbd.tsx`): a shortcut as a plain glyph, `text-xs text-faint`,
-  sans, no box. On the ink button, add `text-white/60`. ⌘P's footer legend is the only boxed
-  key cap (`KbdBox`, local to picker.tsx).
+  sans, no box. On the ink button, add `text-white/60`. Two boxed key caps only: ⌘P's footer
+  legend (`KbdBox`, local to picker.tsx) and an option row's number (below).
 - Menus (`components/ui/menu.tsx`, `context-menu.tsx`, the app's `context-menu.tsx`): one
   look from `lib/menu-styles.ts`: 28px rows, 14px faint icons that ink on highlight,
   shortcuts as glyphs (`MenuShortcut`, `ContextMenuShortcut`, or `shortcut` on a
@@ -202,6 +203,33 @@ card draws in a chat and in a report, so the two never drift.
   shares the result with every other card of the same thing. It reads again when the window
   comes back (if the last read is older than 10 s), every 15 s while it settles (checks
   running), and after its action. Nothing polls in the background.
+
+### Option rows
+
+Claude's questions (`app/question-card.tsx`) are the agent speaking, not a form.
+
+- **The question** reads in the text column: its short header as a `text-xs` faint eyebrow
+  above (with "Pick any" for a multi-select), then the question in `text-md`, medium. No box
+  around it in a chat; in Desk the card is the box.
+- **The options** are one grouped list, a hairline between rows, in the cards' frame
+  (`rounded-lg` hairline on `background`); in Desk's card, rows run flush under a hairline. Each
+  row is padded 14 / 10: a 20px number cap (`rounded-sm` hairline, `text-xs` faint), the label
+  `text-base` regular ink, the description under it `text-sm` muted. Both wrap, never cut.
+  "Recommended" is a `text-xs` faint word at the row's right, on the label's line.
+- **States**: hover `hover` (120ms); pressed `active`; picked, the cap inks (`foreground`
+  fill, white number, 160ms) on a `chrome` wash, the mark stays; focus the inset tan ring.
+- **No form in a chat**: the composer is the free answer, so the card has no field. One
+  single-choice question answers on click; a hint line under it says so, with Skip as a quiet
+  text action. Several questions or a multi-select add a progress count and one Send. A free
+  answer typed while other questions wait shows as a picked row of its own (a pencil cap).
+  Desk has no composer: the card's foot is its free answer, as the reply line ends every dock
+  state.
+- **Where it stands**: the last item of the transcript (Desk: of the report, 40px under it, in
+  its column), scrolling with it. Scrolled out of view, one slim "Claude asks" line stands at
+  the bottom (over the composer in a chat) and goes back to it; a digit picked from the
+  keyboard while it is away scrolls it into view.
+- **Motion**: the question rises with the transcript (280ms settle). Answered, the card folds
+  away (180ms, height and fade, the column's gap with it) while its one-line record rises.
 
 ## Checking
 

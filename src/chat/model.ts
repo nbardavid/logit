@@ -4,6 +4,7 @@
 
 import { parseCommand } from './commands'
 import { type ContextUsage, parseUsage, USAGE } from './context-usage'
+import { isQuestionCall } from './questions'
 import { addShellTurn, BASH_IN, BASH_OUT, unescapeRow, withShellOutput } from './shell'
 import { type Task, withTaskEvent } from './tasks'
 
@@ -839,28 +840,7 @@ export const userLine = (
     ...(uuid !== undefined && { uuid }),
   })
 
-/** One of AskUserQuestion's questions: Claude waits on the user's pick. */
-export interface Question {
-  question: string
-  header: string
-  options: { label: string; description: string }[]
-  multiSelect: boolean
-}
-
-/** The questions a permission asks, when it is AskUserQuestion's; null for any other tool. */
-export function questionsOf(p: Permission): Question[] | null {
-  if (p.toolName !== 'AskUserQuestion' || !Array.isArray(p.input.questions)) return null
-  return p.input.questions.map((raw) => {
-    const q = obj(raw)
-    const options = Array.isArray(q.options) ? q.options.map(obj) : []
-    return {
-      header: str(q.header),
-      multiSelect: q.multiSelect === true,
-      options: options.map((o) => ({ description: str(o.description), label: str(o.label) })),
-      question: str(q.question),
-    }
-  })
-}
+export { isQuestionCall, type Question, questionsOf } from './questions'
 
 /**
  * The answer to a permission. AskUserQuestion's picks go back in its input, as `answers`
@@ -951,8 +931,8 @@ const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'Write'])
 export const isFileEdit = (b: Block): b is Block & { kind: 'tool' } =>
   b.kind === 'tool' && FILE_TOOLS.has(b.name)
 
-/** Agent calls and file writes stand apart from the folded work. */
-const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b)
+/** Agent calls, file writes and questions (a card, then its answer) stand apart from the work. */
+const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b) || isQuestionCall(b)
 
 /** A sub-agent, as its card and its own chat show it. */
 export interface AgentRun {

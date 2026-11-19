@@ -7,7 +7,9 @@
 //   at every limit;
 // - `?restart` a host from an older protocol holding work (the restart bar), `?update` a
 //   release waiting (the pill), `?attention` a chat asking from another tab (the toast),
-//   `?fail` a failing call (the error toast: Setup › Write it with a chat);
+//   `?fail` a failing call (the error toast: Setup › Write it with a chat), `?question` the
+//   busy chat asks two questions (one multi-select) with AskUserQuestion, `?question=long` one
+//   question at every limit (long question, long labels and descriptions, four options);
 // - `?empty-inbox` nothing waiting or unread, and only done reports (Desk: "Nothing needs
 //   you"), `?merged` amber's PR merged (Clean up with a full transcript to crumble),
 //   `?artifacts` ten pages on amber (two new), `?no-mcp` no MCP servers for `/mcp` (else one in
@@ -69,6 +71,7 @@ import {
   interrupted,
   LIVE,
   localOutput,
+  LONG_QUESTION_ASK,
   longFixture,
   NOTES_ASK,
   previewAnswer,
@@ -234,7 +237,11 @@ const replayOf = (id: string) => {
   )
   // `?question`: the busy chat's ask is AskUserQuestion's, before it goes live.
   if (flags.has('question') && id === 'chat-menus')
-    return [...lines.slice(0, -1), ...QUESTION_ASK, ...lines.slice(-1)]
+    return [
+      ...lines.slice(0, -1),
+      ...(flags.get('question') === 'long' ? LONG_QUESTION_ASK : QUESTION_ASK),
+      ...lines.slice(-1),
+    ]
   // `?report-ask`, `?report-answered`: it reported, then asked the report's question.
   if (REPORT_ASK && id === 'chat-menus')
     return [...lines.slice(0, -1), ...reportAskLines(), ...lines.slice(-1)]
