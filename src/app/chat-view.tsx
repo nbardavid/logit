@@ -335,8 +335,9 @@ export function ChatView({
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
   const questions = permission ? questionsOf(permission) : null
-  // Nothing can be typed: Claude has stopped, or an old host holds the chat.
-  const off = blocked || state.status === 'exited'
+  // Nothing can be typed while an old host holds the chat. A Claude that stopped takes the
+  // next prompt: it starts again, resumed.
+  const off = blocked
 
   // A question is drawn in the transcript, as its last item: memoized, so typing here leaves
   // the transcript alone. The composer answers it too (`card`).
@@ -446,10 +447,7 @@ export function ChatView({
   const alone = slot !== null && slot.start === 0 && draft === `/${slot.query}`
   const offered =
     slot === null || slot.start === 0 ? commands : commands.filter((c) => !isAppCommand(c.name))
-  const menu =
-    slot && !shellMode && draft !== dismissed && state.status !== 'exited'
-      ? rankCommands(offered, slot.query)
-      : []
+  const menu = slot && !shellMode && draft !== dismissed ? rankCommands(offered, slot.query) : []
   // The commands can change under an open menu (the chat's own list arrives).
   const at = Math.min(hot, Math.max(menu.length - 1, 0))
   const chosen = parseCommand(draft)
@@ -616,7 +614,7 @@ export function ChatView({
   let placeholder = 'Ask Claude, / for a command, ! for the shell'
   if (onShell === undefined) placeholder = 'Ask Claude, or type / for a command'
   if (blocked) placeholder = 'Read-only until the background process restarts'
-  else if (state.status === 'exited') placeholder = 'Claude has stopped'
+  else if (state.status === 'exited') placeholder = 'Claude has stopped. Send to start it again'
   else if (shellMode) placeholder = 'Enter a command'
   else if (questions !== null) placeholder = 'Answer Claude, or type an option’s number'
 
@@ -754,7 +752,7 @@ export function ChatView({
               onPaste={onPaste}
             />
             <div className="flex h-10 flex-none items-center gap-1 px-2">
-              {state.status === 'exited' ? (
+              {off ? (
                 <span className="text-faint flex h-7 items-center pl-2">
                   {agentLabel(agent, models)}
                 </span>
