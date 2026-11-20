@@ -91,6 +91,17 @@ function isLive(line: string): boolean {
   }
 }
 
+/** The host's word that the chat's Claude has ended. */
+function isExit(line: string): boolean {
+  try {
+    return (
+      line.includes('logit_exit') && (JSON.parse(line) as { type?: unknown }).type === 'logit_exit'
+    )
+  } catch {
+    return false
+  }
+}
+
 /** A sub-agent's line, which `chat_history` appends after the session's own (`logitAgent`). */
 function isAgentLine(line: string): boolean {
   try {
@@ -224,6 +235,11 @@ export function useChats(hooks: Hooks) {
         measure()
         return
       }
+      // Claude is gone: the next prompt (or a return to the chat) starts it again, resumed.
+      if (isExit(line)) {
+        procs.current.delete(id)
+        live.current.delete(id)
+      }
       const replaying = !live.current.has(id)
       if (line.includes(UNQUEUE)) settleUnqueue(line, unqueues.current)
       // `/mcp`'s answers go to its panel, never into the chat.
@@ -301,7 +317,14 @@ export function useChats(hooks: Hooks) {
         // The transcript says which model the session was on last: it resumes on that one.
         const replayed = replayTranscript(lines)
         const { model } = followModel(chat, replayed, latest.current.hooks)
-        if (sessionId !== null) {
+        // Started again after it ended: the chat on screen stays as it is (its last error
+        // too), and takes prompts again.
+        const revived = chat.state.status === 'exited'
+        if (revived) {
+          edit(id, (c) =>
+            c.state.status === 'exited' ? { ...c, state: { ...c.state, status: 'idle' } } : c
+          )
+        } else if (sessionId !== null) {
           edit(id, (c) => {
             const next = {
               ...c,
@@ -336,6 +359,8 @@ export function useChats(hooks: Hooks) {
       procs.current.set(id, proc)
       proc.catch((error: unknown) => {
         if (procs.current.get(id) !== proc) return
+        // The next prompt tries again.
+        procs.current.delete(id)
         const message = error instanceof Error ? error.message : String(error)
         // Held by an old host: the transcript stays, read-only; the bar above says why.
         const errors = message === HOST_BLOCKED ? [] : [message]
