@@ -749,8 +749,8 @@ function handle(cmd: string, args: Args): unknown {
     case 'workspace_autoname': {
       // As Claude would: a title from the prompt's first words, a branch after it.
       const w = store.workspaces.find((x) => x.id === args.id)
-      const words = str(args.prompt).split(/\s+/).filter(Boolean).slice(0, 4)
-      if (!w || words.length < 2) return null
+      const words = str(args.prompt).split(/\s+/).filter(Boolean).slice(0, 2)
+      if (!w || words.length === 0) return null
       w.name = words.join(' ')
       w.branch = `feat/${words
         .join('-')

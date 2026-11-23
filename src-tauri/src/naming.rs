@@ -22,7 +22,13 @@ pub fn naming_prompt(request: &str) -> String {
     format!(
         "Name a workspace for the user request below.\n\
          Return exactly two lines and nothing else.\n\
-         Line 1 — a tab title: 2 to 6 words, at most 48 characters, in the same language as the request.\n\
+         Line 1 — a sidebar label: 1 or 2 words, at most 24 characters, in the same language as the request. \
+         It names the subject itself, the thing being worked on, the way a person would tag the task at a glance: \
+         no verb, no article, no preposition (de, du, en, of, the), no filler (fix, add, improve, ticket, page, feature). \
+         Keep product and brand names as they are. Capitalise only the first letter, unless it is a proper name.\n\
+         Never 3 words or more: shorten to the two words that carry the meaning.\n\
+         Good line 1: Google pay, Apple pay, Crypto, Paiement 90j, Recherche rapide, Dark mode, Webhooks\n\
+         Bad line 1: Scroll du chat (write Scroll chat), Paiement en 3 fois (write Paiement 3x), Fix login page (write Login)\n\
          Line 2 — a git branch named <type>/<subject>, always in English whatever the language of the request.\n\
          <type> is one of: {}.\n\
          <subject> is 2 to 5 lowercase words joined by hyphens, naming what changes rather than restating the request.\n\
@@ -49,9 +55,19 @@ fn unwrap_line(line: &str) -> &str {
     s.trim_matches(['"', '\'', '`', '“', '”', '«', '»']).trim()
 }
 
-/// 2 to 6 words, at most 48 characters cut at a word, no ending punctuation.
+/// Short words that never end a label: cut after one, a title would read "Scroll du".
+const DANGLING: &[&str] = &[
+    "a", "à", "an", "and", "au", "aux", "d'", "de", "des", "du", "en", "et", "for", "in", "l'",
+    "la", "le", "les", "of", "on", "pour", "sur", "the", "to", "un", "une", "with",
+];
+
+/// 1 or 2 words, at most 24 characters cut at a word, no ending punctuation, never ending on
+/// a dangling short word.
 pub fn clamp_title(raw: &str) -> Option<String> {
-    let words: Vec<&str> = raw.split_whitespace().take(6).collect();
+    let mut words: Vec<&str> = raw.split_whitespace().take(2).collect();
+    if words.len() == 2 && DANGLING.contains(&words[1].to_lowercase().as_str()) {
+        words.pop();
+    }
     let mut title = String::new();
     for w in words {
         let next = if title.is_empty() {
@@ -59,7 +75,7 @@ pub fn clamp_title(raw: &str) -> Option<String> {
         } else {
             format!("{title} {w}")
         };
-        if next.chars().count() > 48 {
+        if next.chars().count() > 24 {
             break;
         }
         title = next;
@@ -67,7 +83,7 @@ pub fn clamp_title(raw: &str) -> Option<String> {
     let title = title
         .trim_end_matches(['.', '!', '?', ',', ';', ':', '…'])
         .to_string();
-    (title.split_whitespace().count() >= 2).then_some(title)
+    (!title.is_empty()).then_some(title)
 }
 
 /// `<type>/<subject>`: a known type, 2 to 5 lowercase ASCII words joined by hyphens.
@@ -196,11 +212,11 @@ mod tests {
 
     #[test]
     fn reads_the_two_lines() {
-        let reply = "**Title: Webhooks de facturation**\n- fix/Billing Webhook retries.\n";
+        let reply = "**Title: Paiement 90j**\n- fix/Billing Webhook retries.\n";
         assert_eq!(
             parse_naming(reply),
             Some((
-                "Webhooks de facturation".into(),
+                "Paiement 90j".into(),
                 Some("fix/billing-webhook-retries".into())
             ))
         );
@@ -209,21 +225,23 @@ mod tests {
     #[test]
     fn keeps_the_title_without_a_usable_branch() {
         assert_eq!(
-            parse_naming("Faster clean up\nwip/whatever-this-is"),
-            Some(("Faster clean up".into(), None))
+            parse_naming("Crypto\nwip/whatever-this-is"),
+            Some(("Crypto".into(), None))
         );
-        assert_eq!(parse_naming("Hello\nfeat/a-b"), None);
+        assert_eq!(parse_naming("**\n"), None);
     }
 
     #[test]
     fn clamps_the_title() {
         assert_eq!(
-            clamp_title("One two three four five six seven eight."),
-            Some("One two three four five six".into())
+            clamp_title("Recherche rapide des voyages."),
+            Some("Recherche rapide".into())
         );
+        assert_eq!(clamp_title("Crypto!"), Some("Crypto".into()));
+        assert_eq!(clamp_title("Scroll du chat"), Some("Scroll".into()));
         assert_eq!(
-            clamp_title("Supercalifragilistic expialidocious internationalisation!"),
-            Some("Supercalifragilistic expialidocious".into())
+            clamp_title("Internationalisation multilingue"),
+            Some("Internationalisation".into())
         );
     }
 
