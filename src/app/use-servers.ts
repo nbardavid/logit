@@ -73,13 +73,6 @@ export function useServerRuns(enabled: boolean) {
   return { refresh: refreshRuns, runs: current }
 }
 
-/** The port a workspace's servers answer on first (its first app's), while they run. */
-export function useServerPort(workspaceId: string) {
-  const { runs: all } = useServerRuns(true)
-  const run = all[workspaceId]
-  return isRunning(run) ? (run?.apps.find((a) => a.status !== 'stopped')?.port ?? null) : null
-}
-
 /** The config a workspace's servers run with, both places; null while it loads. */
 export function useServersConfig(projectId: string, cwd: string) {
   const [config, setConfig] = useState<ServersConfig | null>(null)
