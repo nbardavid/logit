@@ -8,7 +8,7 @@ import {
   SearchIcon,
   SettingsIcon,
 } from 'lucide-react'
-import { type MouseEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type MouseEvent, type ReactNode, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -107,7 +107,14 @@ interface Props {
 
 const AVATAR_TONES = ['#525890', '#5b7a5e', '#8a5a44', '#6b5b8a', '#44707f', '#8a6d2f']
 
-/** A project's initial on a tone picked from its name, so it keeps its colour. */
+/** A project's tone, picked from its name so it keeps it: its avatar, its sidebar folder. */
+export function projectTone(name: string): string {
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return AVATAR_TONES[hash % AVATAR_TONES.length] ?? '#525890'
+}
+
+/** A project's initial on its tone. */
 export function ProjectAvatar({
   className,
   name,
@@ -118,8 +125,6 @@ export function ProjectAvatar({
   /** `md` 18px (the sidebar's projects), `sm` 16px (inline in a row or a meta line). */
   size?: 'sm' | 'md'
 }) {
-  let hash = 0
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
   return (
     <span
       className={cn(
@@ -127,7 +132,7 @@ export function ProjectAvatar({
         size === 'md' ? 'size-[18px] rounded-[5px] text-2xs' : 'size-4 rounded-sm text-2xs',
         className
       )}
-      style={{ background: AVATAR_TONES[hash % AVATAR_TONES.length] }}
+      style={{ background: projectTone(name) }}
       aria-hidden="true"
     >
       {name.slice(0, 1).toUpperCase()}
@@ -366,14 +371,15 @@ export function Sidebar(props: Props) {
                   aria-label={project.name}
                   data-reorder-id={project.id}
                   className={cn(
-                    'rounded-md transition-[box-shadow,background-color] duration-120',
-                    projectDrag.dragging === project.id && 'bg-side shadow-popover'
+                    FOLDER,
+                    p === 0 ? 'mt-3' : 'mt-2',
+                    projectDrag.dragging === project.id && 'shadow-popover'
                   )}
+                  style={folderTint(project.name)}
                 >
                   <div
                     className={cn(
-                      'group/row relative mb-0.5 flex h-6 items-center rounded-md [--row:var(--sidebar)]',
-                      p === 0 ? 'mt-3' : 'mt-5',
+                      'group/row relative mb-0.5 flex h-[30px] items-center rounded-[7px] [--row:var(--sidebar)]',
                       here && 'bg-background shadow-pill [--row:var(--background)]'
                     )}
                     data-reorder-measure
@@ -386,13 +392,11 @@ export function Sidebar(props: Props) {
                   >
                     <button
                       type="button"
-                      className={cn(
-                        LABEL,
-                        'hover:text-muted-foreground flex h-full min-w-0 flex-1 items-center gap-1 px-2 transition-[color] duration-120'
-                      )}
+                      className="text-ink-soft hover:text-foreground flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-sm font-medium transition-[color] duration-120"
                       aria-expanded={open}
                       onClick={() => toggle(project.id)}
                     >
+                      <ProjectAvatar name={project.name} size="sm" />
                       <span className="min-w-0 flex-[0_1_auto] truncate">{project.name}</span>
                       <ChevronRightIcon
                         className={cn(
@@ -560,16 +564,7 @@ const SETTLE_MS = 1500
  * bold title say it). `flash` is read when the tint appears: a row already finished or
  * waiting when the sidebar drew it doesn't flash.
  */
-function RowTint({
-  flash,
-  left = 0,
-  signal,
-}: {
-  signal: 'done' | 'waiting' | 'failing'
-  flash: boolean
-  /** A sub-workspace's wash starts at its own indent, past its parent's guides. */
-  left?: number
-}) {
+function RowTint({ flash, signal }: { signal: 'done' | 'waiting' | 'failing'; flash: boolean }) {
   const [play] = useState(flash)
   return (
     <span
@@ -580,7 +575,6 @@ function RowTint({
         TINT[signal],
         play && 'animate-[tint_1.2s_cubic-bezier(0.2,0,0,1)]'
       )}
-      style={left > 0 ? { left } : undefined}
     />
   )
 }
@@ -671,7 +665,7 @@ function WorkspaceRow(
     diff && diff.add + diff.del > 0 ? `+${diff.add} −${diff.del}` : null,
     ws.branch,
   ].filter((part) => part !== null)
-  const indent = { paddingLeft: PAD + depth * STEP }
+  const indent = { paddingLeft: PAD }
   const titleClass = cn(
     'min-w-0 flex-1 truncate text-left',
     active && 'text-sidebar-accent-foreground',
@@ -729,11 +723,11 @@ function WorkspaceRow(
           ? 'bg-background shadow-pill text-sidebar-accent-foreground [--row:var(--background)]'
           : 'hover:bg-ground-hover hover:[--row:var(--ground-hover)]'
       )}
+      style={depth > 0 ? { marginLeft: depth * STEP } : undefined}
       onContextMenu={menu}
     >
-      <Guides tree={tree} />
       {asks && (tone === 'done' || tone === 'waiting' || tone === 'failing') && (
-        <RowTint key={tone} signal={tone} flash={settled} left={depth * STEP} />
+        <RowTint key={tone} signal={tone} flash={settled} />
       )}
       {renaming ? (
         // In place of the row's button: a field inside a button would click it.
@@ -821,45 +815,18 @@ interface RowTree {
   onFold: () => void
 }
 
-// The tree's geometry: each level steps 18px; a guide runs down the centre of its parent's
-// mark column (8px of padding, then the 14px mark).
+/**
+ * A sub-workspace sits STEP further in: its whole row (pill, hover, wash) starts there. No
+ * lines: the step says who started it.
+ */
 const PAD = 8
-const STEP = 18
-const rail = (level: number) => PAD + 7 + level * STEP
-
-/** A sub-workspace's hairlines: the guides of the levels above that run on past it, an elbow
- * from its parent into its own mark, and a stem down to its children while they show. */
-function Guides({ tree }: { tree: RowTree }) {
-  const { depth, last, rails } = tree.row
-  const line = 'bg-line-strong pointer-events-none absolute w-px'
-  return (
-    <span aria-hidden>
-      {rails.map((on, level) =>
-        on ? (
-          <span
-            key={level}
-            className={cn(line, '-top-0.5 bottom-0')}
-            style={{ left: rail(level) }}
-          />
-        ) : null
-      )}
-      {depth > 0 && (
-        <>
-          <span
-            className="border-line-strong pointer-events-none absolute -top-0.5 h-[17px] rounded-bl-md border-b border-l"
-            style={{ left: rail(depth - 1), width: STEP - 6 }}
-          />
-          {!last && (
-            <span className={cn(line, 'top-[15px] bottom-0')} style={{ left: rail(depth - 1) }} />
-          )}
-        </>
-      )}
-      {tree.row.below > 0 && !tree.folded && (
-        <span className={cn(line, 'top-[22px] bottom-0')} style={{ left: rail(depth) }} />
-      )}
-    </span>
-  )
-}
+const STEP = 14
+/** A project, as one box, as Dia draws a tab group: tinted with the project's tone (its
+ * avatar's), see-through so it sits on any window colour, with 3px of room so the rows' pills
+ * sit inside it. */
+const FOLDER =
+  'rounded-[11px] p-[3px] transition-[box-shadow] duration-120 bg-[color-mix(in_oklab,var(--folder)_11%,transparent)] shadow-[inset_0_0_0_0.5px_color-mix(in_oklab,var(--folder)_18%,transparent)]'
+const folderTint = (name: string) => ({ '--folder': projectTone(name) }) as CSSProperties
 
 /** A parent's quiet count of what sits under it; folded, what asks below shows as a dot. */
 function KidsCount({ tree }: { tree: RowTree }) {
@@ -906,7 +873,15 @@ function TreeFold({
       className={cn(FOLD, hidden ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr]')}
       inert={hidden}
     >
-      <div className={cn('min-h-0 overflow-hidden', !first && 'pt-0.5')}>{children}</div>
+      {/* Folded, its 2px go too: else they break the parent's guide past it. */}
+      <div
+        className={cn(
+          'min-h-0 overflow-hidden transition-[padding] duration-150',
+          !first && !hidden && 'pt-0.5'
+        )}
+      >
+        {children}
+      </div>
     </div>
   )
 }
