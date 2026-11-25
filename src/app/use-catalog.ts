@@ -8,6 +8,7 @@ import {
   type Project,
   type Workspace,
 } from '../model/catalog'
+import { noteProjects } from './project-look'
 import { stopServers } from './use-servers'
 
 export type CatalogStatus =
@@ -46,6 +47,9 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
   const [catalog, setCatalog] = useState<Catalog>(EMPTY)
   const [status, setStatus] = useState<CatalogStatus>({ kind: 'loading' })
   const [selection, setSelectionState] = useState<Selection>(readSelection)
+
+  // Avatars, folders and Settings › Projects follow the projects as they are, order included.
+  useEffect(() => noteProjects(catalog.projects), [catalog.projects])
 
   const reload = useCallback(async () => {
     const next = await invoke<Catalog>('catalog')
@@ -145,6 +149,15 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
     [reload]
   )
 
+  /** Settings › Projects: its name (empty gives the folder's back), tone and icon. */
+  const updateProject = useCallback(
+    async (id: string, look: { name: string; color: string; icon: string }) => {
+      await invoke('project_update', { id, ...look })
+      await reload()
+    },
+    [reload]
+  )
+
   /** Its display name; the branch and folder keep their colour. Empty gives the colour back. */
   const renameWorkspace = useCallback(
     async (id: string, name: string) => {
@@ -238,6 +251,7 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
     select,
     status,
     unpause,
+    updateProject,
     workspace,
   }
 }

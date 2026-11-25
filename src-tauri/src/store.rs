@@ -19,6 +19,12 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub last_opened_at: u64,
+    /// The tone the user picked for its avatar and sidebar folder; none follows its name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// The icon the user picked for its avatar; none shows its initial.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -247,6 +253,7 @@ pub fn imported(aimux_projects: &Value) -> Vec<Project> {
                 last_opened_at: 0,
                 name: p["name"].as_str().unwrap_or(path).to_string(),
                 path: path.to_string(),
+                ..Project::default()
             })
         })
         .filter(|p| Path::new(&p.path).is_dir())
@@ -323,6 +330,7 @@ pub fn project_add(store: State<'_, Store>, path: String) -> Result<Project, Str
             last_opened_at: now(),
             name,
             path: path.clone(),
+            ..Project::default()
         };
         c.projects.push(project.clone());
         Ok(project)
@@ -344,6 +352,50 @@ pub fn project_remove(store: State<'_, Store>, id: String) -> Result<(), String>
         c.chats.retain(|chat| !gone.contains(&chat.workspace_id));
         Ok(())
     })
+}
+
+/// What Settings › Projects changes: the display name (empty gives the folder's back), the
+/// tone and the icon (empty follows the name again). The folder stays.
+pub fn update_project(
+    c: &mut Catalog,
+    id: &str,
+    name: &str,
+    color: &str,
+    icon: &str,
+) -> Result<Project, String> {
+    let p = c
+        .projects
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or("unknown project")?;
+    let name = name.trim();
+    p.name = if name.is_empty() {
+        Path::new(&p.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.path.clone())
+    } else {
+        name.to_string()
+    };
+    // A picture comes as a small data URL (96px): anything far bigger is a mistake.
+    if icon.len() > 400_000 {
+        return Err("picture too large".into());
+    }
+    let some = |v: &str| (!v.trim().is_empty()).then(|| v.trim().to_string());
+    p.color = some(color);
+    p.icon = some(icon);
+    Ok(p.clone())
+}
+
+#[tauri::command]
+pub fn project_update(
+    store: State<'_, Store>,
+    id: String,
+    name: String,
+    color: String,
+    icon: String,
+) -> Result<Project, String> {
+    edit(&store, |c| update_project(c, &id, &name, &color, &icon))
 }
 
 #[tauri::command]
@@ -1182,6 +1234,7 @@ mod tests {
             last_opened_at: 0,
             name: "repo".into(),
             path: repo.to_string_lossy().into_owned(),
+            ..Project::default()
         };
         let names = ["amber", "azure", "basil", "coral"].map(String::from);
         let taken = ["azure".to_string()];
@@ -1309,5 +1362,30 @@ mod tests {
         assert!(setup_path("../x").is_err());
         assert!(setup_path("a/b").is_err());
         assert!(setup_path("project-1").is_ok());
+    }
+
+    #[test]
+    fn project_update_sets_the_look_and_empty_gives_the_defaults_back() {
+        let mut c = Catalog {
+            projects: vec![Project {
+                id: "p".into(),
+                name: "repo".into(),
+                path: "/code/repo".into(),
+                ..Project::default()
+            }],
+            ..Default::default()
+        };
+        let p = update_project(&mut c, "p", " Billing ", "#5b7a5e", "rocket").unwrap();
+        assert_eq!(
+            (p.name.as_str(), p.color.as_deref(), p.icon.as_deref()),
+            ("Billing", Some("#5b7a5e"), Some("rocket"))
+        );
+        let p = update_project(&mut c, "p", "", " ", "").unwrap();
+        assert_eq!((p.name.as_str(), p.color, p.icon), ("repo", None, None));
+        assert!(update_project(&mut c, "nope", "x", "", "").is_err());
+        // An old catalog without the fields still loads.
+        let old: Project =
+            serde_json::from_str(r#"{"id":"p","name":"n","path":"/x","lastOpenedAt":0}"#).unwrap();
+        assert_eq!(old.color, None);
     }
 }

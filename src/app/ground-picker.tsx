@@ -21,6 +21,9 @@ import { cn } from '@/lib/utils'
 
 import {
   BLURS,
+  DEFAULT_GROUND,
+  fromHex,
+  fromRgb,
   GRAIN_STANDARD,
   type Ground,
   isEven,
@@ -145,7 +148,10 @@ function Field({
   onCommit,
   onLive,
   onParts,
+  single = false,
 }: {
+  /** One colour only: no linked dots, no − and +. */
+  single?: boolean
   corner: ReactNode
   ground: Ground
   motion: Motion
@@ -260,14 +266,18 @@ function Field({
   return (
     <div
       className="bg-foreground/5 relative overflow-hidden rounded-lg"
-      style={{ height: FIELD_H, width: WIDTH }}
+      style={{ height: single ? DOTS_H : FIELD_H, width: WIDTH }}
     >
       <div
         role="slider"
         tabIndex={0}
         aria-label="Colour"
         aria-valuetext={fillOf(ground)}
-        aria-description="Drag the main dot to move linked colours, or a small dot to change that colour."
+        aria-description={
+          single
+            ? 'Drag the dot: hue round the middle, more colour outwards.'
+            : 'Drag the main dot to move linked colours, or a small dot to change that colour.'
+        }
         className={cn(
           'focus-visible:ring-ring/50 absolute inset-x-0 top-0 touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-inset',
           grab !== null ? 'cursor-grabbing' : over && 'cursor-grab'
@@ -346,7 +356,12 @@ function Field({
           }}
         />
       </div>
-      <div className="absolute inset-x-0 bottom-0.5 flex justify-center gap-1">
+      <div
+        className={cn(
+          'absolute inset-x-0 bottom-0.5 flex justify-center gap-1',
+          single && 'hidden'
+        )}
+      >
         <button
           type="button"
           className={QUIET}
@@ -814,6 +829,65 @@ export function GroundPanel() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** The tones a free colour may take: dark enough under white, light enough to tell apart. */
+const TONE_LIGHT = { max: 0.72, min: 0.32 }
+
+/**
+ * One free colour, as the window colour's field picks it: the dot for hue and colour, a slider
+ * for lightness. Settings › Projects' Custom colour. `onLive` follows a drag, `onCommit` a
+ * release.
+ */
+export function ToneField({
+  onCommit,
+  onLive,
+  value,
+}: {
+  /** A hex colour. */
+  value: string
+  onLive: (hex: string) => void
+  onCommit: (hex: string) => void
+}) {
+  const [motion, setMotion] = useState<Motion>(null)
+  const tone = fromRgb(fromHex(value))
+  const ground: Ground = { ...DEFAULT_GROUND, ...tone, links: [] }
+  const light = Math.min(TONE_LIGHT.max, Math.max(TONE_LIGHT.min, tone.light))
+  const at = (l: number) => fillOf({ ...tone, light: l })
+  return (
+    <div className="flex flex-col gap-3">
+      <Field
+        single
+        corner={null}
+        ground={ground}
+        motion={motion}
+        onLive={(g) => {
+          setMotion(null)
+          onLive(fillOf(g))
+        }}
+        onCommit={(g, how) => {
+          setMotion(how)
+          onCommit(fillOf(g))
+        }}
+        onParts={() => {}}
+      />
+      <input
+        type="range"
+        aria-label="Lightness"
+        min={TONE_LIGHT.min}
+        max={TONE_LIGHT.max}
+        step={0.01}
+        value={light}
+        className="h-2 w-full cursor-pointer appearance-none rounded-full [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent [&::-webkit-slider-thumb]:shadow-[0_0_0_0.5px_rgb(0_0_0/0.2),0_1px_3px_rgb(0_0_0/0.25)]"
+        style={{
+          background: `linear-gradient(to right, ${at(TONE_LIGHT.min)}, ${at(TONE_LIGHT.max)})`,
+        }}
+        onChange={(e) => onLive(at(Number(e.target.value)))}
+        onPointerUp={(e) => onCommit(at(Number(e.currentTarget.value)))}
+        onKeyUp={(e) => onCommit(at(Number(e.currentTarget.value)))}
+      />
     </div>
   )
 }

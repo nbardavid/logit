@@ -1041,6 +1041,9 @@ export function App() {
           chats={chats.chats.filter((c) => c.state.status === 'working').length}
           terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
           onRestartHost={host.restart}
+          onUpdateProject={(id, look) =>
+            void store.updateProject(id, look).catch(fail("Couldn't save the project"))
+          }
           onAsk={(prompt) => {
             setSettingsOpen(false)
             createTab('chat', prompt)
