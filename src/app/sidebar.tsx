@@ -379,7 +379,7 @@ export function Sidebar(props: Props) {
                 >
                   <div
                     className={cn(
-                      'group/row relative mb-0.5 flex h-[30px] items-center rounded-[7px] [--row:var(--sidebar)]',
+                      'group/row relative mb-0.5 flex h-[30px] items-center rounded-[8px] [--row:var(--sidebar)]',
                       here && 'bg-background shadow-pill [--row:var(--background)]'
                     )}
                     data-reorder-measure
@@ -439,7 +439,7 @@ export function Sidebar(props: Props) {
                         {all.length === 0 && (
                           <button
                             type="button"
-                            className="text-label hover:bg-ground-hover hover:text-muted-foreground flex h-[30px] items-center gap-2 rounded-md pl-2 text-sm transition-[background-color,color] duration-120"
+                            className="text-label hover:bg-ground-hover hover:text-muted-foreground flex h-[30px] items-center gap-2 rounded-[8px] pl-2 text-sm transition-[background-color,color] duration-120"
                             onClick={() => props.onNewWorkspace(project.id)}
                           >
                             <PlusIcon className="size-3.5 flex-none" />
@@ -570,7 +570,7 @@ function RowTint({ flash, signal }: { signal: 'done' | 'waiting' | 'failing'; fl
     <span
       aria-hidden
       className={cn(
-        'pointer-events-none absolute inset-0 -z-10 rounded-md opacity-0',
+        'pointer-events-none absolute inset-0 -z-10 rounded-[inherit] opacity-0',
         'bg-[linear-gradient(90deg,color-mix(in_srgb,var(--tone)_28%,transparent),transparent_70%)]',
         TINT[signal],
         play && 'animate-[tint_1.2s_cubic-bezier(0.2,0,0,1)]'
@@ -718,7 +718,7 @@ function WorkspaceRow(
   return (
     <div
       className={cn(
-        'group/row text-sidebar-foreground relative isolate rounded-[7px] text-sm transition-[background-color,box-shadow] duration-120 [--row:var(--sidebar)]',
+        'group/row text-sidebar-foreground relative isolate rounded-[8px] text-sm transition-[background-color,box-shadow] duration-120 [--row:var(--sidebar)]',
         active
           ? 'bg-background shadow-pill text-sidebar-accent-foreground [--row:var(--background)]'
           : 'hover:bg-ground-hover hover:[--row:var(--ground-hover)]'
@@ -821,7 +821,8 @@ interface RowTree {
  */
 const PAD = 8
 const STEP = 14
-/** A project, as one box, as Dia draws a tab group: tinted with the project's tone (its
+/** A project, as one box, as Dia draws a tab group (concentric: its 11px radius is the rows'
+ * 8px plus its 3px of padding): tinted with the project's tone (its
  * avatar's), see-through so it sits on any window colour, with 3px of room so the rows' pills
  * sit inside it. */
 const FOLDER =
