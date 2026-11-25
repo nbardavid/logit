@@ -20,6 +20,9 @@ import {
 import { playSettingsSound } from './attention'
 import { previewCleanup } from './cleanup-effect'
 import { ContextMenu, type MenuState } from './context-menu'
+import { GROUND_SETTING } from './ground'
+import { GroundSwatch } from './ground-picker'
+import { noteGroundSetting } from './ground-store'
 import { noteLoaderSetting } from './loader-choice'
 import { EDIT_BACKGROUND_PROMPT, NEW_BACKGROUND_PROMPT } from './prompts'
 import {
@@ -306,12 +309,16 @@ function SectionPane({
                             <PlayIcon />
                           </Button>
                         )}
-                        <Control
-                          row={row}
-                          value={value}
-                          stored={stored}
-                          onChange={(v) => change(row, v)}
-                        />
+                        {row.id === GROUND_SETTING ? (
+                          <GroundSwatch />
+                        ) : (
+                          <Control
+                            row={row}
+                            value={value}
+                            stored={stored}
+                            onChange={(v) => change(row, v)}
+                          />
+                        )}
                       </div>
                     </div>
                     {row.id === 'terminal.fontFamily' && <FontSample family={String(value)} />}
@@ -332,7 +339,7 @@ function FontSample({ family }: { family: string }) {
   return (
     <div className="px-4 pb-3">
       <div
-        className="bg-chrome text-muted-foreground truncate rounded-md px-3 py-2 text-[12.5px]"
+        className="bg-chrome text-muted-foreground truncate rounded-md px-3 py-2 font-mono text-mono"
         style={{ fontFamily: named === '' ? DEFAULT_FONT : `"${named}", ${DEFAULT_FONT}` }}
       >
         ~/logit <span className="text-foreground">main</span> ❯ ls -la src
@@ -573,6 +580,7 @@ export function SettingsView({
         noteLoaderSetting(id, value)
         noteWallpaperSetting(id, value)
         noteTerminalSetting(id, value)
+        noteGroundSetting(id, value)
         setStored((state) => {
           const next = { ...state }
           if (value === null) delete next[id]
@@ -586,12 +594,12 @@ export function SettingsView({
   const section = SECTIONS.find((s) => s.id === pane.id)
   const changed = section !== undefined && stored !== null ? changedRows(section, stored) : []
 
-  // A window over the app, not a page: the chat stays in sight around it, so a background and
-  // its blur show as they are picked.
+  // A window over the app, not a page: an opaque sheet on a faint veil, so it reads as
+  // anchored, while the chat around it stays clear enough to see a background picked.
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        overlayClassName="bg-transparent"
+        overlayClassName="bg-foreground/6"
         className="top-1/2 h-[min(640px,calc(100%-64px))] w-[min(880px,calc(100%-48px))] -translate-y-1/2 flex-row"
       >
         <SettingsNav />
@@ -640,7 +648,7 @@ function SettingsNav() {
   const pane = usePane()
   return (
     <div
-      className="bg-side border-border flex w-[200px] flex-none flex-col gap-0.5 border-r p-2 pt-3"
+      className="bg-well border-border flex w-[200px] flex-none flex-col gap-0.5 border-r p-2 pt-3"
       role="tablist"
       aria-orientation="vertical"
       aria-label="Settings"

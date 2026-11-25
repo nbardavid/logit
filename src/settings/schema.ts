@@ -1,5 +1,6 @@
 // The app's settings, kept in settings.json next to its catalog. Only what the app reads.
 
+import { GROUND_SETTING } from '../app/ground'
 import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS, STATUS_LOADERS } from '../app/loaders'
 import {
   NO_WALLPAPER,
@@ -58,6 +59,19 @@ export interface Section {
 export const SECTIONS: Section[] = [
   {
     groups: [
+      {
+        label: 'Window',
+        rows: [
+          // The picked ground, as one JSON string (ground.ts); GroundSwatch draws the row.
+          {
+            fallback: '',
+            help: 'Behind the sidebar and around the pages.',
+            id: GROUND_SETTING,
+            kind: 'text',
+            label: 'Window colour',
+          },
+        ],
+      },
       {
         label: 'Background',
         rows: [

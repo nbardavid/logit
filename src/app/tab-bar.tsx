@@ -295,13 +295,16 @@ function TabButton({
             type="button"
             role="tab"
             aria-selected={active}
-            className="flex h-full max-w-[240px] min-w-0 flex-1 items-center gap-1.5 px-3"
+            className={cn(
+              'my-auto flex h-7 max-w-[240px] min-w-0 flex-1 items-center gap-1.5 rounded-md px-2.5 transition-[background-color] duration-120 ease-out',
+              active && 'bg-muted'
+            )}
             onClick={onSelect}
             onDoubleClick={onRename}
           />
         }
       >
-        {!item.chat && <SquareTerminalIcon className="text-label size-3.5 shrink-0" />}
+        {!item.chat && <SquareTerminalIcon className="size-3.5 shrink-0 opacity-70" />}
         {/* Both labels in one cell, cross-fading: the title alone sizes the tab, so arming
             it moves nothing; the question truncates in the title's room. */}
         <span className="grid min-w-0">
@@ -388,7 +391,7 @@ export function TabBar(props: Props) {
     <div className="flex min-w-0 flex-1 items-stretch" ref={room}>
       <div
         ref={strip}
-        className="flex min-w-0 flex-[0_1_auto] items-stretch overflow-x-auto [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-[0_1_auto] items-stretch gap-0.5 overflow-x-auto [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Tabs"
         style={edgeMask(fade.left, fade.right)}
@@ -410,9 +413,8 @@ export function TabBar(props: Props) {
               onGone={() => setGone((g) => new Set(g).add(item.id))}
               onWidth={active && !leaving ? setActiveWidth : undefined}
               className={cn(
-                "group text-faint hover:text-muted-foreground relative flex max-w-max min-w-[72px] flex-[1_1_0%] items-center text-sm transition-[color] duration-120 ease-out after:absolute after:right-2.5 after:bottom-0 after:left-2.5 after:h-0.5 after:scale-x-0 after:rounded-t-[1px] after:bg-tan after:transition-[scale] after:duration-220 after:ease-[cubic-bezier(0.2,0,0,1)] after:content-['']",
-                active &&
-                  'text-foreground hover:text-foreground flex-none font-medium after:scale-x-100'
+                'group text-faint hover:text-muted-foreground relative flex max-w-max min-w-[72px] flex-[1_1_0%] items-center text-sm transition-[color] duration-120 ease-out [--tab:var(--background)]',
+                active && 'text-foreground hover:text-foreground flex-none [--tab:var(--muted)]'
               )}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -437,7 +439,7 @@ export function TabBar(props: Props) {
                 />
               )}
               {/* Over the title's end on hover, on a fade, rather than a slot kept empty. */}
-              <span className="from-chrome/0 to-chrome pointer-events-none absolute inset-y-0 right-0 flex items-center bg-linear-to-r to-40% pr-1 pl-5 opacity-0 transition-opacity duration-120 group-focus-within:opacity-100 group-hover:opacity-100">
+              <span className="pointer-events-none absolute top-1/2 right-0 flex h-7 -translate-y-1/2 items-center rounded-r-md bg-linear-to-r from-transparent to-(--tab) to-40% pr-1 pl-5 opacity-0 transition-opacity duration-120 group-focus-within:opacity-100 group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon"

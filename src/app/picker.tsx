@@ -1,4 +1,4 @@
-import { GitBranchIcon, MessageCircleIcon, SearchIcon } from 'lucide-react'
+import { ChevronRightIcon, GitBranchIcon, MessageCircleIcon, SearchIcon } from 'lucide-react'
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -16,8 +16,8 @@ export interface PickerItem {
   label: string
   sub?: string
   meta?: string
-  /** What leads the row: a workspace's colour bar, a chat's bubble, a project's avatar. */
-  icon?: 'workspace' | 'chat' | 'project'
+  /** What leads the row: a workspace's branch, a chat's bubble, a project's avatar, an action. */
+  icon?: 'workspace' | 'chat' | 'project' | 'action'
   /** A faint heading over the first item of each run, while nothing is typed. */
   section?: string
   /** A status dot after the label, as the sidebar shows it. */
@@ -45,6 +45,33 @@ export const NEW_TAB: PickerItem[] = [
   { key: 'chat', label: 'Chat', meta: '⌘T' },
   { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
 ]
+
+/**
+ * How well `item` matches `q` (lower case): its label starting with it, then a word of it,
+ * then anywhere in it, then in its sub. -1 for no match.
+ */
+function matchRank(item: PickerItem, q: string): number {
+  const label = item.label.toLowerCase()
+  if (label.startsWith(q)) return 0
+  if (label.split(/[\s·›/_-]+/).some((word) => word.startsWith(q))) return 1
+  if (label.includes(q)) return 2
+  if ((item.sub ?? '').toLowerCase().includes(q)) return 3
+  return -1
+}
+
+/**
+ * What the filter keeps, best match first; on a tie, the order given (the latest first).
+ * Nothing typed keeps every item where it was.
+ */
+export function ranked(items: PickerItem[], query: string): PickerItem[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return items
+  return items
+    .map((item) => ({ item, rank: matchRank(item, q) }))
+    .filter((x) => x.rank !== -1)
+    .toSorted((a, b) => a.rank - b.rank)
+    .map((x) => x.item)
+}
 
 export function matchParts(text: string, query: string): { text: string; hit: boolean }[] {
   const at = query === '' ? -1 : text.toLowerCase().indexOf(query.toLowerCase())
@@ -92,7 +119,7 @@ export function Picker({
   const [hot, setHot] = useState(0)
   const root = useRef<HTMLDivElement>(null)
   const q = query.trim().toLowerCase()
-  const shown = items.filter((item) => `${item.label} ${item.sub ?? ''}`.toLowerCase().includes(q))
+  const shown = useMemo(() => ranked(items, q), [items, q])
   const menu = anchor !== undefined
   // A point for the popover to hang from (or rise above).
   const point = useMemo(() => {
@@ -131,7 +158,7 @@ export function Picker({
             'text-faint flex items-center',
             menu
               ? 'border-border bg-chrome focus-within:border-line-strong focus-within:bg-background m-1 mb-0 h-8 gap-2 rounded-md border px-2'
-              : 'border-border h-12 gap-2.5 border-b px-4 text-[15px]'
+              : 'border-border h-12 gap-2.5 border-b px-4 text-md'
           )}
         >
           <SearchIcon className={cn('flex-none', menu ? 'size-3.5' : 'size-4')} />
@@ -193,7 +220,7 @@ export function Picker({
               <span
                 className={cn(
                   'text-faint flex-none text-xs tabular-nums',
-                  menu && 'pl-4 tracking-[0.02em]'
+                  menu && 'pl-4 tracking-wide'
                 )}
               >
                 {item.meta}
@@ -250,6 +277,7 @@ export function Picker({
 function ItemIcon({ icon, label }: { icon: NonNullable<PickerItem['icon']>; label: string }) {
   if (icon === 'project') return <ProjectAvatar name={label} />
   if (icon === 'workspace') return <GitBranchIcon className="text-faint size-4 flex-none" />
+  if (icon === 'action') return <ChevronRightIcon className="text-faint size-4 flex-none" />
   return <MessageCircleIcon className="text-faint size-4 flex-none" />
 }
 

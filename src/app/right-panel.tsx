@@ -64,7 +64,10 @@ export function RightPanel({
     layout.splitWidth === null ? splitWidth(sideCss(layout)) : `${layout.splitWidth}px`
   const narrowWanted = layout.gitWidth === null ? GIT_WIDTH : `${layout.gitWidth}px`
   const wanted = wide ? wideWanted : narrowWanted
-  const room = layout.sideOpen ? `calc(100vw - ${side} - 422px)` : 'calc(100vw - 421px)'
+  // The chat's 360px minimum, the splitters and the gaps around the sheets.
+  const room = layout.sideOpen
+    ? `calc(100vw - ${side} - 420px - 3 * var(--gap))`
+    : 'calc(100vw - 419px - 3 * var(--gap))'
   const width = wide ? `min(${wanted}, ${room})` : wanted
   const cap = pageCap(window.innerWidth, sideNow)
   const [min, max] = wide ? [LIMITS.split[0], Math.min(LIMITS.split[1], cap)] : LIMITS.git
@@ -84,7 +87,13 @@ export function RightPanel({
   else if (!loaded) cover = <div className="grid h-full place-items-center">{spinner}</div>
   else if (page) cover = <PausedPage artifact={page} />
   return (
-    <Slide open={open} width={`calc(${width} + 1px)`} widthKey={kind} onSliding={setSliding}>
+    <Slide
+      open={open}
+      side="right"
+      width={`calc(${width} + var(--gap))`}
+      widthKey={kind}
+      onSliding={setSliding}
+    >
       {panel && (
         <>
           <Splitter
@@ -93,6 +102,7 @@ export function RightPanel({
             min={min}
             max={max}
             direction={-1}
+            className="w-gap"
             onChange={(w) => update(patch(w))}
             onDragging={setDragging}
           />

@@ -1,12 +1,10 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   CheckIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
-  FileCodeIcon,
   FileImageIcon,
-  FileTextIcon,
+  LightbulbIcon,
   PencilIcon,
   XIcon,
 } from 'lucide-react'
@@ -48,13 +46,17 @@ import { cardSpot, chatPrCards } from '../chat/pr-cards'
 import { isShown } from '../chat/shown'
 import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
+import { EnterScope, In, useEnter } from './enter'
+import { CHIP, FileChip } from './file-chip'
 import { HtmlBlock, htmlSource, Streaming } from './html-preview'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
 import { AskedRecord, askedText, QuestionBar, useInView } from './question-line'
+import { LatestButton, useLeftSpot, useScrollMemory } from './scroll-memory'
 import { ShownBlocks } from './shown-blocks'
 import { useSmoothText } from './smooth-text'
 import { Dot } from './status-dot'
+import { LINE_ICON, ToolIcon, toolVerb } from './tool-line'
 import { useWindow } from './use-window'
 
 /** Copies on click and shows a check for 1.2s. `text` is read at the click. */
@@ -123,7 +125,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
       </pre>
       <CopyButton
         label="Copy"
-        className="bg-chrome absolute top-1.5 right-1.5 opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100"
+        className="bg-code absolute top-1.5 right-1.5 opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100"
         text={() => pre.current?.textContent ?? ''}
       />
     </div>
@@ -154,12 +156,10 @@ export const ENTER =
 // The same, for a <details>' body as it opens (`[open] > *`).
 const OPENING =
   '[[open]>&]:animate-in [[open]>&]:fade-in [[open]>&]:slide-in-from-bottom-[6px] [[open]>&]:duration-200 [[open]>&]:ease-[cubic-bezier(0.2,0,0,1)]'
-// Status dots, as status-dot.tsx draws them.
-const DOT = 'size-[7px] flex-none rounded-full'
-// A <details> header inside a group: a grey row under the pointer, no marker.
+// A quiet line of work (a tool, a thought, a run): a small icon, muted words, no box. Under
+// the pointer only its ink deepens.
 const SUMMARY =
-  'flex h-7 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-faint transition-colors duration-120 hover:bg-hover hover:text-foreground [&::-webkit-details-marker]:hidden'
-
+  'flex h-7 w-max max-w-full cursor-pointer list-none items-center gap-2.5 text-sm text-muted-foreground transition-colors duration-120 hover:text-foreground [&::-webkit-details-marker]:hidden'
 const PLUGINS = [remarkGfm]
 
 // A command's output past this many lines folds, with "Show all".
@@ -173,10 +173,10 @@ function OutputCard({ collapsed = false, text }: { text: string; collapsed?: boo
   const long = collapsed || text.split('\n').length > OUTPUT_LINES
   const [open, setOpen] = useState(false)
   return (
-    <div className="bg-chrome text-ink-soft relative rounded-lg px-4 py-3">
+    <div className="bg-code text-ink-soft relative rounded-lg px-4 py-3">
       <div
         className={cn(
-          'md text-[13.5px] leading-5',
+          'md text-sm leading-5',
           long &&
             !open &&
             'overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]',
@@ -200,7 +200,7 @@ function OutputCard({ collapsed = false, text }: { text: string; collapsed?: boo
   )
 }
 
-const TOOL_OUT = `my-1 max-h-[320px] overflow-auto rounded-lg border bg-chrome px-3 py-2.5 font-mono text-xs leading-[18px] whitespace-pre-wrap wrap-anywhere ${OPENING}`
+const TOOL_OUT = `my-1 max-h-[320px] overflow-auto rounded-lg bg-code px-3.5 py-3 font-mono text-xs leading-4.5 whitespace-pre-wrap wrap-anywhere ${OPENING}`
 
 /** What a file write changed, line by line: removed lines, then added ones, edit by edit. */
 function diffOf(name: string, input: Record<string, unknown>) {
@@ -248,34 +248,32 @@ const FileEditBadge = memo(function FileEditBadge({
         type="button"
         aria-expanded={open}
         className={cn(
-          'group/badge hover:border-line-strong hover:bg-hover flex h-7 w-max max-w-full items-center gap-2 rounded-md border px-2 text-sm transition-colors duration-120',
-          open && 'bg-hover border-line-strong'
+          'group/badge text-muted-foreground hover:text-foreground flex h-7 w-max max-w-full items-center gap-2.5 text-sm transition-colors duration-120',
+          open && 'text-foreground'
         )}
         onClick={() => {
           setOpened(true)
           setOpen((o) => !o)
         }}
       >
-        {writing ? (
-          <Dot tone="working" />
-        ) : (
-          <PencilIcon className="text-faint size-3.5 flex-none" />
-        )}
-        <span className="text-foreground truncate font-mono text-xs" title={path}>
+        <span className="grid size-3.5 flex-none place-items-center">
+          {writing ? <Dot tone="working" /> : <PencilIcon className={LINE_ICON} />}
+        </span>
+        <span className={cn('truncate', failed && 'text-critical-ink')} title={path}>
           {path.slice(slash + 1)}
         </span>
-        {failed && <span className="text-critical-ink text-xs">failed</span>}
+        {failed && <span className="text-critical-ink text-xs">· failed</span>}
         {!failed && counts && (
-          <span className="flex-none font-mono text-xs tabular-nums">
-            {counts.added > 0 && <span className="text-good-ink">+{counts.added}</span>}
+          <span className="flex-none text-xs tabular-nums">
+            {counts.added > 0 && <span className="text-good">+{counts.added}</span>}
             {counts.added > 0 && counts.removed > 0 && ' '}
-            {counts.removed > 0 && <span className="text-critical-ink">−{counts.removed}</span>}
+            {counts.removed > 0 && <span className="text-critical">−{counts.removed}</span>}
           </span>
         )}
         <ChevronRightIcon
           className={cn(
-            'text-label group-hover/badge:text-muted-foreground size-3 flex-none transition-[rotate,color] duration-180 ease-in-out',
-            open && 'rotate-90'
+            'text-label size-3 flex-none opacity-0 transition-[rotate,opacity] duration-180 ease-in-out group-hover/badge:opacity-100',
+            open && 'rotate-90 opacity-100'
           )}
         />
       </button>
@@ -346,24 +344,35 @@ const ToolRow = memo(function ToolRow({
   block: Block & { kind: 'tool' }
   cwd: string
 }) {
-  let dot = <Dot tone="working" />
-  if (block.result) {
-    const done = block.result.isError
-      ? cn(DOT, 'bg-critical')
-      : cn(DOT, 'animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)] bg-good')
-    dot = <span className={done} />
-  } else if (block.stopped === true)
-    dot = <span className={cn(DOT, 'border-faint border-[1.5px]')} />
+  // Running, the line's icon is the working loader; done, the tool's own icon, which pops in
+  // when it finishes on screen. Failed, the line says so in red.
+  const [popping] = useState(block.result === undefined)
+  const failed = block.result?.isError === true
+  const stopped = block.result === undefined && block.stopped === true
+  let mark = <Dot tone="working" />
+  if (block.result || stopped)
+    mark = (
+      <ToolIcon
+        name={block.name}
+        className={cn(
+          LINE_ICON,
+          failed && 'text-critical',
+          popping && 'animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)]'
+        )}
+      />
+    )
   // Its body (a whole file, a long output) is drawn once it is first opened, never before.
   const [seen, setSeen] = useState(false)
   return (
     <details onToggle={(e) => e.currentTarget.open && setSeen(true)}>
-      <summary className={SUMMARY}>
-        {dot}
-        <span className="text-foreground flex-none font-medium">{block.name}</span>
-        <span className="truncate font-mono text-xs">
+      <summary className={cn(SUMMARY, failed && 'text-critical-ink hover:text-critical-ink')}>
+        <span className="grid size-3.5 flex-none place-items-center">{mark}</span>
+        <span className="flex-none">{toolVerb(block.name)}</span>
+        <span className={cn('truncate font-mono text-xs', !failed && 'text-ink-soft')}>
           {toolSummary(block.name, block.input, cwd)}
         </span>
+        {failed && <span className="flex-none text-xs">· failed</span>}
+        {stopped && <span className="text-faint flex-none text-xs">· stopped</span>}
       </summary>
       {seen && <ToolBody block={block} />}
     </details>
@@ -373,10 +382,13 @@ const ToolRow = memo(function ToolRow({
 function Thought({ text }: { text: string }) {
   return (
     <details>
-      <summary className={cn(SUMMARY, 'w-max italic')}>Thought</summary>
+      <summary className={SUMMARY}>
+        <LightbulbIcon className={LINE_ICON} />
+        Thought
+      </summary>
       <div
         className={cn(
-          'text-muted-foreground ml-2 border-l-2 pt-1 pr-2 pb-1.5 pl-4 text-sm whitespace-pre-wrap',
+          'text-muted-foreground pt-0.5 pr-2 pb-1.5 pl-6 text-sm whitespace-pre-wrap',
           OPENING
         )}
       >
@@ -422,7 +434,7 @@ const FoldedBlock = memo(function FoldedBlock({ block, cwd }: { block: Block; cw
   if (block.kind === 'thinking') return <Thought text={block.text} />
   if (block.kind === 'text') {
     return (
-      <div className="md text-muted-foreground py-1 pl-2 text-base">
+      <div className="md text-muted-foreground py-1 pl-6 text-sm">
         <Markdown remarkPlugins={PLUGINS} components={MD}>
           {block.text}
         </Markdown>
@@ -457,7 +469,7 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
     <div className="flex flex-col">
       <button
         type="button"
-        className="group/row text-faint hover:text-muted-foreground flex h-7 w-max max-w-full items-center gap-1.5 rounded-md text-base transition-colors duration-120"
+        className="group/row text-muted-foreground hover:text-foreground flex h-7 w-max max-w-full items-center gap-2.5 text-sm transition-colors duration-120"
         aria-expanded={open}
         onClick={() => {
           setOpened(true)
@@ -466,7 +478,7 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
       >
         <ChevronRightIcon
           className={cn(
-            'text-label group-hover/row:text-muted-foreground size-3.5 flex-none transition-[rotate,color] duration-180 ease-in-out',
+            'text-faint group-hover/row:text-muted-foreground size-3.5 flex-none transition-[rotate,color] duration-180 ease-in-out',
             open && 'rotate-90'
           )}
         />
@@ -475,13 +487,13 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
           {failed > 0 && <span className="text-critical-ink"> · {failed} failed</span>}
         </span>
       </button>
-      <div className="flex flex-col pl-3">
+      <div className="flex flex-col">
         {blocks.map((k, i) => {
           const out = i >= blocks.length - shown
           return (
             <Collapse key={k.key} open={open || out}>
               {(opened || out) && (
-                <div className="py-px">
+                <div>
                   <FoldedBlock block={k.block} cwd={cwd} />
                 </div>
               )}
@@ -493,7 +505,18 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
   )
 }
 
-const USER = `max-w-[80%] self-end rounded-lg bg-bubble px-3.5 py-[11px] text-base text-ink-soft whitespace-pre-wrap wrap-anywhere ${ENTER}`
+/** A prompt: the user's words in medium ink, left in the column like the rest, under "You". */
+const USER = `text-base font-medium text-foreground whitespace-pre-wrap wrap-anywhere`
+
+/** "You", over a prompt: who speaks, in small faint ink. */
+function You({ children, enter }: { children: ReactNode; enter: boolean }) {
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-0.5', enter && ENTER)}>
+      <span className="text-faint text-xs select-none">You</span>
+      {children}
+    </div>
+  )
+}
 
 /** What a prompt says, as one line of text: the ruler's tooltip. */
 export function promptText(turn: Turn): string {
@@ -508,23 +531,26 @@ export function promptText(turn: Turn): string {
 const imagesIn = (turn: Turn) =>
   turn.blocks.flatMap((b) => (b.kind === 'image' ? [{ data: b.data, mediaType: b.mediaType }] : []))
 
-/** A prompt's images, over its bubble, at the bubble's right edge. */
+/** A prompt's images, under "You", over its words. */
 const PromptImages = ({ turn }: { turn: Turn }) => (
-  <ImageStrip images={imagesIn(turn)} className={cn('max-w-[80%] self-end justify-end', ENTER)} />
+  <ImageStrip images={imagesIn(turn)} className="mt-1 mb-1.5" />
 )
 
 /** A `!` command: what was typed, at the right like a prompt; what it printed, under it. */
 function ShellTurn({ block }: { block: Extract<Block, { kind: 'shell' }> }) {
   const failed = block.exitCode !== null && block.exitCode !== 0
   const loaders = useLoaderChoice()
+  const enter = useEnter()
   return (
     <div className="flex flex-col gap-2">
-      <div className={cn(USER, 'font-mono text-sm leading-[22px]')}>
-        <span className="text-faint">!</span> {block.command}
-      </div>
+      <You enter={enter}>
+        <div className={cn(USER, 'font-mono text-mono font-normal')}>
+          <span className="text-faint">!</span> {block.command}
+        </div>
+      </You>
       {block.output === null ? (
         <div className="text-faint flex h-7 items-center gap-2.5 text-base">
-          <BrailleSpinner loader={loaders.working} className="text-[15px]" />
+          <BrailleSpinner loader={loaders.working} className="text-md" />
           <span className={SHIMMER}>Running…</span>
         </div>
       ) : (
@@ -542,24 +568,27 @@ function ShellTurn({ block }: { block: Extract<Block, { kind: 'shell' }> }) {
 }
 
 function UserTurn({ turn }: { turn: Turn }) {
+  const enter = useEnter()
   const first = turn.blocks[0]
   if (first?.kind === 'shell') return <ShellTurn block={first} />
   if (first?.kind === 'command') {
     return (
-      <div className={cn(USER, 'font-mono text-sm leading-[22px]')}>
-        <span className="text-foreground font-semibold">/{first.name}</span>
-        {first.args !== '' && ` ${first.args}`}
-      </div>
+      <You enter={enter}>
+        <div className={cn(USER, 'text-ink-soft font-mono text-mono font-normal')}>
+          <span className="text-foreground font-semibold">/{first.name}</span>
+          {first.args !== '' && ` ${first.args}`}
+        </div>
+      </You>
     )
   }
-  if (!turn.blocks.some((b) => b.kind === 'image'))
-    return <div className={USER}>{promptText(turn)}</div>
   // The ruler marks the images and the words as one prompt.
   return (
-    <div className="flex flex-col gap-2">
-      <PromptImages turn={turn} />
-      {turn.blocks.some((b) => b.kind === 'text') && <div className={USER}>{promptText(turn)}</div>}
-    </div>
+    <You enter={enter}>
+      {turn.blocks.some((b) => b.kind === 'image') && <PromptImages turn={turn} />}
+      {(turn.blocks.some((b) => b.kind === 'text') || imagesIn(turn).length === 0) && (
+        <div className={USER}>{promptText(turn)}</div>
+      )}
+    </You>
   )
 }
 
@@ -589,12 +618,12 @@ export function QueuedPrompts({
     return (
       <div
         key={group[0]?.id}
-        className="text-muted-foreground animate-in fade-in slide-in-from-bottom-[4px] flex h-[30px] items-center gap-2 border-b px-3 text-sm duration-160 ease-out"
+        className="text-muted-foreground animate-in fade-in slide-in-from-bottom-[4px] flex h-9 items-center gap-2.5 border-b px-4 text-sm duration-160 ease-out"
         aria-label={group.length > 1 ? `${group.length} queued prompts` : 'Queued prompt'}
         data-tip={group.length > 1 ? `Sent as one:\n${words.join('\n')}` : words.join('\n')}
         data-tip-side="top"
       >
-        <span className="bg-bubble text-faint flex-none rounded-sm px-1.5 text-2xs leading-[18px]">
+        <span className="bg-muted text-faint flex-none rounded-sm px-1.5 text-2xs leading-4.5">
           {group.length > 1 ? `${group.length} queued` : 'Queued'}
         </span>
         {images > 0 && (
@@ -630,39 +659,6 @@ export function QueuedPrompts({
       </div>
     )
   })
-}
-
-const CHIP =
-  'group/chip inline-flex h-6 max-w-full items-center gap-1.5 rounded-md border bg-background px-2 transition-colors duration-120 hover:border-line-strong'
-
-function FileIcon({ path }: { path: string }) {
-  const cls = 'text-label size-[13px] flex-none'
-  if (/\.(png|jpe?g|gif|svg|webp|ico|icns|avif)$/i.test(path))
-    return <FileImageIcon className={cls} />
-  if (/\.(md|mdx|txt|rst|csv|log)$/i.test(path) || !/\.[a-z0-9]+$/i.test(path))
-    return <FileTextIcon className={cls} />
-  return <FileCodeIcon className={cls} />
-}
-
-function FileChip({ file, onOpen }: { file: ChangedFile; onOpen?: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<button type="button" className={CHIP} onClick={onOpen} />}>
-        <FileIcon path={file.path} />
-        <span className="text-muted-foreground group-hover/chip:text-foreground truncate text-xs transition-colors duration-120">
-          {file.path.split('/').pop()}
-        </span>
-        <span className="flex-none font-mono text-[11.5px] tabular-nums">
-          {file.added > 0 && <span className="text-good">+{file.added}</span>}
-          {file.added > 0 && file.removed > 0 && ' '}
-          {file.removed > 0 && <span className="text-critical">−{file.removed}</span>}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="font-mono">
-        {file.path}
-      </TooltipContent>
-    </Tooltip>
-  )
 }
 
 // The footer shows this many file chips, then "+n files".
@@ -743,49 +739,49 @@ function ExchangeView({
     const run = it.kind === 'block' && isAgentCall(it.block) ? agentOf(it.block.id) : null
     if (run && onOpenAgent)
       return (
-        <div key={it.key} className={ENTER}>
+        <In key={it.key} enter={ENTER}>
           <AgentCard run={run} cwd={cwd} onOpen={onOpenAgent} />
-        </div>
+        </In>
       )
     if (it.kind === 'block' && isQuestionCall(it.block)) {
       // Still asked: its card is the transcript's last item.
       if (it.block.result === undefined && it.block.stopped !== true) return null
       return (
-        <div key={it.key} className={ENTER}>
+        <In key={it.key} enter={ENTER}>
           <AskedRecord block={it.block} />
-        </div>
+        </In>
       )
     }
     if (it.kind === 'block' && isShown(it.block))
       return (
-        <div key={it.key} className={ENTER}>
+        <In key={it.key} enter={ENTER}>
           <ShownBlocks
             block={it.block}
             cwd={cwd}
             cards={cards.get(cardSpot(exchange.key, it.key)) ?? []}
           />
-        </div>
+        </In>
       )
     if (it.kind === 'block' && isFileEdit(it.block))
       return (
-        <div key={it.key} className={ENTER}>
+        <In key={it.key} enter={ENTER}>
           <FileEditBadge block={it.block} cwd={cwd} />
-        </div>
+        </In>
       )
     return it.kind === 'group' ? (
-      <div key={it.key} className={ENTER}>
+      <In key={it.key} enter={ENTER}>
         <ToolGroup blocks={it.blocks} cwd={cwd} shown={it.shown} />
-      </div>
+      </In>
     ) : (
-      <div key={it.key} className={ENTER}>
+      <In key={it.key} enter={ENTER}>
         <BlockView block={it.block} live={live && it.block === lastBlock} collapsed={collapsed} />
         {/* Its PRs, live, once it is written: they rise in under it. */}
         {cards.has(cardSpot(exchange.key, it.key)) && (
-          <div className={cn('mt-3', ENTER)}>
+          <In className="mt-3" enter={ENTER}>
             <PrCards links={cards.get(cardSpot(exchange.key, it.key)) ?? []} cwd={cwd} />
-          </div>
+          </In>
         )}
-      </div>
+      </In>
     )
   }
   return (
@@ -834,11 +830,11 @@ function LiveLine({ cwd, state, watch }: { cwd: string; state: ChatState; watch:
     <div className="flex h-7 min-w-0 items-center gap-2.5 text-base">
       <BrailleSpinner
         loader={verb === 'Thinking' ? loaders.thinking : loaders.working}
-        className="text-faint text-[15px]"
+        className="text-faint text-md"
       />
       <span className={cn('flex min-w-0 items-baseline gap-1.5', SHIMMER)}>
         <span className="flex-none">{target === '' ? `${verb}…` : verb}</span>
-        {target !== '' && <span className="truncate font-mono text-[12.5px]">{target}</span>}
+        {target !== '' && <span className="truncate font-mono text-mono">{target}</span>}
       </span>
       {elapsed !== null && (
         <span className="text-label flex-none text-xs tabular-nums">{elapsed}</span>
@@ -858,7 +854,7 @@ function LiveLine({ cwd, state, watch }: { cwd: string; state: ChatState; watch:
       <div
         role="progressbar"
         aria-label="Compacting the conversation"
-        className="bg-chrome ml-[26px] h-1 w-48 overflow-hidden rounded-full"
+        className="bg-muted ml-[26px] h-1 w-48 overflow-hidden rounded-full"
       >
         <div className="bg-foreground/60 h-full w-2/5 animate-[sweep_1.4s_ease-in-out_infinite] rounded-full motion-reduce:animate-none" />
       </div>
@@ -870,6 +866,8 @@ const smooth = (): ScrollBehavior =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
 
 interface Props {
+  /** Remembers where the chat was scrolled, under this key (its id), for when it comes back. */
+  memory?: string
   cwd: string
   state: ChatState
   /** An old background host holds the chats: the transcript shows, nothing runs. */
@@ -935,6 +933,7 @@ export const Transcript = memo(function Transcript({
   blocked,
   cwd,
   intro,
+  memory,
   onOpenAgent,
   onOpenFile,
   place,
@@ -944,18 +943,23 @@ export const Transcript = memo(function Transcript({
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
+  // Where it was left, if it was left scrolled up: it opens there again.
+  const left = useLeftSpot(memory)
   // Follow the conversation unless the user scrolled up to read (the ref, for the layout
   // effect; the state, for the ↓ button).
-  const pinned = useRef(true)
+  const pinned = useRef(left === null)
   // The column's size at the last scroll event: tells a reader's scroll from a resize's.
   const size = useRef({ clientHeight: 0, scrollHeight: 0 })
-  const [following, setFollowing] = useState(true)
+  const [following, setFollowing] = useState(left === null)
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
 
-  // Sending follows the conversation again.
+  // Sending follows the conversation again (not the count it opened on).
   const sent = state.turns.filter((t) => t.role === 'user').length
+  const sentBefore = useRef(sent)
   useLayoutEffect(() => {
+    if (sentBefore.current === sent) return
+    sentBefore.current = sent
     pinned.current = true
     setFollowing(true)
   }, [sent])
@@ -977,7 +981,20 @@ export const Transcript = memo(function Transcript({
   const name = place ?? cwd.split('/').pop() ?? cwd
   const empty = state.turns.length === 0 && !blocked
   const all = exchanges(state.turns, working, new Set(state.pending.map((p) => p.toolUseId)))
-  const { first, sentinel } = useWindow(scroller, all.length)
+  const { first, sentinel } = useWindow(scroller, all.length, left?.first)
+
+  // Back where it was left; what Claude wrote while the reader was up turns ↓ into "N new".
+  const { fresh, keep } = useScrollMemory({
+    first,
+    following,
+    left,
+    memory,
+    restored: (el) => {
+      size.current = { clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }
+    },
+    scroller,
+    turns: state.turns,
+  })
   const cards = chatPrCards(all)
 
   const toLatest = () => {
@@ -1009,108 +1026,93 @@ export const Transcript = memo(function Transcript({
   const tailQuestion = asking ? question : lastQuestion.current
 
   return (
-    <div className="@container relative flex min-h-0 flex-1 flex-col">
-      {/* Everything in the chat reads as text (I-beam, selectable); its buttons keep the hand. */}
-      <div
-        className="min-h-0 flex-1 cursor-text overflow-auto select-text"
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          pinned.current = pinnedAfterScroll(pinned.current, size.current, el)
-          size.current = { clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }
-          setFollowing(pinned.current)
-        }}
-      >
+    // What was there when the chat came back shows at once; only what arrives rises in.
+    <EnterScope quiet={first}>
+      <div className="@container relative flex min-h-0 flex-1 flex-col">
+        {/* Everything in the chat reads as text (I-beam, selectable); its buttons keep the hand. */}
         <div
-          ref={content}
-          className={cn(
-            'mx-auto flex max-w-[768px] flex-col gap-6 px-6 pt-7 pb-6 select-text',
-            empty && 'min-h-full'
-          )}
+          className="min-h-0 flex-1 cursor-text overflow-auto select-text"
+          ref={scroller}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            pinned.current = pinnedAfterScroll(pinned.current, size.current, el)
+            size.current = { clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }
+            setFollowing(pinned.current)
+            keep()
+          }}
         >
-          {empty && (
-            // The question sits at 30% of the pane.
-            <div className="flex flex-1 flex-col items-center text-center">
-              <span className="flex-[3_3_0]" />
-              <span className="text-foreground text-lg text-balance">
-                What are we doing in {name}?
-              </span>
-              <span className="text-faint mt-1.5 text-base text-balance">
-                {intro ?? 'Claude Code, in this workspace’s folder. Enter sends, Esc stops.'}
-              </span>
-              <span className="flex-[7_7_0]" />
-            </div>
-          )}
-          {first > 0 && <div ref={sentinel} className="h-px flex-none" aria-hidden />}
-          {all.slice(first).map((exchange) => (
-            // Off screen, an exchange is neither laid out nor painted: a long chat scrolls
-            // as lightly as a short one. Its last measured height holds its place.
-            <div
-              key={exchange.key}
-              className="flex flex-col gap-6 [contain-intrinsic-size:auto_480px] [content-visibility:auto]"
-            >
-              <ExchangeView
-                exchange={exchange}
-                cards={cards}
-                cwd={cwd}
-                agentOf={(id) => agentRun(state, id)}
-                onOpenAgent={onOpenAgent}
-                onOpenFile={onOpenFile}
-              />
-            </div>
-          ))}
-          {((working && !streamingText && permission === undefined) || state.stopping) && (
-            <LiveLine cwd={cwd} state={state} watch={watch} />
-          )}
-          {state.errors.length > 0 && (
-            <div className="bg-critical-wash text-critical-ink rounded-lg px-3 py-2.5 text-sm leading-5 whitespace-pre-wrap">
-              {state.errors.at(-1)}
-            </div>
-          )}
-          {tailQuestion !== null && (
-            // The column's gap folds with it (-mt-6 / pt-6): nothing jumps once it is gone.
-            <div
-              ref={tail}
-              inert={!asking}
-              className={cn(
-                '-mt-6 grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
-                asking ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
-              )}
-            >
-              <div className="min-h-0 overflow-hidden">
-                <div className="flex flex-col pt-6">{tailQuestion}</div>
+          <div
+            ref={content}
+            className={cn(
+              'mx-auto flex max-w-[728px] flex-col gap-6 px-6 pt-8 pb-8 select-text',
+              empty && 'min-h-full'
+            )}
+          >
+            {empty && (
+              // The question sits at 30% of the pane.
+              <div className="flex flex-1 flex-col items-center text-center">
+                <span className="flex-[3_3_0]" />
+                <span className="text-foreground text-lg text-balance">
+                  What are we doing in {name}?
+                </span>
+                <span className="text-faint mt-1.5 text-base text-balance">
+                  {intro ?? 'Claude Code, in this workspace’s folder. Enter sends, Esc stops.'}
+                </span>
+                <span className="flex-[7_7_0]" />
               </div>
-            </div>
-          )}
+            )}
+            {first > 0 && <div ref={sentinel} className="h-px flex-none" aria-hidden />}
+            {all.slice(first).map((exchange) => (
+              // Off screen, an exchange is neither laid out nor painted: a long chat scrolls
+              // as lightly as a short one. Its last measured height holds its place.
+              <div
+                key={exchange.key}
+                data-exchange={exchange.key}
+                className="flex flex-col gap-6 [contain-intrinsic-size:auto_480px] [content-visibility:auto]"
+              >
+                <ExchangeView
+                  exchange={exchange}
+                  cards={cards}
+                  cwd={cwd}
+                  agentOf={(id) => agentRun(state, id)}
+                  onOpenAgent={onOpenAgent}
+                  onOpenFile={onOpenFile}
+                />
+              </div>
+            ))}
+            {((working && !streamingText && permission === undefined) || state.stopping) && (
+              <LiveLine cwd={cwd} state={state} watch={watch} />
+            )}
+            {state.errors.length > 0 && (
+              <div className="bg-critical-wash text-critical-ink rounded-lg px-3 py-2.5 text-sm leading-5 whitespace-pre-wrap">
+                {state.errors.at(-1)}
+              </div>
+            )}
+            {tailQuestion !== null && (
+              // The column's gap folds with it (-mt-6 / pt-6): nothing jumps once it is gone.
+              <div
+                ref={tail}
+                inert={!asking}
+                className={cn(
+                  '-mt-6 grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
+                  asking ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
+                )}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="flex flex-col pt-6">{tailQuestion}</div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-      {/* Scrolled up, the text fades out under the ↓ instead of running into it. */}
-      <div
-        className={cn(
-          'from-background pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t to-transparent transition-opacity',
-          following ? 'opacity-0 duration-100 ease-in' : 'opacity-100 duration-140 ease-out'
-        )}
-      />
-      {/* ↓: 8px above the composer (or the question over it), centred on the column, over
-          the fade; in the left gutter, beside the 720px column, once there is room for it. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto flex w-full max-w-[768px] justify-center px-6 @min-[840px]:justify-start">
-        <button
-          type="button"
-          aria-label="Jump to latest"
-          aria-hidden={following || away}
-          tabIndex={following || away ? -1 : 0}
-          className={cn(
-            'bg-background text-faint hover:bg-hover hover:text-foreground inline-flex size-7 items-center justify-center rounded-md border transition-[color,background-color] duration-120 @min-[840px]:-ml-11',
-            following || away
-              ? 'opacity-0 transition-opacity duration-100 ease-in'
-              : 'animate-in fade-in slide-in-from-bottom-[4px] pointer-events-auto duration-140 ease-out'
-          )}
+        <LatestButton
+          fresh={fresh}
+          hidden={following || away}
+          faded={following}
           onClick={toLatest}
-        >
-          <ChevronDownIcon className="size-3.5" />
-        </button>
+        />
+        {asking && <QuestionBar line={askedLine} away={away} onShow={toLatest} />}
       </div>
-      {asking && <QuestionBar line={askedLine} away={away} onShow={toLatest} />}
-    </div>
+    </EnterScope>
   )
 })

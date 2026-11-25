@@ -21,8 +21,15 @@ export const earlier = (first: number) => Math.max(0, first - PAGE)
  * above the first one; as it nears the screen, the page before it comes in, and the scroller
  * keeps what was on screen where it was (WebKit has no scroll anchoring of its own).
  */
-export function useWindow(scroller: RefObject<HTMLElement | null>, count: number) {
-  const [start, setStart] = useState<number | null>(null)
+export function useWindow(
+  scroller: RefObject<HTMLElement | null>,
+  count: number,
+  /** Where a chat coming back was left: its window starts there again. */
+  from?: number
+) {
+  const [start, setStart] = useState<number | null>(() =>
+    from === undefined ? null : Math.min(from, count)
+  )
   const first = firstShown(start, count)
   const sentinel = useRef<HTMLDivElement>(null)
   const before = useRef<number | null>(null)

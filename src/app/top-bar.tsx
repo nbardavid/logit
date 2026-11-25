@@ -30,23 +30,24 @@ interface Props {
 /** A borderless switch of the top bar (Diff, the update pill); `on` while what it shows is. */
 export const barButtonClass = (on: boolean) =>
   cn(
-    'text-muted-foreground h-7 gap-1.5 px-2 text-sm disabled:opacity-100',
-    on && 'bg-active hover:bg-active text-foreground'
+    'text-faint h-7 gap-1.5 px-2 text-sm disabled:opacity-100',
+    on && 'bg-muted hover:bg-muted text-foreground'
   )
 
 /** The window's top row: where you are, its tabs, and the switches for what sits around them. */
 export function TopBar(props: Props) {
   return (
     <header
-      className="border-border bg-chrome glass flex h-bar flex-none items-center gap-1.5 border-b pr-2 pl-4"
+      className="border-border bg-background flex h-bar flex-none items-center gap-1.5 rounded-t-xl border-b pr-2 pl-3"
       data-tauri-drag-region
     >
       {/* With the sidebar hidden: room for the traffic lights, its toggle, the workspace. It
-          opens and shuts with the sidebar (200ms, its width and a fade), so the tabs move
-          once, one way. The header's gap after it is its own, to shut with it. */}
+          takes its room at once, as the sidebar's layout does (the whole pane slides with the
+          sidebar, so nothing reflows mid-way), and fades in or out. The header's gap after it
+          is its own, to shut with it. */}
       <div
         className={cn(
-          '-mr-1.5 grid flex-none transition-[grid-template-columns,opacity] duration-200 ease-in-out motion-reduce:transition-none',
+          '-mr-1.5 grid flex-none transition-[opacity] duration-200 ease-in-out motion-reduce:transition-none',
           props.sideOpen ? 'grid-cols-[0fr] opacity-0' : 'grid-cols-[1fr] opacity-100'
         )}
         inert={props.sideOpen}

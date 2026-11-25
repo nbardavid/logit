@@ -1,10 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { PencilIcon, XIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
+import { cn } from '@/lib/utils'
 
 import { notify, playChosenSound, waitingAttention } from './app/attention'
 import { browserId } from './app/browser-tabs'
@@ -13,13 +15,15 @@ import { ChatView } from './app/chat-view'
 import { cleanupOf, useCardCleanup } from './app/cleanup-effect'
 import { ContextMenu, type MenuState, useNoBrowserMenu } from './app/context-menu'
 import { Dock } from './app/dock'
+import { DraftIntro, EMPTY_TITLE, NoWorkspace, QUIET } from './app/empty-states'
 import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
 import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
 import { McpPanel } from './app/mcp-panel'
-import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
+import { afterClose, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
 import { overlayShown } from './app/overlay'
+import { paletteList, runPaletteAction } from './app/palette'
 import { NEW_TAB, Picker } from './app/picker'
 import { PR_PROMPT, SETUP_PROMPT } from './app/prompts'
 import { Quotas } from './app/quotas'
@@ -31,7 +35,7 @@ import { rowMenuItems } from './app/row-menu'
 import { stepPane } from './app/settings-pane'
 import { SettingsView } from './app/settings-view'
 import { SidePeek } from './app/side-peek'
-import { colourWord, diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
+import { colourWord, diffStat, type RowMenu, Sidebar } from './app/sidebar'
 import { parentsOf, signalsOf, treeRows } from './app/sidebar-tree'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
@@ -53,6 +57,7 @@ import { useQuotas } from './app/use-quotas'
 import { useReports } from './app/use-reports'
 import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
+import { useAttentionKey, useWatching } from './app/use-window-watch'
 import { isDockTag } from './app/workspace-dock'
 import { onPrMerged } from './cards/pr-store'
 import { availableCommands } from './chat/commands'
@@ -73,9 +78,9 @@ const DRAFT: ChatState = { ...initialChat, status: 'idle' }
 
 // The shell's repeated pieces: the splash, the quiet empty states, the toasts.
 const SPLASH = 'text-muted-foreground grid h-full place-items-center p-6 text-center'
-const QUIET =
-  'text-faint flex flex-1 flex-col items-center justify-center gap-3 px-3 py-8 text-center'
-const EMPTY_TITLE = 'text-foreground text-lg'
+// White sheets on the ground (DESIGN.md › Surfaces): the chat, and git mode's page.
+const SHEET =
+  'bg-background shadow-sheet my-gap mr-gap ml-[calc(var(--gap)-1px)] flex-col overflow-hidden rounded-xl'
 /** A key cap on the ink button. */
 const KBD_INK = 'text-white/60'
 
@@ -86,6 +91,8 @@ export function App() {
   const projectId = project?.id ?? null
   const [mode, setMode] = useState<'normal' | 'git'>('normal')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Bumped by ⌘P's Merge: the git panel's head asks its question.
+  const [mergeAsk, setMergeAsk] = useState(0)
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
   // Where the new-tab menu drops from.
   const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
@@ -98,6 +105,8 @@ export function App() {
   const [renaming, setRenaming] = useState<string | null>(null)
   // A rename `/rename` started: its title also goes to Claude, so `/resume` shows it.
   const renameTells = useRef<string | null>(null)
+  /** The content right of the sidebar: it slides with it (⌘S). */
+  const content = useRef<HTMLDivElement>(null)
   const [commandPick, setCommandPick] = useState<CommandPick | null>(null)
   // A tab whose agent is working closes on the second ask: ⌘W twice, or × twice.
   const [armed, setArmed] = useState<string | null>(null)
@@ -260,17 +269,7 @@ export function App() {
     if (chatOnScreen === undefined) return
     void chats.wake(chatOnScreen).catch(() => {})
   }, [chatOnScreen, chats])
-  useEffect(() => {
-    const look = async () => {
-      const focused = await getCurrentWindow().isFocused()
-      watching.current = focused && mode === 'normal' ? (active?.id ?? null) : null
-      if (watching.current !== null) chats.seen(watching.current)
-    }
-    void look()
-    const window_ = getCurrentWindow()
-    const unlisten = window_.onFocusChanged(() => void look())
-    return () => void unlisten.then((f) => f())
-  }, [active?.id, chats, mode])
+  useWatching(watching, mode === 'normal' ? (active?.id ?? null) : null, chats.seen)
 
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
@@ -336,18 +335,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  // While the attention toast is up, ⌘↩ opens its chat: it goes first, so the chat on screen
-  // does not take it as Allow.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && !e.shiftKey && e.key === 'Enter' && keys.current.attention()) {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-      }
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [])
+  useAttentionKey(() => keys.current.attention())
 
   useNoBrowserMenu()
 
@@ -399,20 +387,28 @@ export function App() {
     return id
   }
 
-  /** The git panel's "Ask for PR": the chat on screen asks, else the newest, else a new one. */
+  /** "Ask for PR": the chat on screen asks, else the workspace's newest, else a new one. */
   const askForPr = (w: Workspace) => {
-    const id = (chat ?? wsChats.at(-1))?.record.id ?? newChat(w)
+    const own = chats.chats.filter((c) => c.record.workspaceId === w.id)
+    const id = ((w.id === ws?.id ? chat : undefined) ?? own.at(-1))?.record.id ?? newChat(w)
+    if (w.id !== ws?.id) store.select(w.projectId, w.id)
     selectTab(w.id, id)
     void chats.send(id, PR_PROMPT)
   }
-  /** A chat (with the last model and effort picked, on `prompt`) or a shell, in this workspace. */
-  const createTab = (kind: string, prompt?: string) => {
+  /** A chat (with the last model and effort picked, on `prompt`) or a shell, in `w`. */
+  const createTab = (kind: string, prompt?: string, w = ws) => {
     setOverlay(null)
-    if (ws === undefined) return
+    if (w === undefined) return
     if (host.state.kind !== 'ready') {
       setNotice({ text: HOST_BLOCKED, title: `Couldn't open a ${kind}` })
-    } else if (kind === 'chat') newChat(ws, prompt)
-    else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
+      return
+    }
+    if (w.id !== ws?.id) {
+      setMode('normal')
+      store.select(w.projectId, w.id)
+    }
+    if (kind === 'chat') newChat(w, prompt)
+    else selectTab(w.id, terminals.create({ cwd: w.path, workspaceId: w.id }))
   }
 
   const namesIn = (pid: string) => (workspaces[pid] ?? []).map((w) => w.name)
@@ -489,11 +485,15 @@ export function App() {
   }
   const rowMenu = (row: RowMenu) => {
     const items = rowMenuItems(row, {
+      askForPr,
       catalog,
       changes: git.changes,
       closeRemoved,
       compose: setComposeIn,
+      current: ws?.id,
       fail,
+      openTab: (w, kind) => createTab(kind, undefined, w),
+      pr: git.pr,
       removeWorkspace,
       rename: setRenamingWs,
       signals,
@@ -678,8 +678,8 @@ export function App() {
   const tabMenu = (item: TabItem, x: number, y: number) =>
     setCtxMenu({
       items: [
-        { label: 'Rename', run: () => setRenaming(item.id) },
-        { label: 'Close', run: () => requestClose(item.id), shortcut: '⌘W' },
+        { icon: PencilIcon, label: 'Rename', run: () => setRenaming(item.id) },
+        { icon: XIcon, label: 'Close', run: () => requestClose(item.id), shortcut: '⌘W' },
       ],
       x,
       y,
@@ -693,30 +693,51 @@ export function App() {
   }
 
   const searchItems = () =>
-    paletteItems(
+    paletteList({
+      branch: git.branch,
+      catalog,
+      chats: chats.chats.map((c) => c.record),
+      here,
+      layout,
+      pr: git.pr,
       projects,
-      workspaces,
-      chats.chats.map((c) => ({
-        activeAt: c.record.activeAt ?? c.record.createdAt,
-        id: c.record.id,
-        title: c.record.title,
-        workspaceId: c.record.workspaceId,
-      })),
+      recent: visited,
+      sidebarChats,
       signals,
-      ws?.id ?? null,
-      {
-        activeAt: Object.fromEntries(
-          catalog.workspaces.map((w) => [w.id, workspaceFacts(w, sidebarChats).activeAt])
-        ),
-        here,
-        recent: visited,
-      }
-    )
+      workspaceId: ws?.id ?? null,
+      workspaces,
+    })
+  const runAction = (id: string) =>
+    runPaletteAction(id, {
+      askForPr,
+      askMerge: () => {
+        setMode('normal')
+        update({ gitOpen: true })
+        artifacts.setView('changes')
+        setMergeAsk((n) => n + 1)
+      },
+      compose: () => keys.current.compose(),
+      createTab,
+      fail,
+      openFolder: () => void newProject(),
+      openSettings: () => setSettingsOpen(true),
+      panelOpen: layout.gitOpen,
+      pr: git.pr,
+      pushed: git.refresh,
+      showDiff: () => setMode('git'),
+      sideOpen: layout.sideOpen,
+      update,
+      ws,
+    })
 
-  /** ⌘P's pick: a workspace, a chat in its tab, or a project. */
+  /** ⌘P's pick: a workspace, a chat in its tab, a project, or an action. */
   const goToItem = (key: string) => {
     setOverlay(null)
     const { id, kind } = paletteTarget(key)
+    if (kind === 'action') {
+      runAction(id)
+      return
+    }
     if (kind === 'chat') {
       const c = chats.chats.find((x) => x.record.id === id)
       const pid = c && placeOf(c.record.workspaceId).project?.id
@@ -843,7 +864,7 @@ export function App() {
     <div className="relative h-full">
       {!layout.sideOpen && <SidePeek width={sideWidth}>{sidebar}</SidePeek>}
       <div className="flex h-full">
-        <Slide open={layout.sideOpen} width={`calc(${sideWidth} + 1px)`}>
+        <Slide open={layout.sideOpen} width={`calc(${sideWidth} + 1px)`} follow={content}>
           {sidebar}
           <Splitter
             label="Resize the projects sidebar"
@@ -854,14 +875,15 @@ export function App() {
             onChange={(next) => update({ sideWidth: next })}
           />
         </Slide>
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        <div ref={content} className="relative flex min-w-0 flex-1 flex-col">
+          <div className="absolute inset-x-0 top-0 h-gap" data-tauri-drag-region />
           {mode !== 'normal' && toasts}
-          {mode !== 'normal' && bars(topBar(pageTitle, null, null))}
-          <div className="flex min-h-0 flex-1">
+          <div className={cn('flex min-h-0 flex-1', mode === 'normal' ? 'py-gap pr-gap' : SHEET)}>
+            {mode !== 'normal' && bars(topBar(pageTitle, null, null))}
             {mode === 'normal' && (
               <>
                 <main
-                  className="relative flex min-h-0 min-w-[360px] flex-1 flex-col"
+                  className="bg-background shadow-sheet relative ml-[calc(var(--gap)-1px)] flex min-h-0 min-w-[360px] flex-1 flex-col rounded-xl"
                   data-zoom-host
                 >
                   {bars(
@@ -925,18 +947,10 @@ export function App() {
                     <TerminalView tabId={term.id} attach={terminals.attach} />
                   )}
                   {launch === null && ws === undefined && (
-                    <div className={QUIET}>
-                      <span className={EMPTY_TITLE}>{project?.name ?? 'No project'}</span>
-                      <span className="text-base">Every piece of work gets its own worktree.</span>
-                      <Button
-                        variant="secondary"
-                        className="h-8"
-                        onClick={() => projectId !== null && setComposeIn(projectId)}
-                      >
-                        New workspace
-                        <Kbd>⌘N</Kbd>
-                      </Button>
-                    </div>
+                    <NoWorkspace
+                      name={project?.name ?? 'No project'}
+                      onNew={() => projectId !== null && setComposeIn(projectId)}
+                    />
                   )}
                   {launch === null && ws !== undefined && active === undefined && (
                     // No tab yet: the chat composer itself, focused; the first Enter makes
@@ -959,19 +973,7 @@ export function App() {
                       onCommand={() => createTab('chat')}
                       onAnswer={() => {}}
                       onInterrupt={() => {}}
-                      intro={
-                        <>
-                          Enter starts a chat in this worktree.{' '}
-                          <button
-                            type="button"
-                            className="hover:text-foreground underline decoration-(--line-strong) underline-offset-2 transition-[color] duration-120"
-                            onClick={() => createTab('terminal')}
-                          >
-                            Open a terminal
-                          </button>{' '}
-                          <Kbd>⇧⌘T</Kbd>
-                        </>
-                      }
+                      intro={<DraftIntro onTerminal={() => createTab('terminal')} />}
                     />
                   )}
                   {mode === 'normal' && !chat && active !== undefined && toasts}
@@ -989,6 +991,7 @@ export function App() {
                       changes,
                       claude: claudeHere,
                       cleanup,
+                      mergeAsk,
                       onAskPr: () => askForPr(ws),
                       onChanged: git.refresh,
                       onError: (title, error) => fail(title)(error),
@@ -1012,6 +1015,7 @@ export function App() {
                           onAskAgent={(prompt) => newChat(ws, prompt)}
                         />
                       ),
+                      wsBranch: ws.branch,
                     }
                   }
                 />
@@ -1059,7 +1063,7 @@ export function App() {
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
       {overlay === 'projects' && (
         <Picker
-          title="Go to a workspace, chat or project"
+          title="Go to a workspace, chat, project or action"
           items={searchItems()}
           filterable
           onClose={() => setOverlay(null)}

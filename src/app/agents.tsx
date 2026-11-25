@@ -32,10 +32,10 @@ function Mark({ run }: { run: AgentRun }) {
   if (run.call.stopped === true || run.task?.status === 'stopped')
     tone = 'border-faint border-[1.5px]'
   else if (run.call.result?.isError === true) tone = 'bg-critical'
-  return <span className={cn('size-[7px] rounded-full', tone)} />
+  return <span className={cn('size-1.5 rounded-full', tone)} />
 }
 
-/** In the conversation, where Claude started it: a click opens its chat. */
+/** In the conversation, where Claude started it: one quiet line; a click opens its chat. */
 export function AgentCard({
   cwd,
   onOpen,
@@ -49,18 +49,18 @@ export function AgentCard({
   return (
     <button
       type="button"
-      className="group/agent hover:border-line-strong hover:bg-hover flex w-full min-w-0 items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors duration-120"
+      className="group/agent text-muted-foreground hover:text-foreground flex h-7 w-full min-w-0 items-center gap-2.5 text-left text-sm transition-colors duration-120"
       onClick={() => onOpen(run.call.id)}
     >
-      <span className="grid size-4 flex-none place-items-center">
+      <span className="grid size-3.5 flex-none place-items-center">
         <Mark run={run} />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-base">
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="flex-none">
           <span className="text-faint">{run.kind} · </span>
-          {run.title}
+          <span className="text-foreground">{run.title}</span>
         </span>
-        <span className="text-faint truncate font-mono text-xs">{status(run, cwd)}</span>
+        <span className="text-faint min-w-0 truncate font-mono text-xs">{status(run, cwd)}</span>
       </span>
       <span className="text-faint group-hover/agent:text-muted-foreground flex flex-none items-center gap-1 text-xs tabular-nums">
         {count > 0 && `${count} ${count === 1 ? 'tool' : 'tools'}`}
@@ -89,11 +89,11 @@ export function RunningAgents({
         return (
           <span
             key={run.call.id}
-            className="group/pill bg-background hover:border-line-strong flex h-6 max-w-[260px] flex-none items-center rounded-full border text-xs transition-colors duration-120"
+            className="group/pill bg-muted flex h-6 max-w-[260px] flex-none items-center rounded-full text-xs transition-colors duration-120"
           >
             <button
               type="button"
-              className="hover:bg-hover flex h-full min-w-0 items-center gap-1.5 rounded-full pr-2.5 pl-2 transition-colors duration-120"
+              className="hover:bg-active flex h-full min-w-0 items-center gap-1.5 rounded-full pr-2.5 pl-2 transition-colors duration-120"
               data-tip={task?.lastTool == null ? undefined : `Using ${task.lastTool}`}
               data-tip-side="top"
               onClick={() => onOpen(run.call.id)}
@@ -110,7 +110,7 @@ export function RunningAgents({
                 aria-label={`Stop ${run.title}`}
                 data-tip="Stop it"
                 data-tip-side="top"
-                className="text-faint hover:text-foreground hover:bg-hover -ml-1.5 mr-0.5 grid size-5 flex-none place-items-center rounded-full transition-colors duration-120"
+                className="text-faint hover:text-foreground hover:bg-active -ml-1.5 mr-0.5 grid size-5 flex-none place-items-center rounded-full transition-colors duration-120"
                 onClick={() => onStop(task.id)}
               >
                 <XIcon className="size-3" />
@@ -137,7 +137,7 @@ export function AgentBar({
 }) {
   const task = run.task
   return (
-    <div className="bg-chrome flex h-9 flex-none items-center gap-2 border-b px-3 text-sm">
+    <div className="bg-background flex h-9 flex-none items-center gap-2 border-b px-3 text-sm">
       <button
         type="button"
         aria-label="Back to the chat"
@@ -158,7 +158,7 @@ export function AgentBar({
         {run.running && onStop && task && (
           <button
             type="button"
-            className="text-muted-foreground hover:text-foreground hover:bg-hover inline-flex h-6 items-center gap-1.5 rounded-md border px-2 transition-colors duration-120"
+            className="text-muted-foreground hover:text-foreground bg-muted hover:bg-active inline-flex h-6 items-center gap-1.5 rounded-md px-2 transition-colors duration-120"
             onClick={() => onStop(task.id)}
           >
             <SquareIcon className="size-2.5 fill-current" />

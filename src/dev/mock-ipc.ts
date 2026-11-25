@@ -79,6 +79,7 @@ import {
   withAtlas,
 } from './atlas'
 import { usageAnswer } from './context-usage'
+import { fakeDesktop } from './desktop'
 import { fakeArtifacts } from './fake-artifacts'
 import {
   assistant,
@@ -831,6 +832,9 @@ function handle(cmd: string, args: Args): unknown {
       return quotaCache()
     case 'read_settings':
       return SETTINGS
+    case 'window_ground':
+      fakeDesktop(String(args.effect))
+      return null
     case 'update_check':
       return flags.has('update') ? '0.3.0' : null
     case 'plugin:opener|open_url':

@@ -81,9 +81,7 @@ export function Question({
           status === 'pending' ? 'text-warn-ink font-medium' : 'text-muted-foreground'
         )}
       >
-        {status === 'pending' && (
-          <span className="bg-warn size-1.5 rounded-full animate-[breathe_1.8s_ease-in-out_infinite]" />
-        )}
+        {status === 'pending' && <span className="bg-warn breathe size-1.5 rounded-full" />}
         {status === 'answered' && <CheckIcon className="text-good size-3.5" strokeWidth={2} />}
         {STATUS[status]}
         {status === 'answered' && answer.length > 0 && (

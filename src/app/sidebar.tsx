@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils'
 import type { Project, Signal, Workspace } from '../model/catalog'
 import type { FileChange } from './use-git'
 
+import { EnterScope, In } from './enter'
+import { GroundButton } from './ground-picker'
 import { rowTone, type Stop, STOP_WORD } from './needs'
 import { useReorder } from './reorder'
 import { type TreeRow, treeRows } from './sidebar-tree'
@@ -122,7 +124,7 @@ export function ProjectAvatar({
     <span
       className={cn(
         'grid flex-none place-items-center font-bold text-white shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)]',
-        size === 'md' ? 'size-[18px] rounded-[5px] text-[10.5px]' : 'size-4 rounded-sm text-[10px]',
+        size === 'md' ? 'size-[18px] rounded-[5px] text-2xs' : 'size-4 rounded-sm text-2xs',
         className
       )}
       style={{ background: AVATAR_TONES[hash % AVATAR_TONES.length] }}
@@ -177,19 +179,26 @@ export function useNow(): number {
 }
 
 const NAV =
-  'hover:bg-hover text-muted-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color,color] duration-120'
-/** What the hover tools cover: gone while they show. */
-const UNDER_TOOLS =
-  'transition-opacity duration-120 group-focus-within/row:opacity-0 group-hover/row:opacity-0'
-/** A section label: "Projects", and each project's name. */
-const LABEL = 'text-label text-xs font-medium'
+  'hover:bg-ground-hover text-ink-soft/85 flex h-7 items-center gap-2.5 rounded-md px-2 text-sm whitespace-nowrap transition-[background-color,color] duration-120'
+/**
+ * A workspace row: one line, 30px (DESIGN.md › Heights), 2px apart: the agent's state, the
+ * task, and at the right the meta in small `label` ink. Its centre is at 15px, where the
+ * tree's elbows land.
+ */
+const ROW = 'flex h-[30px] w-full items-center gap-2 pr-2'
+const LINE = 'flex h-5 min-w-0 flex-1 items-center gap-2'
+/** The meta at the row's right. The hover tools' gradient covers it; over a chat background it
+ * fades out instead (`.row-meta`). */
+const META = 'row-meta'
+/** A section label: each project's name, small and quiet. */
+const LABEL = 'text-faint text-2xs font-semibold tracking-[0.02em]'
 /**
  * The hover tools over a row's end: they fade in over a gradient of the row's own fill. Over a
  * chat background the fill is see-through and can't hide anything: no gradient, and what sits
- * under the tools fades out instead (`UNDER_TOOLS`).
+ * under the tools fades out instead (`.row-meta`).
  */
 const HOVER_TOOLS =
-  'pointer-events-none absolute right-1 flex items-center bg-linear-to-r from-transparent to-(--row) to-30% pl-6 opacity-0 [:root[data-wallpaper]_&]:bg-none transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100'
+  'pointer-events-none absolute right-1 flex items-center bg-linear-to-r from-transparent to-(--row) to-30% pl-6 opacity-0 [:root[data-wallpaper]_&]:bg-none [:root[data-ground]_&]:bg-none transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100'
 
 /** Folding a group slides its height; the rows inside don't reflow. */
 const FOLD =
@@ -290,233 +299,241 @@ export function Sidebar(props: Props) {
   const needs = props.needs
 
   return (
-    <nav
-      className="bg-side glass @container flex min-h-0 flex-none flex-col"
-      aria-label="Projects"
-      style={{ width: props.width }}
-    >
-      {/* The window's traffic lights sit on the left of this row; the row drags the window. */}
-      <div className="flex h-bar flex-none items-center pl-20" data-tauri-drag-region>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Hide the sidebar (⌘S)"
-          data-tip="Hide sidebar · ⌘S"
-          onClick={props.onHide}
-        >
-          <PanelLeftIcon className="size-4" />
-        </Button>
-      </div>
-      <div className="border-border flex flex-none flex-col border-b px-1.5 pt-1 pb-2">
-        <button
-          type="button"
-          className={NAV}
-          data-tip="New workspace · ⌘N"
-          onClick={() => projectId !== null && props.onNewWorkspace(projectId)}
-        >
-          <PlusIcon className="text-faint size-4 shrink-0" />
-          <span className="min-w-0 flex-1 text-left">New workspace</span>
-        </button>
-        <button type="button" className={NAV} data-tip="Search · ⌘P" onClick={props.onProjects}>
-          <SearchIcon className="text-faint size-4 shrink-0" />
-          <span className="min-w-0 flex-1 text-left">Search</span>
-        </button>
-        {needs !== undefined && <NeedsEntry needs={needs} />}
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <div
-          className="absolute inset-0 overflow-auto px-1.5 pb-3"
-          data-reorder
-          onClickCapture={projectDrag.onClickCapture}
-        >
-          {/* ⌘O and ⌘P's Projects add one; with none yet, this row says how. */}
-          {projects.length === 0 && (
-            <button type="button" className={cn(NAV, 'mt-2 w-full')} onClick={props.onNewProject}>
-              <FolderOpenIcon className="text-faint size-4 shrink-0" />
-              Open a folder…
-            </button>
-          )}
-          {projects.map((project, p) => {
-            const open = !collapsed.has(project.id)
-            const all = props.workspaces[project.id] ?? []
-            const list = all.filter((w) => w.paused !== true)
-            const parked = all.filter((w) => w.paused === true)
-            const rows = tree(treeRows(list, parents))
-            const parkedRows = tree(treeRows(parked, parents))
-            // A row and its sub-workspaces drag together.
-            const groups = rows.filter((r) => r.row.depth === 0)
-            const listIds = groups.map((g) => g.row.ws.id)
-            const parkedShown = parkedOpen.has(project.id)
-            // With no workspace to select, the project itself is where you are (not in Settings).
-            const here = project.id === projectId && workspaceId === null && props.page === null
-            return (
-              <section
-                key={project.id}
-                aria-label={project.name}
-                data-reorder-id={project.id}
-                className={cn(
-                  'rounded-md transition-[box-shadow,background-color] duration-120',
-                  projectDrag.dragging === project.id && 'bg-side shadow-popover'
-                )}
-              >
-                <div
+    // Shown again (⌘S, the peek), the rows draw as they are: only news cross-fades in.
+    <EnterScope>
+      <nav
+        className="ground-inks glass @container flex min-h-0 flex-none flex-col"
+        aria-label="Projects"
+        style={{ width: props.width }}
+      >
+        {/* The window's traffic lights sit on the left of this row; the row drags the window. */}
+        <div className="flex h-bar flex-none items-center pl-20" data-tauri-drag-region>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Hide the sidebar (⌘S)"
+            data-tip="Hide sidebar · ⌘S"
+            onClick={props.onHide}
+          >
+            <PanelLeftIcon className="size-4" />
+          </Button>
+        </div>
+        <div className="flex flex-none flex-col gap-px pt-2 pr-2 pb-1 pl-3">
+          <button
+            type="button"
+            className={NAV}
+            data-tip="New workspace · ⌘N"
+            onClick={() => projectId !== null && props.onNewWorkspace(projectId)}
+          >
+            <PlusIcon className="text-faint size-[15px] shrink-0" />
+            <span className="min-w-0 flex-1 text-left">New workspace</span>
+          </button>
+          <button type="button" className={NAV} data-tip="Search · ⌘P" onClick={props.onProjects}>
+            <SearchIcon className="text-faint size-[15px] shrink-0" />
+            <span className="min-w-0 flex-1 text-left">Search</span>
+          </button>
+          {needs !== undefined && <NeedsEntry needs={needs} />}
+        </div>
+        <div className="relative min-h-0 flex-1">
+          <div
+            className="absolute inset-0 overflow-auto pr-2 pb-3 pl-3"
+            data-reorder
+            onClickCapture={projectDrag.onClickCapture}
+          >
+            {/* ⌘O and ⌘P's Projects add one; with none yet, this row says how. */}
+            {projects.length === 0 && (
+              <button type="button" className={cn(NAV, 'mt-2 w-full')} onClick={props.onNewProject}>
+                <FolderOpenIcon className="text-faint size-4 shrink-0" />
+                Open a folder…
+              </button>
+            )}
+            {projects.map((project, p) => {
+              const open = !collapsed.has(project.id)
+              const all = props.workspaces[project.id] ?? []
+              const list = all.filter((w) => w.paused !== true)
+              const parked = all.filter((w) => w.paused === true)
+              const rows = tree(treeRows(list, parents))
+              const parkedRows = tree(treeRows(parked, parents))
+              // A row and its sub-workspaces drag together.
+              const groups = rows.filter((r) => r.row.depth === 0)
+              const listIds = groups.map((g) => g.row.ws.id)
+              const parkedShown = parkedOpen.has(project.id)
+              // With no workspace to select, the project itself is where you are (not in Settings).
+              const here = project.id === projectId && workspaceId === null && props.page === null
+              return (
+                <section
+                  key={project.id}
+                  aria-label={project.name}
+                  data-reorder-id={project.id}
                   className={cn(
-                    'group/row relative flex h-7 items-center rounded-md [--row:var(--sidebar)]',
-                    p === 0 ? 'mt-2' : 'mt-4',
-                    here && 'bg-active [--row:var(--active)]'
+                    'rounded-md transition-[box-shadow,background-color] duration-120',
+                    projectDrag.dragging === project.id && 'bg-side shadow-popover'
                   )}
-                  data-reorder-measure
-                  onPointerDown={(e) => projectDrag.start(project.id, projectIds, e)}
-                  aria-current={here || undefined}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    onMenu({ kind: 'project', project, ...at(e) })
-                  }}
                 >
-                  <button
-                    type="button"
+                  <div
                     className={cn(
-                      LABEL,
-                      'hover:text-faint flex h-full min-w-0 flex-1 items-center gap-1 px-3 transition-[color] duration-120'
+                      'group/row relative mb-0.5 flex h-6 items-center rounded-md [--row:var(--sidebar)]',
+                      p === 0 ? 'mt-3' : 'mt-5',
+                      here && 'bg-background shadow-pill [--row:var(--background)]'
                     )}
-                    aria-expanded={open}
-                    onClick={() => toggle(project.id)}
+                    data-reorder-measure
+                    onPointerDown={(e) => projectDrag.start(project.id, projectIds, e)}
+                    aria-current={here || undefined}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      onMenu({ kind: 'project', project, ...at(e) })
+                    }}
                   >
-                    <span className="min-w-0 flex-[0_1_auto] truncate">{project.name}</span>
-                    <ChevronRightIcon
+                    <button
+                      type="button"
                       className={cn(
-                        'size-3.5 opacity-0 transition-[opacity,rotate] duration-[120ms,150ms] ease-[ease,cubic-bezier(0.2,0,0,1)] group-hover/row:opacity-100',
-                        open && 'rotate-90'
+                        LABEL,
+                        'hover:text-muted-foreground flex h-full min-w-0 flex-1 items-center gap-1 px-2 transition-[color] duration-120'
                       )}
-                    />
-                  </button>
-                  {/* Over the name's end on hover or focus, on a fade: at rest the name has the
+                      aria-expanded={open}
+                      onClick={() => toggle(project.id)}
+                    >
+                      <span className="min-w-0 flex-[0_1_auto] truncate">{project.name}</span>
+                      <ChevronRightIcon
+                        className={cn(
+                          'size-3.5 opacity-0 transition-[opacity,rotate] duration-[120ms,150ms] ease-[ease,cubic-bezier(0.2,0,0,1)] group-hover/row:opacity-100',
+                          open && 'rotate-90'
+                        )}
+                      />
+                    </button>
+                    {/* Over the name's end on hover or focus, on a fade: at rest the name has the
                     whole row. */}
-                  <span className={cn(HOVER_TOOLS, 'inset-y-0')}>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`More for ${project.name}`}
-                      onClick={(e) => onMenu({ kind: 'project', project, ...at(e) })}
-                    >
-                      <EllipsisIcon className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`New workspace in ${project.name}`}
-                      onClick={() => props.onNewWorkspace(project.id)}
-                    >
-                      <PlusIcon className="size-4" />
-                    </Button>
-                  </span>
-                </div>
-                <div
-                  className={cn(FOLD, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0')}
-                  inert={!open}
-                >
-                  <div className="min-h-0 overflow-hidden">
-                    <div
-                      className="flex flex-col gap-0.5 pt-0.5"
-                      data-reorder
-                      onClickCapture={workspaceDrag.onClickCapture}
-                    >
-                      {all.length === 0 && (
-                        <button
-                          type="button"
-                          className="text-label hover:bg-hover hover:text-muted-foreground flex h-8 items-center gap-2 rounded-md pl-3 text-sm transition-[background-color,color] duration-120"
-                          onClick={() => props.onNewWorkspace(project.id)}
-                        >
-                          <PlusIcon className="size-3.5 flex-none" />
-                          New workspace
-                        </button>
-                      )}
-                      {groups.map((top) => {
-                        const at = rows.indexOf(top)
-                        const id = top.row.ws.id
-                        return (
-                          <div
-                            key={id}
-                            data-reorder-id={id}
-                            className={cn(
-                              'flex flex-col rounded-md transition-[box-shadow,background-color] duration-120',
-                              workspaceDrag.dragging === id && 'bg-side shadow-popover'
-                            )}
-                            onPointerDown={(e) => workspaceDrag.start(id, listIds, e)}
+                    <span className={cn(HOVER_TOOLS, 'inset-y-0')}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`More for ${project.name}`}
+                        onClick={(e) => onMenu({ kind: 'project', project, ...at(e) })}
+                      >
+                        <EllipsisIcon className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`New workspace in ${project.name}`}
+                        onClick={() => props.onNewWorkspace(project.id)}
+                      >
+                        <PlusIcon className="size-4" />
+                      </Button>
+                    </span>
+                  </div>
+                  <div
+                    className={cn(FOLD, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0')}
+                    inert={!open}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      <div
+                        className="flex flex-col gap-0.5"
+                        data-reorder
+                        onClickCapture={workspaceDrag.onClickCapture}
+                      >
+                        {all.length === 0 && (
+                          <button
+                            type="button"
+                            className="text-label hover:bg-ground-hover hover:text-muted-foreground flex h-[30px] items-center gap-2 rounded-md pl-2 text-sm transition-[background-color,color] duration-120"
+                            onClick={() => props.onNewWorkspace(project.id)}
                           >
-                            {rows.slice(at, at + 1 + top.row.below).map((t) => (
-                              <TreeFold key={t.row.ws.id} hidden={t.hidden} first={t === top}>
-                                <WorkspaceRow
-                                  {...props}
-                                  ws={t.row.ws}
-                                  tree={t}
-                                  project={project}
-                                  number={order.indexOf(t.row.ws.id)}
-                                  now={now}
-                                />
-                              </TreeFold>
-                            ))}
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {parked.length > 0 && (
-                      <div className="flex flex-col">
-                        <ParkedHead
-                          count={parked.length}
-                          open={parkedShown}
-                          onToggle={() => toggleParked(project.id)}
-                        />
-                        <div
-                          className={cn(
-                            FOLD,
-                            parkedShown ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
-                          )}
-                          inert={!parkedShown}
-                        >
-                          <div className="flex min-h-0 flex-col overflow-hidden">
-                            {parkedRows.map((t, i) => (
-                              <TreeFold key={t.row.ws.id} hidden={t.hidden} first={i === 0}>
-                                <WorkspaceRow
-                                  {...props}
-                                  ws={t.row.ws}
-                                  tree={t}
-                                  project={project}
-                                  number={order.indexOf(t.row.ws.id)}
-                                  now={now}
-                                />
-                              </TreeFold>
-                            ))}
+                            <PlusIcon className="size-3.5 flex-none" />
+                            New workspace
+                          </button>
+                        )}
+                        {groups.map((top) => {
+                          const at = rows.indexOf(top)
+                          const id = top.row.ws.id
+                          return (
+                            <div
+                              key={id}
+                              data-reorder-id={id}
+                              className={cn(
+                                'flex flex-col rounded-md transition-[box-shadow,background-color] duration-120',
+                                workspaceDrag.dragging === id && 'bg-side shadow-popover'
+                              )}
+                              onPointerDown={(e) => workspaceDrag.start(id, listIds, e)}
+                            >
+                              {rows.slice(at, at + 1 + top.row.below).map((t) => (
+                                <TreeFold key={t.row.ws.id} hidden={t.hidden} first={t === top}>
+                                  <WorkspaceRow
+                                    {...props}
+                                    ws={t.row.ws}
+                                    tree={t}
+                                    project={project}
+                                    number={order.indexOf(t.row.ws.id)}
+                                    now={now}
+                                  />
+                                </TreeFold>
+                              ))}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {parked.length > 0 && (
+                        <div className="flex flex-col">
+                          <ParkedHead
+                            count={parked.length}
+                            open={parkedShown}
+                            onToggle={() => toggleParked(project.id)}
+                          />
+                          <div
+                            className={cn(
+                              FOLD,
+                              parkedShown ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
+                            )}
+                            inert={!parkedShown}
+                          >
+                            <div className="flex min-h-0 flex-col overflow-hidden">
+                              {parkedRows.map((t, i) => (
+                                <TreeFold key={t.row.ws.id} hidden={t.hidden} first={i === 0}>
+                                  <WorkspaceRow
+                                    {...props}
+                                    ws={t.row.ws}
+                                    tree={t}
+                                    project={project}
+                                    number={order.indexOf(t.row.ws.id)}
+                                    now={now}
+                                  />
+                                </TreeFold>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              </section>
-            )
-          })}
+                </section>
+              )
+            })}
+          </div>
         </div>
-      </div>
-      <div className="border-border relative flex h-bar flex-none items-center gap-1.5 border-t pr-2 pl-2.5">
-        {props.dock}
-        {props.foot}
-        <span className="min-w-0 flex-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(props.page === 'settings' && 'bg-active text-foreground hover:bg-active')}
-          aria-label="Settings"
-          aria-pressed={props.page === 'settings'}
-          data-tip="Settings"
-          data-tip-side="top"
-          data-tip-align="end"
-          onClick={props.onSettings}
-        >
-          <SettingsIcon className="size-4" />
-        </Button>
-      </div>
-    </nav>
+        <div className="relative flex h-bar flex-none items-center gap-1.5 pr-2 pl-3">
+          {props.dock}
+          {props.foot}
+          <span className="min-w-0 flex-1" />
+          <GroundButton />
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              'hover:bg-ground-hover',
+              props.page === 'settings' &&
+                'bg-background text-foreground shadow-pill hover:bg-background'
+            )}
+            aria-label="Settings"
+            aria-pressed={props.page === 'settings'}
+            data-tip="Settings"
+            data-tip-side="top"
+            data-tip-align="end"
+            onClick={props.onSettings}
+          >
+            <SettingsIcon className="size-4" />
+          </Button>
+        </div>
+      </nav>
+    </EnterScope>
   )
 }
 
@@ -539,8 +556,9 @@ const SETTLE_MS = 1500
 
 /**
  * The aimux TUI's row tint: a workspace that finished or waits for you lights up once in its
- * colour, then keeps a faint wash from the left edge while it stays so. `flash` is read when
- * the tint appears: a row already finished or waiting when the sidebar drew it doesn't flash.
+ * colour from the left edge, then lets it go (Canvas keeps no lasting wash: the dot and the
+ * bold title say it). `flash` is read when the tint appears: a row already finished or
+ * waiting when the sidebar drew it doesn't flash.
  */
 function RowTint({
   flash,
@@ -557,14 +575,22 @@ function RowTint({
     <span
       aria-hidden
       className={cn(
-        'pointer-events-none absolute inset-0 -z-10 rounded-md opacity-30',
-        'bg-[linear-gradient(90deg,color-mix(in_srgb,var(--tone)_40%,transparent),transparent_60%)]',
+        'pointer-events-none absolute inset-0 -z-10 rounded-md opacity-0',
+        'bg-[linear-gradient(90deg,color-mix(in_srgb,var(--tone)_28%,transparent),transparent_70%)]',
         TINT[signal],
-        play && 'animate-[tint_0.7s_cubic-bezier(0.2,0,0,1)]'
+        play && 'animate-[tint_1.2s_cubic-bezier(0.2,0,0,1)]'
       )}
       style={left > 0 ? { left } : undefined}
     />
   )
+}
+
+/**
+ * The stop word a row's meta says: only while it matters, that is while it asks something
+ * unseen, or while the work is blocked. Seen, the mark says it alone.
+ */
+export function metaStop(stop: Stop | null, asks: boolean): Stop | null {
+  return stop !== null && (asks || stop === 'blocked') ? stop : null
 }
 
 /** What a page's stop reads in, while it asks something unseen. */
@@ -627,28 +653,81 @@ function WorkspaceRow(
     props.onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
   }
   const status = ageLabel(facts.activeAt, now)
+  const shownStop = metaStop(stop, asks)
   // Keyed by the signal, so a change cross-fades in place.
   const icon = (
-    <span
+    <In
+      as="span"
       key={tone ?? 'idle'}
-      className="animate-in fade-in flex size-3.5 flex-none items-center justify-center duration-160 ease-out"
+      enter="animate-in fade-in duration-160 ease-out"
+      className="flex size-3.5 flex-none items-center justify-center"
     >
       {tone !== null && <Dot tone={tone} label={TONE_LABEL[tone]} />}
-    </span>
+    </In>
   )
   const tip = [
     paused ? 'Parked' : null,
+    title === word ? null : word,
     diff && diff.add + diff.del > 0 ? `+${diff.add} −${diff.del}` : null,
     ws.branch,
   ].filter((part) => part !== null)
-  const row = 'flex h-9 w-full items-center gap-2 pr-2'
   const indent = { paddingLeft: PAD + depth * STEP }
+  const titleClass = cn(
+    'min-w-0 flex-1 truncate text-left',
+    active && 'text-sidebar-accent-foreground',
+    !active && (unread || asks) && 'text-foreground font-semibold'
+  )
+  // At the row's right, in small `label` ink: the page's stop, the colour word (when the task
+  // isn't it) and the age. It gives way to the task: on a narrow sidebar, a row that also
+  // shows a stop or a count drops its colour word (still in the tooltip). The hover tools sit
+  // over it only: the task keeps its room.
+  const meta = (
+    <span
+      className={cn(
+        META,
+        'text-label flex h-4 max-w-[46%] min-w-0 items-center gap-1 overflow-hidden text-xs tabular-nums transition-opacity duration-120',
+        paused && 'opacity-50'
+      )}
+    >
+      {kids > 0 && <KidsCount tree={tree} />}
+      {shownStop !== null && (
+        <In
+          as="span"
+          key={shownStop}
+          enter="animate-in fade-in duration-160 ease-out"
+          className={cn(
+            'flex min-w-0 items-center gap-1 transition-[color] duration-160',
+            asks ? cn(STOP_INK[shownStop], 'font-medium') : 'text-muted-foreground'
+          )}
+        >
+          <span className="truncate">{STOP_WORD[shownStop]}</span>
+          <span aria-hidden="true" className="text-label font-normal">
+            ·
+          </span>
+        </In>
+      )}
+      {title !== word && (
+        <span
+          className={cn(
+            'flex min-w-0 items-center gap-1',
+            (shownStop !== null || kids > 0) && 'hidden @[20rem]:flex'
+          )}
+        >
+          <span className="truncate">{word}</span>
+          <span aria-hidden="true">·</span>
+        </span>
+      )}
+      <span className="flex-none">{status}</span>
+    </span>
+  )
 
   return (
     <div
       className={cn(
-        'group/row text-muted-foreground relative isolate rounded-md text-sm transition-[background-color] duration-120 [--row:var(--sidebar)]',
-        active ? 'bg-active [--row:var(--active)]' : 'hover:bg-hover hover:[--row:var(--hover)]'
+        'group/row text-sidebar-foreground relative isolate rounded-[7px] text-sm transition-[background-color,box-shadow] duration-120 [--row:var(--sidebar)]',
+        active
+          ? 'bg-background shadow-pill text-sidebar-accent-foreground [--row:var(--background)]'
+          : 'hover:bg-ground-hover hover:[--row:var(--ground-hover)]'
       )}
       onContextMenu={menu}
     >
@@ -658,14 +737,17 @@ function WorkspaceRow(
       )}
       {renaming ? (
         // In place of the row's button: a field inside a button would click it.
-        <div className={row} style={indent}>
-          {icon}
-          <RenameField
-            className="-ml-0.5 pl-0.5 text-sm"
-            label="Workspace name"
-            value={ws.name}
-            onDone={(name) => props.onRenamed(ws, name)}
-          />
+        <div className={ROW} style={indent}>
+          <span className={LINE}>
+            {icon}
+            <RenameField
+              className="-ml-0.5 pl-0.5 text-sm"
+              label="Workspace name"
+              value={ws.name}
+              onDone={(name) => props.onRenamed(ws, name)}
+            />
+          </span>
+          {meta}
         </div>
       ) : (
         <Tooltip>
@@ -673,11 +755,7 @@ function WorkspaceRow(
             render={
               <button
                 type="button"
-                className={cn(
-                  row,
-                  'transition-opacity duration-160 ease-out',
-                  paused && 'opacity-50'
-                )}
+                className={ROW}
                 style={indent}
                 aria-current={active}
                 data-workspace={ws.id}
@@ -686,46 +764,17 @@ function WorkspaceRow(
               />
             }
           >
-            {icon}
             <span
               className={cn(
-                'min-w-0 flex-1 truncate text-left',
-                active && 'text-foreground font-medium',
-                !active && (unread || asks) && 'text-foreground font-semibold'
+                LINE,
+                'transition-opacity duration-160 ease-out',
+                paused && 'opacity-50'
               )}
             >
-              {title}
+              {icon}
+              <span className={titleClass}>{title}</span>
             </span>
-            <span
-              className={cn(
-                UNDER_TOOLS,
-                'text-faint flex flex-none items-center gap-1 text-xs tabular-nums'
-              )}
-            >
-              {kids > 0 && <KidsCount tree={tree} />}
-              {/* Below 240px of sidebar the task keeps the room; the tooltip has the branch. */}
-              {stop !== null && (
-                <span
-                  key={stop}
-                  className={cn(
-                    'animate-in fade-in flex items-center gap-1 transition-[color] duration-160',
-                    asks ? cn(STOP_INK[stop], 'font-medium') : 'text-muted-foreground'
-                  )}
-                >
-                  <span>{STOP_WORD[stop]}</span>
-                  <span aria-hidden="true" className="text-faint font-normal">
-                    ·
-                  </span>
-                </span>
-              )}
-              {title !== word && (
-                <span className="flex items-center gap-1 @max-[240px]:hidden">
-                  <span>{word}</span>
-                  <span aria-hidden="true">·</span>
-                </span>
-              )}
-              {status}
-            </span>
+            {meta}
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
             <span className="font-mono">{tip.join(' · ')}</span>
@@ -734,12 +783,12 @@ function WorkspaceRow(
         </Tooltip>
       )}
       {!renaming && (
-        <span className={cn(HOVER_TOOLS, 'top-0 h-9')}>
+        <span className={cn(HOVER_TOOLS, 'top-[3px] h-6')}>
           {kids > 0 && (
             <Button
               variant="ghost"
-              size="sm"
-              className="text-faint h-7 gap-0.5 px-1.5 text-xs font-normal tabular-nums"
+              size="xs"
+              className="text-faint gap-0.5 px-1.5 font-normal tabular-nums"
               aria-expanded={!tree.folded}
               aria-label={`${tree.folded ? 'Show' : 'Hide'} the ${kids} ${kids === 1 ? 'workspace' : 'workspaces'} ${ws.name} started`}
               onClick={tree.onFold}
@@ -773,8 +822,8 @@ interface RowTree {
 }
 
 // The tree's geometry: each level steps 18px; a guide runs down the centre of its parent's
-// mark column (10px of padding, then the 14px mark).
-const PAD = 10
+// mark column (8px of padding, then the 14px mark).
+const PAD = 8
 const STEP = 18
 const rail = (level: number) => PAD + 7 + level * STEP
 
@@ -797,16 +846,16 @@ function Guides({ tree }: { tree: RowTree }) {
       {depth > 0 && (
         <>
           <span
-            className="border-line-strong pointer-events-none absolute -top-0.5 h-5 rounded-bl-md border-b border-l"
+            className="border-line-strong pointer-events-none absolute -top-0.5 h-[17px] rounded-bl-md border-b border-l"
             style={{ left: rail(depth - 1), width: STEP - 6 }}
           />
           {!last && (
-            <span className={cn(line, 'top-4.5 bottom-0')} style={{ left: rail(depth - 1) }} />
+            <span className={cn(line, 'top-[15px] bottom-0')} style={{ left: rail(depth - 1) }} />
           )}
         </>
       )}
       {tree.row.below > 0 && !tree.folded && (
-        <span className={cn(line, 'top-6 bottom-0')} style={{ left: rail(depth) }} />
+        <span className={cn(line, 'top-[22px] bottom-0')} style={{ left: rail(depth) }} />
       )}
     </span>
   )
@@ -885,7 +934,7 @@ function NeedsEntry({ needs }: { needs: SidebarNeeds }) {
       aria-keyshortcuts="Meta+0"
       onClick={needs.onNext}
     >
-      <InboxIcon className="text-faint size-4 shrink-0" />
+      <InboxIcon className="text-faint size-[15px] shrink-0" />
       {/* The two labels share one cell: the swap cross-fades with no shift. */}
       <span className="grid min-w-0 flex-1 text-left">
         <span
@@ -907,13 +956,15 @@ function NeedsEntry({ needs }: { needs: SidebarNeeds }) {
         </span>
       </span>
       {count > 0 ? (
-        <span
+        <In
+          as="span"
           key={count}
-          className="bg-foreground animate-in fade-in text-2xs grid h-[18px] min-w-[18px] place-items-center rounded-full px-[5px] text-white tabular-nums duration-160"
+          enter="animate-in fade-in duration-160"
+          className="text-faint text-xs tabular-nums"
           aria-label={`${count} need you`}
         >
           {count}
-        </span>
+        </In>
       ) : (
         <Kbd>⌘0</Kbd>
       )}
@@ -936,7 +987,7 @@ function ParkedHead({
       type="button"
       className={cn(
         LABEL,
-        'group/parked hover:text-faint mt-0.5 flex h-7 items-center gap-1 rounded-md pl-8 transition-[color] duration-120'
+        'group/parked hover:text-muted-foreground mt-0.5 flex h-7 items-center gap-1 rounded-md pl-[30px] transition-[color] duration-120'
       )}
       aria-expanded={open}
       onClick={onToggle}

@@ -87,7 +87,7 @@ export function CardFrame({
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {/* Narrow, the title may take two lines rather than end after a few words. */}
-          <div className="flex min-h-[22px] min-w-0 items-center gap-1.5 text-base leading-[22px] @max-[420px]/card:items-baseline">
+          <div className="flex min-h-[22px] min-w-0 items-center gap-1.5 text-base leading-5.5 @max-[420px]/card:items-baseline">
             {title}
           </div>
           <div className="text-faint min-h-4 text-xs">{meta}</div>

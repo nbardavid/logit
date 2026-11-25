@@ -211,7 +211,7 @@ export function NewWorkspace(props: Props) {
         </div>
         <textarea
           ref={field}
-          className="text-foreground placeholder:text-label max-h-[50vh] min-h-32 resize-none border-0 bg-transparent p-4 text-[15px] leading-6 outline-none select-text"
+          className="text-foreground placeholder:text-label max-h-[50vh] min-h-32 resize-none border-0 bg-transparent p-4 text-md outline-none select-text"
           value={prompt}
           placeholder="What do you want to work on?"
           disabled={busy}

@@ -2,8 +2,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
-  useCallback,
-  useEffect,
+  type RefObject,
   useLayoutEffect,
   useRef,
   useState,
@@ -21,6 +20,8 @@ interface Props {
   onChange: (width: number) => void
   /** While it is held: a native view beside it would take the pointer, so it steps aside. */
   onDragging?: (dragging: boolean) => void
+  /** Its width when it is the gap between two sheets (`w-gap`); 1px by default. */
+  className?: string
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(v)))
@@ -32,10 +33,21 @@ function drawn(splitter: HTMLElement, direction: 1 | -1, value: number) {
 }
 
 /**
- * A 1 px line with a wider grab area, wider on the side it pushes into (the panel's own side
- * may be a native page, which takes the pointer); drag it, or focus it and use the arrows.
+ * The ground between two surfaces, invisible at rest (Canvas: the gap is the divider), with a
+ * wider grab area, wider on the side it pushes into (the panel's own side may be a native page,
+ * which takes the pointer). Under the pointer or held, a faint line shows where it drags. Drag
+ * it, or focus it and use the arrows.
  */
-export function Splitter({ direction, label, max, min, onChange, onDragging, value }: Props) {
+export function Splitter({
+  className,
+  direction,
+  label,
+  max,
+  min,
+  onChange,
+  onDragging,
+  value,
+}: Props) {
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const start = e.clientX
@@ -64,10 +76,11 @@ export function Splitter({ direction, label, max, min, onChange, onDragging, val
   return (
     <div
       className={cn(
-        'bg-border hover:bg-line-strong active:bg-line-strong focus-visible:bg-line-strong relative z-2 w-px flex-none cursor-col-resize transition-[background-color] duration-150 before:absolute before:inset-y-0 focus-visible:outline-none',
+        'relative z-2 flex-none cursor-col-resize before:absolute before:inset-y-0 after:absolute after:inset-y-3 after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-transparent after:transition-[background-color] after:duration-150 hover:after:bg-line-strong focus-visible:outline-none focus-visible:after:bg-line-strong active:after:bg-line-strong',
         direction === 1
           ? 'before:-right-2.5 before:-left-1.5'
-          : 'before:-left-2.5 before:-right-1.5'
+          : 'before:-left-2.5 before:-right-1.5',
+        className ?? 'w-px'
       )}
       role="separator"
       aria-orientation="vertical"
@@ -84,91 +97,142 @@ export function Splitter({ direction, label, max, min, onChange, onDragging, val
 
 const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+/** Panels slide in 200ms, ease-in-out (DESIGN.md › Motion). */
+const SLIDE = { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
+
+/** An element's left edge as drawn, its transform included; null when it isn't there. */
+const drawnLeft = (el: HTMLElement | null | undefined) =>
+  el ? el.getBoundingClientRect().left : null
+
 /**
- * A panel that slides its width open and shut (⌘B, ⌥⌘B; DESIGN.md: 200ms ease-in-out). The
- * panel inside keeps its own width, so nothing reflows mid-way; it unmounts once shut.
- * Only a toggle slides (`data-sliding`, until its transition ends): a window resized, or a
- * splitter dragged, moves it at once. Reduced motion: no transition.
+ * A panel that slides open and shut (⌘S, ⌥⌘B; DESIGN.md: 200ms ease-in-out) without any
+ * reflow mid-way: the layout takes its final widths at once, and what moves is drawn there and
+ * slid into place with a transform (FLIP), the panel over a box of its final width, and with
+ * it `follow` (the content beside a left panel, which its opening pushes over). Shut, the panel
+ * stays mounted but hidden, so opening it again draws what was there, with no entrance replayed.
+ * A change of `widthKey` (a list ↔ a page) slides to the new width the same way; a window
+ * resized, or a splitter dragged, moves it at once. Reduced motion: no slide.
  */
 export function Slide({
   children,
+  follow,
   onSliding,
   open,
+  side = 'left',
   width,
   widthKey,
 }: {
   open: boolean
-  /** The panel's width, its splitter's 1px included. */
+  /** The panel's width, its splitter included. */
   width: string
+  /** Which edge of the window it lives at. */
+  side?: 'left' | 'right'
   /** A change of key (a list ↔ a page) slides to the new width; a drag doesn't. */
   widthKey?: string
+  /** What sits beside it and moves with it (the content right of the sidebar). */
+  follow?: RefObject<HTMLElement | null>
   /** While it slides: a native view laid over the panel waits for it to settle. */
   onSliding?: (sliding: boolean) => void
   children: ReactNode
 }) {
+  // Mounted the first time it opens, then kept.
   const [mounted, setMounted] = useState(open)
-  const [wide, setWide] = useState(open)
+  if (open && !mounted) setMounted(true)
   const [sliding, setSliding] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
-  // Told in the same layout pass, so a native view over the panel never sees a first frame
-  // that still reads as settled.
+  const inner = useRef<HTMLDivElement>(null)
   const report = useRef(onSliding)
   report.current = onSliding
-  const slide = useCallback((on: boolean) => {
-    setSliding(on)
-    report.current?.(on)
-  }, [])
-  const openRef = useRef(open)
-  openRef.current = open
-  const settle = useCallback(() => {
-    slide(false)
-    if (!openRef.current) setMounted(false)
-  }, [slide])
+
+  // Where things were drawn before this commit: read while rendering, before the DOM moves.
+  const last = useRef({ key: widthKey, open })
+  const from = useRef<{ inner: number | null; follow: number | null } | null>(null)
+  if (last.current.open !== open || last.current.key !== widthKey) {
+    from.current = { follow: drawnLeft(follow?.current), inner: drawnLeft(inner.current) }
+    last.current = { key: widthKey, open }
+  }
+
   useLayoutEffect(() => {
-    if (open && !mounted) setMounted(true)
-    else if (open && !wide) {
-      // Its zero width is laid out first, so the change from it transitions.
-      box.current?.getBoundingClientRect()
-      setWide(true)
-      slide(!still())
-    } else if (!open && wide) {
-      setWide(false)
-      slide(!still())
-      if (still()) setMounted(false)
+    const before = from.current
+    from.current = null
+    const panel = inner.current
+    if (before === null || panel === null) return
+    const moving = [panel, follow?.current ?? null].filter((el) => el !== null)
+    for (const el of moving) for (const a of el.getAnimations()) a.cancel()
+    if (still()) return
+    // Shut, the panel rests off its edge (its inline transform); open, in place.
+    const off = (side === 'left' ? -1 : 1) * panel.getBoundingClientRect().width
+    const rest = open ? 0 : off
+    const now = drawnLeft(panel) ?? 0
+    // Mounted by this very opening, it was drawn shut: off its edge.
+    const shift = before.inner === null ? off - rest : before.inner - now
+    const runs: Animation[] = []
+    if (shift !== 0)
+      runs.push(
+        panel.animate(
+          [{ transform: `translateX(${rest + shift}px)` }, { transform: `translateX(${rest}px)` }],
+          SLIDE
+        )
+      )
+    const beside = follow?.current
+    const was = before.follow
+    if (beside && was !== null) {
+      const by = was - beside.getBoundingClientRect().left
+      if (by !== 0) {
+        // Pushed left of where it lands, its right edge would leave a gap: its own fill
+        // stands in there, a shadow the width of the push.
+        if (by < 0) beside.style.boxShadow = `${-by}px 0 0 var(--ground-tint)`
+        const run = beside.animate(
+          [{ transform: `translateX(${by}px)` }, { transform: 'none' }],
+          SLIDE
+        )
+        const clear = () => {
+          beside.style.boxShadow = ''
+        }
+        run.addEventListener('finish', clear)
+        run.addEventListener('cancel', clear)
+        runs.push(run)
+      }
     }
-  }, [open, mounted, wide, slide])
-  // A slide whose transition never ends (a splitter grabbed mid-way cancels it) still settles.
-  useEffect(() => {
-    if (!sliding) return
-    const done = setTimeout(settle, 300)
-    return () => clearTimeout(done)
-  }, [sliding, settle])
-  // The width on screen: a new key first marks the box sliding, then moves the width, so the
-  // change transitions. A width that ends up the same fires no transitionend: the timer ends it.
-  const [applied, setApplied] = useState(width)
-  const key = useRef(widthKey)
-  useLayoutEffect(() => {
-    if (key.current === widthKey || !open || !wide || still()) {
-      key.current = widthKey
-      setApplied(width)
-      return
+    if (runs.length === 0) return
+    setSliding(true)
+    report.current?.(true)
+    let left = runs.length
+    const done = () => {
+      left -= 1
+      if (left > 0) return
+      setSliding(false)
+      report.current?.(false)
     }
-    key.current = widthKey
-    slide(true)
-    const frame = requestAnimationFrame(() => setApplied(width))
-    return () => cancelAnimationFrame(frame)
-  }, [width, widthKey, open, wide, slide])
+    for (const run of runs) {
+      run.addEventListener('finish', done)
+      run.addEventListener('cancel', done)
+    }
+  }, [open, widthKey, side, follow])
+
   if (!mounted) return null
+  const shut = !open && !sliding
   return (
     <div
-      ref={box}
-      className="flex min-h-0 flex-none overflow-hidden data-sliding:transition-[width] data-sliding:duration-200 data-sliding:ease-in-out in-[.resizing]:transition-none motion-reduce:transition-none"
-      style={{ width: wide ? applied : 0 }}
+      className="relative z-10 flex-none"
+      style={{ width: open ? width : 0 }}
       data-sliding={sliding || undefined}
-      onTransitionEnd={(e) => e.target === e.currentTarget && settle()}
-      onTransitionCancel={(e) => e.target === e.currentTarget && settle()}
     >
-      {children}
+      <div
+        ref={inner}
+        className={cn(
+          'absolute inset-y-0 flex',
+          side === 'left' ? 'left-0' : 'right-0',
+          shut && 'invisible'
+        )}
+        style={{
+          transform: open ? undefined : `translateX(${side === 'left' ? '-100%' : '100%'})`,
+          width,
+        }}
+        inert={!open}
+        aria-hidden={!open || undefined}
+      >
+        {children}
+      </div>
     </div>
   )
 }

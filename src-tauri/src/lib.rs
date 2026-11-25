@@ -4,6 +4,7 @@ pub mod browser;
 pub mod chat;
 pub mod git;
 pub mod git_write;
+pub mod ground;
 pub mod host;
 pub mod host_client;
 pub mod mcp;
@@ -188,6 +189,7 @@ pub fn run() {
             store::chat_forget,
             store::read_settings,
             store::write_setting,
+            ground::window_ground,
             store::setup_status,
             store::ensure_setup_script,
             store::edit_setup_script,
