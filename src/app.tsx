@@ -57,6 +57,7 @@ import { useQuotas } from './app/use-quotas'
 import { useReports } from './app/use-reports'
 import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
+import { useAttentionKey, useWatching } from './app/use-window-watch'
 import { isDockTag } from './app/workspace-dock'
 import { onPrMerged } from './cards/pr-store'
 import { availableCommands } from './chat/commands'
@@ -268,17 +269,7 @@ export function App() {
     if (chatOnScreen === undefined) return
     void chats.wake(chatOnScreen).catch(() => {})
   }, [chatOnScreen, chats])
-  useEffect(() => {
-    const look = async () => {
-      const focused = await getCurrentWindow().isFocused()
-      watching.current = focused && mode === 'normal' ? (active?.id ?? null) : null
-      if (watching.current !== null) chats.seen(watching.current)
-    }
-    void look()
-    const window_ = getCurrentWindow()
-    const unlisten = window_.onFocusChanged(() => void look())
-    return () => void unlisten.then((f) => f())
-  }, [active?.id, chats, mode])
+  useWatching(watching, mode === 'normal' ? (active?.id ?? null) : null, chats.seen)
 
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
@@ -344,18 +335,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  // While the attention toast is up, ⌘↩ opens its chat: it goes first, so the chat on screen
-  // does not take it as Allow.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && !e.shiftKey && e.key === 'Enter' && keys.current.attention()) {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-      }
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [])
+  useAttentionKey(() => keys.current.attention())
 
   useNoBrowserMenu()
 
