@@ -741,9 +741,7 @@ export function GroundPanel() {
   const [motion, setMotion] = useState<Motion>(null)
   // Where a double click puts the transparency back: as the picker opened.
   const [opened] = useState(() => transparencyOf(live.opacity))
-  const paint = paintOf(live)
   const transparency = transparencyOf(live.opacity)
-  const clamped = live.opacity < paint.opacity
 
   const drag = (g: Ground) => {
     setMotion(null)
@@ -814,11 +812,6 @@ export function GroundPanel() {
               }
             />
           </div>
-          {clamped && (
-            <p className="text-faint text-xs">
-              Held at {pct(transparencyOf(paint.opacity))} so the sidebar stays readable.
-            </p>
-          )}
         </div>
       )}
     </div>
