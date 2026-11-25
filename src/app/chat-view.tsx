@@ -134,8 +134,6 @@ interface Props {
   place?: string
   /** Toasts, floated at the pane's right just above the question and the composer. */
   above?: ReactNode
-  /** A turn footer's file chip: git mode on that file (relative path), or on all (`null`). */
-  onOpenFile?: (path: string | null) => void
 }
 
 /** A key cap on the ink button. */
@@ -275,7 +273,6 @@ export function ChatView({
   onAskUsage,
   onCommand,
   onInterrupt,
-  onOpenFile,
   onSend,
   onShell,
   onStopTask,
@@ -316,10 +313,6 @@ export function ChatView({
   const twin = useRef<HTMLTextAreaElement>(null)
   // The commands the prompt names, marked behind its text: drawn in a copy laid out like it.
   const marks = useRef<HTMLDivElement>(null)
-  // A stable handler, so typing (which redraws this view) leaves the transcript alone.
-  const latestOpen = useRef(onOpenFile)
-  latestOpen.current = onOpenFile
-  const openFile = useCallback((path: string | null) => latestOpen.current?.(path), [])
   // A sub-agent's chat open in place of the conversation (its call's id), per chat.
   const [viewing, setViewing] = useState<{ chat: string; agent: string } | null>(null)
   const run = viewing?.chat === id ? agentRun(state, viewing.agent) : null
@@ -694,7 +687,6 @@ export function ChatView({
           intro={intro}
           question={questionCard}
           onOpenAgent={openAgent}
-          onOpenFile={openFile}
         />
       )}
       {/* Toasts float at the pane's right, above the question and the composer. */}

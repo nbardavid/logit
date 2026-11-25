@@ -100,7 +100,7 @@ shows them all.
 **Surfaces are neutral, inks are warm.** Fills carry no beige; the warmth is in the text.
 
 **Surfaces.** Three levels: the `ground` (window, sidebar), the white sheets on it (chat,
-right panel, git mode's page; `rounded-xl shadow-sheet`), and floating surfaces over
+right panel; `rounded-xl shadow-sheet`), and floating surfaces over
 everything (menus, popovers, dialogs; `shadow-popover`/`shadow-dialog`). Inside the sidebar,
 the selected row is a white pill (`bg-background shadow-pill`); hover is `ground-hover`.
 Between sheets the 10px gap is the resize handle: invisible at rest, a 1px line on hover.

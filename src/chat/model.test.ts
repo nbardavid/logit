@@ -3,9 +3,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   addNote,
   addUserTurn,
+  appNote,
   artifactUrl,
   type Block,
   type ChatState,
+  contextLine,
   contextUsageLine,
   contextUsed,
   contextWindow,
@@ -200,6 +202,12 @@ describe('reduceLine', () => {
     const state = reduceLine(initialChat, sent)
     expect(state.turns.at(-1)?.role).toBe('user')
     expect(state.turns.at(-1)?.blocks[0]).toEqual({ kind: 'text', text: 'hi there' })
+  })
+
+  test('a replayed app note is never drawn', () => {
+    const note = appNote('I merged pull request #3.')
+    const sent = JSON.stringify({ message: JSON.parse(contextLine(note)), type: 'logit_sent' })
+    expect(reduceLine(initialChat, sent).turns).toEqual([])
   })
 
   test('a replayed answer clears the permission', () => {

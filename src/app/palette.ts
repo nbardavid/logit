@@ -52,7 +52,6 @@ export interface ActionDeps {
   openFolder: () => void
   createTab: (kind: 'chat' | 'terminal') => void
   askForPr: (w: Workspace) => void
-  showDiff: () => void
   /** The git panel's head asks its merge question (never a merge unasked). */
   askMerge: () => void
   /** After a push: read git again, or say what failed. */
@@ -77,7 +76,6 @@ export function runPaletteAction(id: string, d: ActionDeps) {
   const { path } = d.ws
   if (id === 'chat' || id === 'terminal') d.createTab(id)
   else if (id === 'ask-pr') d.askForPr(d.ws)
-  else if (id === 'diff') d.showDiff()
   else if (id === 'panel') d.update({ gitOpen: !d.panelOpen })
   else if (id === 'open-pr' && d.pr) void openUrl(d.pr.url)
   else if (id === 'merge') d.askMerge()

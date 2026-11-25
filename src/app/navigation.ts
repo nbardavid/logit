@@ -155,7 +155,6 @@ export function paletteActions(c: ActionContext): PickerItem[] {
     },
     c.canMerge && c.pr !== null && { key: 'action:merge', label: `Merge #${c.pr}` },
     c.pr !== null && { key: 'action:open-pr', label: `Open #${c.pr} on GitHub` },
-    c.workspace && { key: 'action:diff', label: 'Review the diff', meta: '⌘G' },
     {
       key: 'action:sidebar',
       label: c.sideOpen ? 'Hide the sidebar' : 'Show the sidebar',

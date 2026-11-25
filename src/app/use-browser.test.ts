@@ -13,7 +13,6 @@ const on = {
 test('the page shows only on screen, settled and uncovered', () => {
   expect(browserShown(on)).toBe(true)
   expect(browserShown({ ...on, mode: 'settings' })).toBe(false)
-  expect(browserShown({ ...on, mode: 'git' })).toBe(false)
   expect(browserShown({ ...on, panelOpen: false })).toBe(false)
   expect(browserShown({ ...on, view: 'changes' })).toBe(false)
   expect(browserShown({ ...on, covered: true })).toBe(false)

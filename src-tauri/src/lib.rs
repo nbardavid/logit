@@ -198,7 +198,6 @@ pub fn run() {
             quota::write_quota_cache,
             quota::fetch_claude_usage,
             git::git_status,
-            git::git_diff,
             git::git_branches,
             git::pr_view,
             git::pr_view_url,

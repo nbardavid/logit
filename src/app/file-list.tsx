@@ -26,8 +26,6 @@ export interface FileActions {
 
 interface Props {
   changes: FileChange[]
-  selected?: string
-  onOpen: (file: FileChange) => void
   actions?: FileActions
 }
 
@@ -121,7 +119,7 @@ export function squareOf(file: FileChange): keyof typeof SQUARE {
 }
 
 /** `+n −n` (or "binary"), then the square. */
-export function FileMeta({ file }: { file: FileChange }) {
+function FileMeta({ file }: { file: FileChange }) {
   const square = SQUARE[squareOf(file)]
   return (
     <>
@@ -152,19 +150,8 @@ const shownOnRow =
   'group-hover/file:visible group-hover/file:opacity-100 group-focus-within/file:visible group-focus-within/file:opacity-100'
 const hiddenOnRow = 'group-hover/file:opacity-0 group-focus-within/file:opacity-0'
 
-function Row({
-  actions,
-  file,
-  onOpen,
-  selected,
-  side,
-}: {
-  file: FileChange
-  side: Side
-  selected: boolean
-  onOpen: (file: FileChange) => void
-  actions?: FileActions
-}) {
+/** A changed file: a readout (it opens nothing); with actions, they show over its end on hover. */
+function Row({ actions, file, side }: { file: FileChange; side: Side; actions?: FileActions }) {
   // Discarding asks twice, as the TUI does: the first click arms, the second throws away.
   const [armed, setArmed] = useState(false)
   const { dir, name } = split(file.path)
@@ -172,16 +159,11 @@ function Row({
     <div
       className={cn(
         'group/file relative flex h-8 w-full items-center rounded-md transition-colors duration-120 ease-out',
-        selected ? 'bg-active' : 'hover:bg-hover'
+        actions && 'hover:bg-hover'
       )}
       onMouseLeave={() => setArmed(false)}
     >
-      <button
-        type="button"
-        className="flex h-full min-w-0 flex-1 items-center gap-3 pr-2 pl-2"
-        aria-current={selected || undefined}
-        onClick={() => onOpen(file)}
-      >
+      <div className="flex h-full min-w-0 flex-1 items-center gap-3 pr-2 pl-2">
         <PathLabel dir={dir} name={name} path={file.path} />
         {/* The row's actions take this slot on hover: the row never widens. */}
         <span
@@ -192,7 +174,7 @@ function Row({
         >
           <FileMeta file={file} />
         </span>
-      </button>
+      </div>
       {actions && (
         <span
           className={cn(
@@ -254,8 +236,6 @@ function Section({
   actions,
   files,
   label,
-  onOpen,
-  selected,
   side,
 }: Omit<Props, 'changes'> & { label: string; files: FileChange[]; side: Side }) {
   if (files.length === 0) return null
@@ -279,14 +259,7 @@ function Section({
         )}
       </div>
       {files.map((file) => (
-        <Row
-          key={`${side}:${file.path}`}
-          file={file}
-          side={side}
-          selected={file.path === selected}
-          onOpen={onOpen}
-          actions={actions}
-        />
+        <Row key={`${side}:${file.path}`} file={file} side={side} actions={actions} />
       ))}
     </div>
   )
@@ -296,7 +269,7 @@ function Section({
  * The list's two sections. Untracked files are folded into Changes, after the tracked ones:
  * a new file is an added file not staged yet. A file half staged shows in both.
  */
-function sections(changes: FileChange[]) {
+export function sections(changes: FileChange[]) {
   return {
     changes: [
       ...changes.filter((f) => !f.untracked && f.unstaged),
@@ -304,17 +277,6 @@ function sections(changes: FileChange[]) {
     ],
     staged: changes.filter((f) => f.staged),
   }
-}
-
-/** Each file once, in the order the list shows them: what ↑ and ↓ walk through. */
-export function listOrder(changes: FileChange[]): FileChange[] {
-  const { changes: changed, staged } = sections(changes)
-  const seen = new Set<string>()
-  return [...staged, ...changed].filter((f) => {
-    if (seen.has(f.path)) return false
-    seen.add(f.path)
-    return true
-  })
 }
 
 /** A quiet empty state, 96px from the top: a 20px icon and one line. */

@@ -87,7 +87,6 @@ import {
   BRANCHES,
   catalog,
   CONTEXT_OUTPUT,
-  diffOf,
   freshChat,
   GIT_BRANCH,
   GIT_STATUS,
@@ -781,8 +780,6 @@ function handle(cmd: string, args: Args): unknown {
       return GIT_BRANCH[path] ?? null
     case 'pr_view':
       return PRS[path] === undefined ? null : JSON.stringify(PRS[path])
-    case 'git_diff':
-      return diffOf(path, str(args.file))
     case 'git_stage': {
       const files = args.all === true ? 'all' : (args.files as string[])
       setGitFlags(path, files, { staged: true, unstaged: false, untracked: false })

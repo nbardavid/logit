@@ -657,7 +657,6 @@ function TurnFooter({
   answer,
   end,
   files,
-  onOpenFile,
   worked,
 }: {
   answer: string
@@ -665,7 +664,6 @@ function TurnFooter({
   files: ChangedFile[]
   /** Claude worked (a message or a tool), so its length means something. */
   worked: boolean
-  onOpenFile?: (path: string | null) => void
 }) {
   const more = files.length - CHIPS
   const timed = worked && end.durationMs > 0
@@ -683,16 +681,19 @@ function TurnFooter({
       )}
       {answer !== '' && <CopyButton label="Copy answer" text={() => answer} />}
       {files.slice(0, CHIPS).map((file) => (
-        <FileChip key={file.path} file={file} onOpen={() => onOpenFile?.(file.path)} />
+        <FileChip key={file.path} file={file} />
       ))}
       {more > 0 && (
-        <button
-          type="button"
-          className={cn(CHIP, 'text-muted-foreground hover:text-foreground text-xs')}
-          onClick={() => onOpenFile?.(null)}
+        <span
+          className={cn(CHIP, 'text-muted-foreground text-xs')}
+          data-tip={files
+            .slice(CHIPS)
+            .map((f) => f.path)
+            .join('\n')}
+          data-tip-side="top"
         >
           +{more} files
-        </button>
+        </span>
       )}
     </div>
   )
@@ -704,7 +705,6 @@ function ExchangeView({
   cwd,
   exchange,
   onOpenAgent,
-  onOpenFile,
 }: {
   exchange: Exchange
   /** The chat's PR cards, by where they go (`chatPrCards`). */
@@ -712,7 +712,6 @@ function ExchangeView({
   cwd: string
   agentOf: (id: string) => AgentRun | null
   onOpenAgent?: (id: string) => void
-  onOpenFile?: (path: string | null) => void
 }) {
   const { answer, blocks, end, items, live, user } = exchange
   // What `/context` printed: its card starts folded to the totals.
@@ -782,7 +781,6 @@ function ExchangeView({
               end={end}
               files={changedFiles(blocks, cwd)}
               worked={worked}
-              onOpenFile={onOpenFile}
             />
           )}
         </div>
@@ -862,8 +860,6 @@ interface Props {
   intro?: ReactNode
   /** The workspace's name; its folder's by default. */
   place?: string
-  /** A footer's file chip: git mode on that file (relative path), or on all (`null`). */
-  onOpenFile?: (path: string | null) => void
   /** A sub-agent's chat, watched: nothing here can be stopped. */
   watch?: boolean
   /** A sub-agent's card: its own chat. Without it, agent calls show as plain tool rows. */
@@ -921,7 +917,6 @@ export const Transcript = memo(function Transcript({
   intro,
   memory,
   onOpenAgent,
-  onOpenFile,
   place,
   question,
   state,
@@ -1062,7 +1057,6 @@ export const Transcript = memo(function Transcript({
                   cwd={cwd}
                   agentOf={(id) => agentRun(state, id)}
                   onOpenAgent={onOpenAgent}
-                  onOpenFile={onOpenFile}
                 />
               </div>
             ))}
