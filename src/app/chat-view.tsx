@@ -46,6 +46,7 @@ import { overlayShown } from './overlay'
 import { clipboardImages, readImage } from './pasted-images'
 import { PixelWipe } from './pixel-wipe'
 import { type CardHandle, numbersOf, QuestionCard } from './question-card'
+import { Dot } from './status-dot'
 import { QueuedPrompts, Transcript } from './transcript'
 import { ChatVeil } from './wallpaper'
 
@@ -92,7 +93,7 @@ const segments = (text: string, named: { end: number; start: number }[]) => {
 const SHELL_FIELD = 'pl-9 caret-tan'
 
 const COMPOSER_FIELD =
-  'min-h-0 rounded-none border-0 bg-transparent px-4 pt-2.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100'
+  'min-h-0 rounded-none border-0 bg-transparent px-4 pt-3.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100'
 
 interface Props {
   /** The chat's id: a new one is a chat navigated to, whose composer takes the focus. */
@@ -139,10 +140,17 @@ interface Props {
 
 /** A key cap on the ink button. */
 const KBD_INK = 'text-white/60'
-// The card dims as a whole while the turn stops: its buttons don't dim a second time.
-const ANSWER = 'disabled:opacity-100'
+// The row dims as a whole while the turn stops: its buttons don't dim a second time.
+const ANSWER = 'h-6 rounded-md px-2.5 text-sm font-normal disabled:opacity-100'
+/** Deny and Always allow: plain words on the row, grey under the pointer. */
+const QUIET_ANSWER = cn(ANSWER, 'text-ink-soft/85 hover:bg-active hover:text-foreground')
 
-function PermissionCard({
+/**
+ * Claude asks to use a tool: one row on top of the composer (DESIGN.md › The permission row):
+ * a waiting dot, the tool and what it would run, then Deny, Always allow and Allow with their
+ * shortcuts. A long command wraps (up to 4 lines, then scrolls).
+ */
+function PermissionRow({
   cwd,
   disabled,
   onAnswer,
@@ -157,26 +165,28 @@ function PermissionCard({
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-lg border border-line-strong bg-background px-3.5 py-3 transition-opacity duration-160',
-        'animate-in fade-in slide-in-from-bottom-[6px] duration-200 ease-out',
+        'bg-chrome flex items-center gap-3 rounded-t-xl border-b py-2 pr-2.5 pl-3.5 text-sm transition-opacity duration-160',
+        'animate-in fade-in duration-200 ease-out',
         disabled && 'opacity-60'
       )}
       aria-disabled={disabled || undefined}
       role="alertdialog"
       aria-label={`Allow ${permission.toolName}?`}
     >
-      <div className="text-base">
-        Allow <b className="font-semibold">{permission.toolName}</b>?
-      </div>
-      <code className="max-h-[120px] overflow-auto rounded-md bg-chrome px-2.5 py-2 font-mono text-[12.5px] leading-5 whitespace-pre-wrap wrap-anywhere text-ink-soft">
-        {toolSummary(permission.toolName, permission.input, cwd) || permission.description}
-      </code>
+      <span className="grid size-3.5 flex-none place-items-center">
+        <Dot tone="waiting" />
+      </span>
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span className="text-foreground flex-none">{permission.toolName}</span>
+        <code className="text-foreground line-clamp-4 max-h-20 min-w-0 overflow-auto font-mono text-mono whitespace-pre-wrap wrap-anywhere select-text">
+          {toolSummary(permission.toolName, permission.input, cwd) || permission.description}
+        </code>
+      </span>
       {/* No button takes the focus: a key meant for the composer never answers. */}
-      <div className="flex justify-end gap-1.5">
+      <div className="flex flex-none items-center gap-1">
         <Button
-          variant="secondary"
-          size="sm"
-          className={ANSWER}
+          variant="ghost"
+          className={QUIET_ANSWER}
           aria-keyshortcuts="Meta+Backspace"
           disabled={disabled}
           onClick={() => onAnswer(permission, 'deny')}
@@ -186,9 +196,8 @@ function PermissionCard({
         </Button>
         {permission.suggestions.length > 0 && (
           <Button
-            variant="secondary"
-            size="sm"
-            className={ANSWER}
+            variant="ghost"
+            className={QUIET_ANSWER}
             aria-keyshortcuts="Shift+Meta+Enter"
             disabled={disabled}
             onClick={() => onAnswer(permission, 'always')}
@@ -198,7 +207,6 @@ function PermissionCard({
           </Button>
         )}
         <Button
-          size="sm"
           className={ANSWER}
           aria-keyshortcuts="Meta+Enter"
           disabled={disabled}
@@ -611,12 +619,57 @@ export function ChatView({
     }
   }
 
+  // A question open: the composer is its free answer, and Stop gives way to a calm state.
+  const answering = questions !== null && !state.stopping && !off
+  const waiting = answering && draft.trim() === '' && images.length === 0
   let placeholder = 'Ask Claude, / for a command, ! for the shell'
   if (onShell === undefined) placeholder = 'Ask Claude, or type / for a command'
   if (blocked) placeholder = 'Read-only until the background process restarts'
   else if (state.status === 'exited') placeholder = 'Claude has stopped. Send to start it again'
   else if (shellMode) placeholder = 'Enter a command'
   else if (questions !== null) placeholder = 'Answer Claude, or type an option’s number'
+
+  // Claude waits on the question: nothing to stop, the answer is the user's. Typing turns it
+  // into Send (the words go as the answer).
+  let action: ReactNode
+  if (waiting)
+    action = (
+      <span
+        className="text-muted-foreground animate-in fade-in flex h-7 flex-none items-center gap-1.5 pr-1.5 pl-1 text-xs font-medium duration-160 ease-out"
+        role="status"
+      >
+        <Dot tone="waiting" />
+        Waiting for you
+      </span>
+    )
+  else if (working && !answering)
+    action = (
+      <Button
+        size="icon"
+        className={SEND}
+        aria-label={state.stopping ? 'Stopping' : 'Stop (Esc)'}
+        data-tip={state.stopping ? 'Stopping…' : 'Stop · Esc'}
+        data-tip-side="top"
+        disabled={state.stopping}
+        onClick={onInterrupt}
+      >
+        <SquareIcon className="size-[10px] fill-current" />
+      </Button>
+    )
+  else
+    action = (
+      <Button
+        size="icon"
+        className={SEND}
+        aria-label={shellMode ? 'Run (Enter)' : 'Send (Enter)'}
+        data-tip={shellMode ? 'Run · Enter' : 'Send · Enter'}
+        data-tip-side="top"
+        disabled={off || (draft.trim() === '' && images.length === 0)}
+        onClick={() => submit()}
+      >
+        <ArrowUpIcon className="size-4" />
+      </Button>
+    )
 
   return (
     <div className="relative isolate flex min-h-0 flex-1 flex-col" ref={root}>
@@ -625,14 +678,15 @@ export function ChatView({
         <>
           <AgentBar run={run} place={place ?? 'Chat'} onBack={back} onStop={onStopTask} />
           <Transcript key={run.call.id} cwd={cwd} state={run.chat} blocked={false} watch />
-          <div className="text-label mx-auto w-full max-w-[752px] flex-none border-t border-dashed px-4 py-3 text-center text-xs">
+          <div className="text-label mx-auto w-full max-w-[712px] flex-none border-t border-dashed px-4 py-3 text-center text-xs">
             Read only: a sub-agent takes no messages
           </div>
         </>
       ) : (
         <Transcript
-          // Each chat opens on its own last page.
+          // Each chat opens where it was left, else on its own last page.
           key={id}
+          memory={id}
           cwd={cwd}
           place={place}
           state={state}
@@ -646,30 +700,36 @@ export function ChatView({
       {/* Toasts float at the pane's right, above the question and the composer. */}
       <div className={cn('relative flex-none', run && 'hidden')}>
         {above}
-        {/* The column's 720px and 16px either side: 752px of composer. */}
-        <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
+        {/* The column's 680px and 16px either side: 712px of composer. */}
+        <div className="relative mx-auto flex w-full max-w-[744px] flex-col gap-3 px-4 pb-5">
           <RunningAgents runs={runningAgents(state)} onOpen={openAgent} onStop={onStopTask} />
-          {permission !== undefined && questions === null && (
-            <PermissionCard
-              cwd={cwd}
-              permission={permission}
-              disabled={state.stopping}
-              onAnswer={onAnswer}
-            />
-          )}
           {/* The `/` menu floats over the composer: the composer itself never moves. */}
           <div
             data-composer
             className={cn(
-              'group/composer shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color] duration-120 ease-out',
+              'group/composer shadow-composer focus-within:shadow-composer-focus relative flex flex-col rounded-xl transition-[box-shadow] duration-120 ease-out',
               off ? 'bg-chrome' : 'bg-background',
               shellMode && 'composer-shell'
             )}
           >
             {onShell !== undefined && <PixelWipe on={shellMode} />}
+            {/* Claude asks to use a tool: its row tops the composer. */}
+            {permission !== undefined && questions === null && (
+              <PermissionRow
+                cwd={cwd}
+                permission={permission}
+                disabled={state.stopping}
+                onAnswer={onAnswer}
+              />
+            )}
             {/* Prompts sent while Claude works: one line each, at the top of the box. */}
             {state.queued.length > 0 && (
-              <div className="flex flex-col overflow-hidden rounded-t-lg">
+              <div
+                className={cn(
+                  'flex flex-col overflow-hidden',
+                  (permission === undefined || questions !== null) && 'rounded-t-xl'
+                )}
+              >
                 <QueuedPrompts
                   turns={state.queued}
                   onEdit={onUnqueue && ((turns) => void takeBack(turns, true))}
@@ -721,14 +781,14 @@ export function ChatView({
               <span
                 aria-hidden
                 className="text-tan pointer-events-none absolute left-4 z-10 text-base leading-6 font-semibold"
-                style={{ top: field.current ? field.current.offsetTop + 10 : undefined }}
+                style={{ top: field.current ? field.current.offsetTop + 14 : undefined }}
               >
                 $
               </span>
             )}
             <Textarea
               ref={field}
-              // One line empty (74px with its toolbar); it grows as the prompt does. Above the
+              // One line empty (78px with its toolbar); it grows as the prompt does. Above the
               // marks, which show through its transparent background.
               className={cn(COMPOSER_FIELD, 'relative', shellMode && SHELL_FIELD)}
               rows={1}
@@ -781,31 +841,7 @@ export function ChatView({
                   ⌘L
                 </Kbd>
               )}
-              {working ? (
-                <Button
-                  size="icon"
-                  className={SEND}
-                  aria-label={state.stopping ? 'Stopping' : 'Stop (Esc)'}
-                  data-tip={state.stopping ? 'Stopping…' : 'Stop · Esc'}
-                  data-tip-side="top"
-                  disabled={state.stopping}
-                  onClick={onInterrupt}
-                >
-                  <SquareIcon className="size-[10px] fill-current" />
-                </Button>
-              ) : (
-                <Button
-                  size="icon"
-                  className={SEND}
-                  aria-label={shellMode ? 'Run (Enter)' : 'Send (Enter)'}
-                  data-tip={shellMode ? 'Run · Enter' : 'Send · Enter'}
-                  data-tip-side="top"
-                  disabled={off || (draft.trim() === '' && images.length === 0)}
-                  onClick={() => submit()}
-                >
-                  <ArrowUpIcon className="size-4" />
-                </Button>
-              )}
+              {action}
             </div>
           </div>
         </div>

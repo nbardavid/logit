@@ -5,7 +5,7 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { cn } from '@/lib/utils'
 
 /**
- * The app's dialogs (the ⌘N composer, Settings), also ⌘P's box: a light ink veil (8 %), a
+ * The app's dialogs (the ⌘N composer, Settings), also ⌘P's box: a light ink veil (12 %), a
  * white sheet in the upper third with a hairline and a long soft shadow, rising 6px in 180ms
  * and fading out in 110ms. No close button: Esc and a click outside close it. ⌘P drops the
  * veil with `overlayClassName="bg-transparent"`.
@@ -31,7 +31,7 @@ function DialogContent({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop
         className={cn(
-          'bg-foreground/8 data-open:animate-in data-open:fade-in-0 data-open:duration-180 data-closed:animate-out data-closed:fade-out-0 data-closed:duration-110 fixed inset-0 z-50',
+          'bg-foreground/12 data-open:animate-in data-open:fade-in-0 data-open:duration-180 data-closed:animate-out data-closed:fade-out-0 data-closed:duration-110 fixed inset-0 z-50',
           overlayClassName
         )}
         data-slot="dialog-overlay"

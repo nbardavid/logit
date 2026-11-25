@@ -8,7 +8,7 @@ import { answersOf } from '../chat/reports'
 import { splitRecommended } from './question-card'
 import { dotClass } from './status-dot'
 
-const DOT = 'size-[7px] flex-none rounded-full'
+const DOT = 'size-1.5 flex-none rounded-full'
 
 /**
  * A question once it is answered, or declined: one quiet line per question, what was picked

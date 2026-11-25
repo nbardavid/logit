@@ -47,8 +47,17 @@ describe('loaders', () => {
     expect(new Set(LOADER_NAMES).size).toBe(18)
   })
 
-  test('the orbit goes round one glyph, two dots at a time', () => {
-    expect(LOADERS.orbit.frames).toEqual(['⠃', '⠉', '⠘', '⠰', '⢠', '⣀', '⡄', '⠆'])
+  test('the orbit goes round one glyph, three dots at a time', () => {
+    expect(LOADERS.orbit.frames).toHaveLength(8)
+    for (const frame of LOADERS.orbit.frames) expect(litDots(frame)).toHaveLength(3)
+    // Its head leads: each frame adds the next dot of the path and drops the oldest.
+    expect(LOADERS.orbit.frames[0]).toBe(
+      braille(2, [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+      ])
+    )
   })
 
   test('loaders of a kind run in step, by the clock', () => {
@@ -86,6 +95,20 @@ describe('status loaders', () => {
     expect(loadersFrom({ 'ui.statusLoader': 'helix' }).status).toBe(DEFAULT_LOADERS.status)
     expect(loadersFrom({ 'ui.statusLoader': 'orbit' }).status).toBe('orbit')
     expect(loadersFrom({}).status).toBe('diagswipe')
+  })
+
+  test('a status loader never blinks out: every frame lights three dots or more', () => {
+    const thinnest = (loader: (typeof STATUS_LOADERS)[number]) =>
+      Math.min(...LOADERS[loader].frames.map((f) => litDots(f).length))
+    for (const loader of STATUS_LOADERS)
+      expect([loader, thinnest(loader) >= 3]).toEqual([loader, true])
+  })
+
+  test('the swipe wipes from corner to corner, with no blank or one-dot frame', () => {
+    const counts = LOADERS.diagswipe.frames.map((f) => litDots(f).length)
+    expect(counts[0]).toBe(3)
+    expect(counts.at(-1)).toBe(3)
+    expect(Math.max(...counts)).toBe(16)
   })
 
   test('a still loader holds its fullest frame, never a blank one', () => {

@@ -2,8 +2,17 @@ import { expect, test } from 'bun:test'
 
 import type { Project, Workspace } from '../model/catalog'
 
-import { afterClose, appShortcut, paletteItems, paletteTarget, stepThrough } from './navigation'
-import { matchParts } from './picker'
+import {
+  type ActionContext,
+  afterClose,
+  appShortcut,
+  paletteActions,
+  paletteItems,
+  paletteTarget,
+  pushKind,
+  stepThrough,
+} from './navigation'
+import { matchParts, ranked } from './picker'
 
 const project = (id: string, name: string): Project => ({
   id,
@@ -47,8 +56,9 @@ test('⌘P lists workspaces in sidebar order, then chats, then projects', () => 
     'project:p2',
   ])
   expect(items[0]).toMatchObject({
-    label: 'amber · logit',
+    label: 'amber',
     meta: 'current',
+    sub: 'logit',
   })
   expect(items[1]).toMatchObject({ meta: undefined, signal: 'waiting' })
   expect(items[3]).toMatchObject({
@@ -186,4 +196,88 @@ test('⌘P shows what the filter matched, in any case', () => {
   ])
   expect(matchParts('amber', '')).toEqual([{ hit: false, text: 'amber' }])
   expect(matchParts('amber', 'teal')).toEqual([{ hit: false, text: 'amber' }])
+})
+
+test('⌘P names a workspace by its task, with its colour word as meta', () => {
+  const items = paletteItems(projects, workspaces, [], {}, 'amber', {
+    names: {
+      amber: { colour: 'amber', task: 'Port the menus' },
+      teal: { colour: 'teal', task: 'Release notes' },
+    },
+  })
+  expect(items[0]).toMatchObject({ label: 'Port the menus', meta: 'current · amber' })
+  expect(items[1]).toMatchObject({ label: 'Release notes', meta: 'teal' })
+  // No names known: the workspace's own name, no meta.
+  expect(items[2]).toMatchObject({ label: 'violet', meta: undefined })
+})
+
+const context: ActionContext = {
+  canAskPr: false,
+  canMerge: false,
+  panelOpen: true,
+  panes: [{ id: 'appearance', label: 'Appearance' }],
+  pr: null,
+  push: null,
+  sideOpen: true,
+  workspace: true,
+}
+
+test('⌘P lists only the actions that apply, each with its shortcut', () => {
+  const keys = (c: Partial<ActionContext>) =>
+    paletteActions({ ...context, ...c }).map((i) => i.key.slice('action:'.length))
+  expect(keys({})).toEqual([
+    'chat',
+    'terminal',
+    'workspace',
+    'diff',
+    'sidebar',
+    'panel',
+    'settings',
+    'ground',
+    'pane:appearance',
+    'open-folder',
+  ])
+  expect(keys({ workspace: false })).toEqual([
+    'workspace',
+    'sidebar',
+    'settings',
+    'ground',
+    'pane:appearance',
+    'open-folder',
+  ])
+  expect(keys({ canMerge: true, pr: 12, push: 'push' })).toContain('merge')
+  expect(keys({ canMerge: true, pr: null })).not.toContain('merge')
+  expect(keys({ canAskPr: true })).toContain('ask-pr')
+  const items = paletteActions({ ...context, pr: 12, sideOpen: false })
+  expect(items.find((i) => i.key === 'action:chat')).toMatchObject({
+    meta: '⌘T',
+    section: 'Actions',
+  })
+  expect(items.find((i) => i.key === 'action:sidebar')?.label).toBe('Show the sidebar')
+  expect(items.find((i) => i.key === 'action:open-pr')?.label).toBe('Open #12 on GitHub')
+  expect(paletteTarget('action:pane:about')).toEqual({ id: 'pane:about', kind: 'action' })
+})
+
+test('Push publishes a branch with no upstream, and pushes only with commits ahead', () => {
+  expect(pushKind({ ahead: 0, upstream: false })).toBe('publish')
+  expect(pushKind({ ahead: 2, upstream: true })).toBe('push')
+  expect(pushKind({ ahead: 0, upstream: true })).toBeNull()
+})
+
+test('⌘P ranks a label that starts with the query, then a word of it, then anywhere', () => {
+  const item = (label: string, sub?: string) => ({ key: label, label, sub })
+  const items = [
+    item('Ask for PR'),
+    item('Open #12 on GitHub'),
+    item('New terminal'),
+    item('Push', 'terminal sub'),
+    item('Terminal colours'),
+  ]
+  expect(ranked(items, 'term').map((i) => i.key)).toEqual([
+    'Terminal colours',
+    'New terminal',
+    'Push',
+  ])
+  expect(ranked(items, 'pr').map((i) => i.key)).toEqual(['Ask for PR'])
+  expect(ranked(items, '  ')).toBe(items)
 })

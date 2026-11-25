@@ -64,10 +64,13 @@ function Intelligence({ models, onChange, value }: Props) {
                 style={{ left: `${(i / (levels.length - 1)) * 100}%` }}
               />
             ))}
+            {/* The knob rides a track-wide layer that slides (transform, not `left`). */}
             <span
-              className="bg-foreground absolute top-1/2 h-5 w-2.5 -translate-1/2 rounded-[4px] shadow-[0_1px_2px_rgb(43_40_38/0.25)] transition-[left] duration-200 ease-out"
-              style={{ left: `${(at / (levels.length - 1)) * 100}%` }}
-            />
+              className="absolute inset-0 transition-transform duration-200 ease-out motion-reduce:transition-none"
+              style={{ transform: `translateX(${(at / (levels.length - 1)) * 100}%)` }}
+            >
+              <span className="bg-foreground absolute top-1/2 left-0 h-5 w-2.5 -translate-1/2 rounded-sm shadow-[0_1px_2px_rgb(43_40_38/0.25)]" />
+            </span>
           </div>
         </div>
         <input

@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react'
+
 import { Menu } from '@base-ui/react/menu'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -12,6 +14,8 @@ import { cn } from '@/lib/utils'
 
 export interface MenuAction {
   label: string
+  /** 14px, faint, leading the row; every row of a menu has one, so labels line up. */
+  icon?: LucideIcon
   run: () => void | Promise<void>
   danger?: boolean
   /** Its key, shown at the right as a plain glyph: `⌘W`. */
@@ -133,6 +137,9 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
                     closeOnClick={false}
                     onClick={() => pick(item)}
                   >
+                    {item.icon !== undefined && (
+                      <item.icon className={cn(item.danger === true && 'text-critical-ink')} />
+                    )}
                     {item.label}
                     {item.shortcut !== undefined && (
                       <span className={menuShortcutClass}>{item.shortcut}</span>

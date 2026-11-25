@@ -1,9 +1,11 @@
 @import 'tailwindcss' source('.');
 @import 'tw-animate-css';
 
-/* A flat white app with warm inks: neutral fills, hairlines between panes, grey for what is
-   selected, one tan underline for the tab on screen. Colour otherwise says what needs
-   attention. The values are DESIGN.md's Tokens table; change them there too.
+/* Canvas: a warm-grey window ground, the sidebar drawn straight on it, and the chat and the
+   right panel as white sheets inset from it (a 12px corner, a soft shadow, 8px apart). Inside
+   the sheets: soft fills instead of borders, quiet lines instead of cards, one tan accent.
+   Colour otherwise says what needs attention, as small dots and words. The values are
+   DESIGN.md's Tokens table; change them there too.
 
    The tokens are shadcn's names (background, foreground, muted, accent, border, ring,
    sidebar…) plus the app's own (good, warn, critical and their inks and washes, chrome,
@@ -16,66 +18,85 @@
   --radius: 8px;
 
   --background: #ffffff;
-  --foreground: #282725;
+  --foreground: #1d1c1a;
   --card: #ffffff;
-  --card-foreground: #282725;
+  --card-foreground: #1d1c1a;
   --popover: #ffffff;
-  --popover-foreground: #282725;
+  --popover-foreground: #1d1c1a;
   /* The ink button: the one filled action. */
-  --primary: #282725;
+  --primary: #1d1c1a;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f3;
-  --secondary-foreground: #282725;
-  --muted: #f4f4f3;
-  --muted-foreground: #6c6a69;
+  --secondary: #f4f3f1;
+  --secondary-foreground: #1d1c1a;
+  /* The soft fill: the tab on screen, a segmented control's track, inline code. */
+  --muted: #f4f3f1;
+  --muted-foreground: #6f6b67;
   /* What a hovered or highlighted row turns: a grey, never a colour. */
-  --accent: #f4f4f3;
-  --accent-foreground: #282725;
-  --destructive: #b8473a;
+  --accent: #f4f3f1;
+  --accent-foreground: #1d1c1a;
+  --destructive: #b8463a;
   --destructive-foreground: #ffffff;
-  --border: #ebeae9;
-  --input: #dddbd9;
+  /* Hairlines inside a sheet (under its top bar), rare. */
+  --border: #efeeec;
+  --input: #e8e6e3;
   --ring: #c29c87;
 
-  --sidebar: #fdfcfc;
-  --sidebar-foreground: #282725;
-  --sidebar-primary: #282725;
+  /* The window's ground: the sidebar sits straight on it, the sheets float on it. The user
+     picks it (Settings › Appearance, or right-click the ground): ground-store.ts then sets
+     these on the root. `--ground` is the colour, opaque; `--ground-paint` the window's paint,
+     translucent when the desktop shows through. */
+  --ground: #efeeec;
+  --ground-paint: var(--ground);
+  /* The main colour at the paint's opacity (a gradient's first), and the paint as an image. */
+  --ground-tint: var(--ground);
+  --ground-layer: linear-gradient(var(--ground), var(--ground));
+  /* A sidebar row under the pointer, on the ground (an overlay once a ground is picked). */
+  --ground-hover: #e7e6e3;
+  /* Noise over the ground only: one static 128px tile, at this opacity (0 is none). */
+  --grain: 0;
+  --grain-tile: none;
+  --sidebar: var(--ground);
+  /* A panel's own neutral list (Settings' nav, git's files): never the picked ground. */
+  --well: #efeeec;
+  --sidebar-foreground: #3b3936;
+  --sidebar-primary: #1d1c1a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #efefee;
-  --sidebar-accent-foreground: #282725;
-  --sidebar-border: #ebeae9;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #111110;
+  --sidebar-border: transparent;
   --sidebar-ring: #c29c87;
 
   /* The app's own. Status colours, and for each the ink that sets text on a wash of it. */
-  --good: #4d8a5b;
+  --good: #3c9a5f;
   --good-ink: #2f6b3e;
   --good-wash: #f3f8f3;
-  --warn: #c99a1e;
+  --warn: #d6951c;
   --warn-ink: #7a5a08;
-  --critical: #b8473a;
-  --critical-ink: #9e3324;
+  --critical: #d04a3c;
+  --critical-ink: #b8463a;
   --critical-wash: #fbf3f2;
   --neutral: #b4b8bf;
   /* The Merge button. */
-  --merge: #2f8a4c;
-  --merge-hover: #287a42;
+  --merge: #2a8045;
+  --merge-hover: #23713b;
   /* Only the active-tab underline and ::selection. */
   --tan: #c29c87;
   /* A command the prompt names, marked behind its text. */
   --command: color-mix(in srgb, var(--tan) 24%, transparent);
-  /* The tab band, the composer, code blocks, command cards. */
-  --chrome: #fafaf9;
-  /* The user's bubble in a chat. */
-  --bubble: #f7f6f4;
+  /* A quiet band inside a sheet: the permission row, a disabled composer. */
+  --chrome: #fbfaf9;
+  /* Code: blocks, tool output, command cards; a soft fill, never a border. */
+  --code: #f7f6f4;
+  --bubble: var(--code);
   --hover: var(--accent);
-  --active: #efefee;
-  --label: #a3a19f;
-  --faint: #8d8885;
-  --ink-soft: #3d3a38;
+  --active: #efeeec;
+  --label: #a29d97;
+  --faint: #8f8a85;
+  --ink-soft: #2e2c2a;
   /* The turn ruler's ticks. */
   --tick: #dcdbd9;
   /* The ink button's hover. */
-  --line-ink: #4a4644;
+  --line-ink: #4a4744;
   --line-strong: var(--input);
   --term-fg: var(--foreground);
   /* The composer in shell mode (`!`): a terminal bar. */
@@ -83,12 +104,20 @@
   --shell-ink: #ecebe9;
   --shell-dim: #8d8885;
   --term-bg: var(--background);
-  /* One height for every bar on the top edge, so their hairlines line up. */
-  --bar: 40px;
+  /* One height for every bar on a sheet's top edge (tabs, the right panel's switch). */
+  --bar: 44px;
+  /* The gap around and between the sheets. */
+  --gap: 10px;
   --mono: 'Geist Mono', ui-monospace, monospace;
   --shadow-popover: 0 0 0 1px rgb(43 40 38 / 0.06), 0 12px 32px -12px rgb(43 40 38 / 0.3);
   --shadow-dialog: 0 24px 64px -24px rgb(43 40 38 / 0.32);
-  --shadow-composer: 0 1px 2px rgb(40 39 37 / 0.04), 0 4px 12px -6px rgb(40 39 37 / 0.08);
+  --shadow-composer: 0 0 0 1px var(--input), 0 4px 16px -8px rgb(0 0 0 / 0.12);
+  --shadow-composer-focus: 0 0 0 1px #d6d3cf, 0 4px 16px -8px rgb(0 0 0 / 0.14);
+  /* A sheet on the ground: the chat, the right panel. */
+  --shadow-sheet:
+    0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.06), 0 12px 40px -10px rgb(0 0 0 / 0.14);
+  /* A white pill on a grey: the selected sidebar row, a segmented control's pick. */
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 0.5px rgb(0 0 0 / 0.05);
 
   /* Waiting's wash, beside good-wash and critical-wash: an assumption, a warn mark. */
   --warn-wash: #fbf4e2;
@@ -124,6 +153,9 @@
   /* A report's title (the Report tab); semibold. */
   --text-title: 18px;
   --text-title--line-height: 26px;
+  /* Code: blocks, diffs, a tool's target, a path to read in full (mono). */
+  --text-mono: 12.5px;
+  --text-mono--line-height: 20px;
   /* Empty-state titles only. */
   --text-lg: 20px;
   --text-lg--line-height: 28px;
@@ -136,10 +168,14 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --spacing-bar: var(--bar);
+  --spacing-gap: var(--gap);
 
   --shadow-popover: var(--shadow-popover);
   --shadow-dialog: var(--shadow-dialog);
   --shadow-composer: var(--shadow-composer);
+  --shadow-composer-focus: var(--shadow-composer-focus);
+  --shadow-sheet: var(--shadow-sheet);
+  --shadow-pill: var(--shadow-pill);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -184,8 +220,12 @@
   --color-tan: var(--tan);
   --color-command: var(--command);
   --color-side: var(--sidebar);
+  --color-well: var(--well);
   --color-chrome: var(--chrome);
   --color-bubble: var(--bubble);
+  --color-code: var(--code);
+  --color-ground: var(--ground);
+  --color-ground-hover: var(--ground-hover);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-label: var(--label);
@@ -218,7 +258,7 @@
 
   body {
     overflow: hidden;
-    background: var(--background);
+    background: var(--ground-paint);
     color: var(--foreground);
     font:
       13px/18px -apple-system,
@@ -330,6 +370,17 @@
   transition-delay: 0.45s;
 }
 
+/* tw-animate's entrances take their length from `duration-N`, which also sets the
+   transition's; with no `transition-*` of their own they would then ease every property that
+   changes (`transition-property` starts as `all`). An element that enters transitions nothing
+   unless it says what: a `transition-[…]` utility wins over this base rule. */
+@layer base {
+  [class*='animate-in'],
+  [class*='animate-out'] {
+    transition-property: none;
+  }
+}
+
 /* While a splitter is dragged. */
 body.resizing {
   cursor: col-resize;
@@ -405,9 +456,24 @@ body.resizing * {
   }
 }
 
+/* A waiting dot breathes: a soft halo swells and fades around it. The halo is a pseudo
+   element with a fixed shadow; only its opacity and scale move, so it never repaints. */
+.breathe {
+  position: relative;
+}
+.breathe::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent);
+  opacity: 0;
+  animation: breathe 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
 @keyframes breathe {
   50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent);
+    opacity: 1;
   }
 }
 
@@ -418,8 +484,8 @@ body.resizing * {
   }
 }
 
-/* A sidebar row's tint as its workspace finishes or waits: a swell, a hold, then it settles
-   to the row's own faint opacity. */
+/* A sidebar row's tint as its workspace finishes or waits: a swell, a hold, then it fades
+   back to the row's own opacity, none (Canvas keeps no lasting wash). */
 @keyframes tint {
   from {
     opacity: 0;
@@ -555,19 +621,17 @@ body.resizing * {
 
   .md code {
     padding: 1px 5px;
-    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background: var(--background);
+    background: var(--muted);
     font-family: var(--mono);
     font-size: 13px;
   }
 
   .md pre {
     overflow: auto;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
+    padding: 13px 16px;
     border-radius: var(--radius-lg);
-    background: var(--chrome);
+    background: var(--code);
     font: 12.5px/20px var(--mono);
   }
 
@@ -634,12 +698,66 @@ body.resizing * {
   mask-image: var(--veil-mask);
 }
 
+/* The grain: a fixed tile under every surface (z -1 sits under the page, over its paint), so
+   only the ground wears it. Sheets are opaque and cover it; a chat background hides it. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--grain-tile);
+  opacity: var(--grain);
+}
+
+:root[data-wallpaper] body::before {
+  display: none;
+}
+
+/* A picked ground: the sidebar (and its peek) take inks worked out from it, light on a dark
+   ground, each kept readable over the worst desktop that can show through (ground.ts). */
+:root[data-ground]:not([data-wallpaper]) .ground-inks {
+  --foreground: var(--gi-foreground);
+  --sidebar-accent-foreground: var(--gi-sidebar-accent-foreground);
+  --ink-soft: var(--gi-ink-soft);
+  --sidebar-foreground: var(--gi-sidebar-foreground);
+  --muted-foreground: var(--gi-muted-foreground);
+  --faint: var(--gi-faint);
+  --label: var(--gi-label);
+  color: var(--foreground);
+}
+
+/* On a dark ground the state words (PR ready, Blocked, To review) take their light inks. */
+:root[data-ground='dark']:not([data-wallpaper]) .ground-inks {
+  --good-ink: #8fd6a4;
+  --warn-ink: #f2c55e;
+  --critical-ink: #ff9a8c;
+}
+
+/* The picked row stays a white pill, a sheet: it keeps the app's own inks (as in :root). */
+:root[data-ground]:not([data-wallpaper]) .ground-inks .bg-background {
+  --foreground: #1d1c1a;
+  --sidebar-accent-foreground: #111110;
+  --ink-soft: #2e2c2a;
+  --sidebar-foreground: #3b3936;
+  --muted-foreground: #6f6b67;
+  --faint: #8f8a85;
+  --label: #a29d97;
+  --good-ink: #2f6b3e;
+  --warn-ink: #7a5a08;
+  --critical-ink: #b8463a;
+}
+
 /* Glass: with a chat background on, everything around the chat (sidebar, bars, panels,
    pages) sits on the scene, frosted. Inside, fills go translucent and hairlines go ink. */
 :root[data-wallpaper] .glass {
   --background: rgb(255 255 255 / 0.5);
   --chrome: rgb(255 255 255 / 0.35);
   --sidebar: transparent;
+  --ground-paint: transparent;
+  --ground-tint: transparent;
+  --ground-layer: none;
+  --well: transparent;
   --border: rgb(40 39 37 / 0.08);
   --sidebar-border: rgb(40 39 37 / 0.08);
   /* A picked or hovered row: the scene a shade darker through it, not a white card. */
@@ -655,6 +773,13 @@ body.resizing * {
 :root[data-wallpaper][data-wallpaper-blur] .glass {
   -webkit-backdrop-filter: saturate(1.8);
   backdrop-filter: saturate(1.8);
+}
+
+/* Over a chat background or a picked ground a sidebar row's hover tools have no fill to hide
+   what is under them:
+   the row's meta line fades out while they show. */
+:root:is([data-wallpaper], [data-ground]) .group\/row:is(:hover, :focus-within) .row-meta {
+  opacity: 0;
 }
 
 /* Glass in glass (the peeking sidebar's list) takes no second frost. */

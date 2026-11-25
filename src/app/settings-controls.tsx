@@ -46,12 +46,14 @@ export function Switch({
  * let go (`onCommit`), so a drag writes once.
  */
 export function Slider({
+  className,
   disabled,
   format,
   label,
   max,
   min,
   onCommit,
+  onLive,
   step,
   value,
 }: {
@@ -63,20 +65,27 @@ export function Slider({
   disabled?: boolean
   format: (v: number) => string
   onCommit: (v: number) => void
+  /** Each step of a drag, for a live preview. */
+  onLive?: (v: number) => void
+  /** The track's width: `w-40` by default. */
+  className?: string
 }) {
   const [live, setLive] = useState(value)
   useEffect(() => setLive(value), [value])
   return (
     <div className={cn('flex items-center gap-3', disabled === true && 'opacity-45')}>
       <SliderPrimitive.Root
-        className="w-40"
+        className={className ?? 'w-40'}
         value={live}
         min={min}
         max={max}
         step={step}
         largeStep={step * 5}
         disabled={disabled}
-        onValueChange={(v) => setLive(v)}
+        onValueChange={(v) => {
+          setLive(v)
+          onLive?.(v)
+        }}
         onValueCommitted={(v) => onCommit(v)}
       >
         <SliderPrimitive.Control className="flex h-5 w-full cursor-pointer touch-none items-center select-none data-disabled:cursor-default">
@@ -261,7 +270,7 @@ export function LoaderPicker({
     dots ? (
       <BrailleDots loader={loader} className={className} />
     ) : (
-      <BrailleSpinner loader={loader} className={cn('text-[15px]', className)} />
+      <BrailleSpinner loader={loader} className={cn('text-md', className)} />
     )
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -300,7 +309,7 @@ export function LoaderPicker({
               {dots ? (
                 <BrailleDots loader={loader} />
               ) : (
-                <BrailleSpinner loader={loader} className="text-[15px]" />
+                <BrailleSpinner loader={loader} className="text-md" />
               )}
               <span className="text-2xs">{LOADER_LABELS[loader]}</span>
             </button>

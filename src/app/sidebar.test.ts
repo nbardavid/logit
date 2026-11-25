@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { ageLabel, workspaceFacts } from './sidebar'
+import { ageLabel, metaStop, workspaceFacts } from './sidebar'
 
 const MIN = 60_000
 const now = 1_000 * MIN * 60 * 24
@@ -43,4 +43,12 @@ test('the age is the latest turn of its chats, else when it was made', () => {
   // Older records carry no activeAt: the chat's creation stands in.
   expect(workspaceFacts(ws, [chat('a', 400)]).activeAt).toBe(400)
   expect(workspaceFacts(ws, [chat('a', 50, 5000, 'x')]).activeAt).toBe(100)
+})
+
+test('a row says its stop only while it matters: unseen, or blocked', () => {
+  expect(metaStop('question', true)).toBe('question')
+  expect(metaStop('question', false)).toBeNull()
+  expect(metaStop('ready', false)).toBeNull()
+  expect(metaStop('blocked', false)).toBe('blocked')
+  expect(metaStop(null, true)).toBeNull()
 })

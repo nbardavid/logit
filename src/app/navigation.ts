@@ -19,6 +19,14 @@ interface Recency {
   here?: string | null
   /** Each workspace's last activity (ms), by id. */
   activeAt?: Record<string, number>
+  /** Each workspace's task (its first chat's title, or the name given) and colour word. */
+  names?: Record<string, { task: string; colour: string }>
+}
+
+/** A workspace's meta: whether it is on screen, then its colour word. */
+function metaOf(current: boolean, colour: string | undefined) {
+  const parts = [current ? 'current' : undefined, colour].filter((x) => x !== undefined)
+  return parts.length === 0 ? undefined : parts.join(' · ')
 }
 
 /** How many places Recent lists. */
@@ -34,20 +42,23 @@ export function paletteItems(
   chats: PaletteChat[],
   signals: Record<string, Signal | null>,
   currentWorkspaceId: string | null,
-  { activeAt = {}, here = null, recent = [] }: Recency = {}
+  { activeAt = {}, here = null, names = {}, recent = [] }: Recency = {}
 ): PickerItem[] {
   const ordered = projects
     .flatMap((p) => (workspaces[p.id] ?? []).map((w) => ({ p, w })))
     .toSorted((a, b) => (activeAt[b.w.id] ?? 0) - (activeAt[a.w.id] ?? 0))
-  const where = new Map(ordered.map(({ p, w }) => [w.id, `${p.name} · ${w.name}`]))
+  const task = (w: Workspace) => names[w.id]?.task ?? w.name
+  const where = new Map(ordered.map(({ p, w }) => [w.id, `${p.name} · ${task(w)}`]))
   const places: PickerItem[] = [
+    // By its task, as the sidebar leads with it; the colour word and project say which.
     ...ordered.map(({ p, w }) => ({
       icon: 'workspace' as const,
       key: `ws:${w.id}`,
-      label: `${w.name} · ${p.name}`,
-      meta: w.id === currentWorkspaceId ? 'current' : undefined,
+      label: task(w),
+      meta: metaOf(w.id === currentWorkspaceId, names[w.id]?.colour),
       section: 'Workspaces',
       signal: signals[w.id] ?? null,
+      sub: p.name,
     })),
     ...chats
       .toSorted((a, b) => (b.activeAt ?? 0) - (a.activeAt ?? 0))
@@ -94,14 +105,75 @@ export function paletteItems(
 
 /** What a ⌘P key points at. */
 export function paletteTarget(key: string): {
-  kind: 'ws' | 'chat' | 'project'
+  kind: 'ws' | 'chat' | 'project' | 'action'
   id: string
 } {
   const at = key.indexOf(':')
   return {
     id: key.slice(at + 1),
-    kind: key.slice(0, at) as 'ws' | 'chat' | 'project',
+    kind: key.slice(0, at) as 'ws' | 'chat' | 'project' | 'action',
   }
+}
+
+/** What the git panel's Push button would do for this branch: push commits, publish it, or nothing. */
+export function pushKind(b: { upstream: boolean; ahead: number }): 'push' | 'publish' | null {
+  if (!b.upstream) return 'publish'
+  return b.ahead > 0 ? 'push' : null
+}
+
+/** What ⌘P's actions depend on: where you are and what its git can do. */
+export interface ActionContext {
+  /** A workspace is on screen: tabs, git and its panel apply. */
+  workspace: boolean
+  sideOpen: boolean
+  panelOpen: boolean
+  /** The PR's number, when it has one. */
+  pr: number | null
+  /** Ready to merge now (not merged, nothing to push first). */
+  canMerge: boolean
+  /** Commits to push, or a branch to publish. */
+  push: 'push' | 'publish' | null
+  /** No PR yet, and a branch with work on it. */
+  canAskPr: boolean
+  /** Settings' panes, in their order. */
+  panes: readonly { id: string; label: string }[]
+}
+
+/**
+ * ⌘P's actions, each with its shortcut: what the keyboard and the panels already do, so a
+ * pick runs the same host command. Only what applies where you are is listed.
+ */
+export function paletteActions(c: ActionContext): PickerItem[] {
+  const all: (PickerItem | false)[] = [
+    c.workspace && { key: 'action:chat', label: 'New chat', meta: '⌘T' },
+    c.workspace && { key: 'action:terminal', label: 'New terminal', meta: '⇧⌘T' },
+    { key: 'action:workspace', label: 'New workspace', meta: '⌘N' },
+    c.canAskPr && { key: 'action:ask-pr', label: 'Ask for PR' },
+    c.push !== null && {
+      key: 'action:push',
+      label: c.push === 'publish' ? 'Publish the branch' : 'Push',
+    },
+    c.canMerge && c.pr !== null && { key: 'action:merge', label: `Merge #${c.pr}` },
+    c.pr !== null && { key: 'action:open-pr', label: `Open #${c.pr} on GitHub` },
+    c.workspace && { key: 'action:diff', label: 'Review the diff', meta: '⌘G' },
+    {
+      key: 'action:sidebar',
+      label: c.sideOpen ? 'Hide the sidebar' : 'Show the sidebar',
+      meta: '⌘S',
+    },
+    c.workspace && {
+      key: 'action:panel',
+      label: c.panelOpen ? 'Hide the right panel' : 'Show the right panel',
+      meta: '⌥⌘B',
+    },
+    { key: 'action:settings', label: 'Settings', meta: '⌘,' },
+    { key: 'action:ground', label: 'Window colour' },
+    ...c.panes.map((p) => ({ key: `action:pane:${p.id}`, label: `Settings › ${p.label}` })),
+    { key: 'action:open-folder', label: 'Open a folder as a project', meta: '⌘O' },
+  ]
+  return all
+    .filter((item) => item !== false)
+    .map((item) => ({ ...item, icon: 'action' as const, section: 'Actions' }))
 }
 
 /**

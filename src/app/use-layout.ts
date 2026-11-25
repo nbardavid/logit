@@ -7,8 +7,8 @@ export interface Layout {
   sideWidth: number | null
   /** Null until the panel is dragged: it then follows the window (`GIT_WIDTH`). */
   gitWidth: number | null
-  /** The panel's width while it shows the task page or a published page; null splits the area
-   * right of the sidebar in half. */
+  /** The panel's width while it shows the task page or a published page; null gives it 40% of
+   * the area right of the sidebar, at most 560px (`splitWidth`). */
   splitWidth: number | null
 }
 
@@ -28,14 +28,21 @@ export const LIMITS = {
 /** The panels' widths until dragged: a share of the window, within reason. */
 export const SIDE_WIDTH = 'clamp(220px, 18vw, 260px)'
 export const GIT_WIDTH = 'clamp(280px, 24vw, 420px)'
-const between = (min: number, share: number, max: number) =>
-  Math.min(max, Math.max(min, Math.round(window.innerWidth * share)))
+const between = (min: number, share: number, max: number, of = window.innerWidth) =>
+  Math.min(max, Math.max(min, Math.round(of * share)))
 /** The same in pixels, for the splitters to say. */
 export const sideWidthNow = () => between(220, 0.18, 260)
 export const gitWidthNow = () => between(280, 0.24, 420)
-/** Half the area right of the sidebar (`side` px, its hairline included), as CSS and in px. */
-export const splitWidth = (side: string) => `calc((100vw - ${side}) / 2)`
-export const splitWidthNow = (side: number) => Math.round((window.innerWidth - side) / 2)
+/**
+ * A page's width until dragged: 40% of the area right of the sidebar (`side` px, its hairline
+ * included), at most 560px, so the chat beside it keeps the room to read; as CSS and in px.
+ */
+export const SPLIT_SHARE = 0.4
+export const SPLIT_MAX = 560
+export const splitWidth = (side: string) =>
+  `clamp(${LIMITS.split[0]}px, (100vw - ${side}) * ${SPLIT_SHARE}, ${SPLIT_MAX}px)`
+export const splitWidthNow = (side: number) =>
+  between(LIMITS.split[0], SPLIT_SHARE, SPLIT_MAX, window.innerWidth - side)
 /** What earlier versions saved as the default widths: a width equal to one was never dragged. */
 const OLD_GIT_DEFAULT = 280
 const OLD_SIDE_DEFAULTS = new Set([232, 260])

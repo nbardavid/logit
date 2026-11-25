@@ -221,23 +221,23 @@ What changes:
 2. **Placement**: the popup flips at the window edge instead of being clipped.
 3. The inline confirmation stays: *no modal for anything quick*.
 
+The menu, drawn:
+
+\`\`\`html
+<div style="font-family:system-ui;font-size:13px;width:200px;padding:4px;border-radius:12px;background:#fff;box-shadow:0 0 0 1px rgb(0 0 0/.06),0 12px 32px -12px rgb(0 0 0/.3);color:#1d1c1a">
+  <div style="padding:5px 8px;border-radius:6px;background:#f4f3f1">Show in Finder</div>
+  <div style="padding:5px 8px">Rename</div>
+  <div style="height:1px;margin:4px -4px;background:#efeeec"></div>
+  <div style="padding:5px 8px;color:#b8463a">Delete workspace…</div>
+</div>
+\`\`\`
+
 | File | Before | After |
 |------|-------:|------:|
 | \`context-menu.tsx\` | 125 | 48 |
 | \`picker.tsx\` | 141 | 62 |
 
-See [Base UI's menu docs](https://base-ui.com/react/components/menu) for the parts.
-
-The empty state, drawn:
-
-\`\`\`html
-<section style="font-family:system-ui;padding:28px;border:1px solid #ebeae9;border-radius:8px;color:#282725">
-  <p style="margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8d8885">No workspaces</p>
-  <h2 style="margin:6px 0 4px;font-size:18px">Start something new</h2>
-  <p style="margin:0 0 16px;color:#6c6a69">Each workspace gets its own branch, chats and terminals.</p>
-  <a href="https://github.com/nbardavid/logit" style="display:inline-block;padding:6px 12px;border-radius:8px;background:#282725;color:#fff;text-decoration:none;font-size:13px">New workspace ⌘N</a>
-</section>
-\`\`\``
+See [Base UI's menu docs](https://base-ui.com/react/components/menu) for the parts.`
 
 export const CONTEXT_OUTPUT = `## Context Usage
 

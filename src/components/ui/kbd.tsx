@@ -11,7 +11,7 @@ function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
   return (
     <kbd
       className={cn(
-        'text-faint inline-flex h-auto items-center px-0 font-sans text-xs tracking-[0.02em] select-none',
+        'text-faint inline-flex h-auto items-center px-0 font-sans text-xs tracking-wide select-none',
         className
       )}
       data-slot="kbd"

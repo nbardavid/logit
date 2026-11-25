@@ -104,12 +104,12 @@ function PathLabel({ dir, name, path }: { dir: string; name: string; path: strin
   )
 }
 
-/** The 14px square at a row's far right: what happened to the file, by colour. */
+/** The 14px square at a row's far right: what happened to the file, by shape (monochrome). */
 const SQUARE = {
-  added: { icon: SquarePlusIcon, label: 'Added', tone: 'text-good' },
-  deleted: { icon: SquareMinusIcon, label: 'Deleted', tone: 'text-critical' },
-  modified: { icon: SquareDotIcon, label: 'Modified', tone: 'text-warn' },
-  renamed: { icon: SquareArrowRightIcon, label: 'Renamed', tone: 'text-faint' },
+  added: { icon: SquarePlusIcon, label: 'Added', tone: 'text-label' },
+  deleted: { icon: SquareMinusIcon, label: 'Deleted', tone: 'text-label' },
+  modified: { icon: SquareDotIcon, label: 'Modified', tone: 'text-label' },
+  renamed: { icon: SquareArrowRightIcon, label: 'Renamed', tone: 'text-label' },
 } as const
 
 /** An untracked file is an added file not staged yet; anything else git says reads as modified. */
@@ -129,8 +129,10 @@ export function FileMeta({ file }: { file: FileChange }) {
         <span className="text-faint text-xs">binary</span>
       ) : (
         <span className="flex gap-1 font-mono text-xs whitespace-nowrap tabular-nums">
-          {file.add > 0 && <span className="text-good">+{file.add}</span>}
-          {file.del !== null && file.del > 0 && <span className="text-critical">−{file.del}</span>}
+          {file.add > 0 && <span className="text-good/75">+{file.add}</span>}
+          {file.del !== null && file.del > 0 && (
+            <span className="text-critical/75">−{file.del}</span>
+          )}
         </span>
       )}
       <square.icon
@@ -176,7 +178,7 @@ function Row({
     >
       <button
         type="button"
-        className="flex h-full min-w-0 flex-1 items-center gap-2 pr-2 pl-3"
+        className="flex h-full min-w-0 flex-1 items-center gap-3 pr-2 pl-2"
         aria-current={selected || undefined}
         onClick={() => onOpen(file)}
       >
@@ -260,7 +262,7 @@ function Section({
   const all = side === 'staged' ? 'Unstage all' : 'Stage all'
   return (
     <div className="group/section">
-      <div className="text-label flex h-7 items-center gap-1 px-3 text-xs font-medium">
+      <div className="text-faint flex h-6 items-center gap-1 px-2 text-xs font-medium">
         <span className="flex min-w-0 flex-1 items-center gap-1">
           {label} <span className={countClass}>{files.length}</span>
         </span>
@@ -318,7 +320,7 @@ export function listOrder(changes: FileChange[]): FileChange[] {
 /** A quiet empty state, 96px from the top: a 20px icon and one line. */
 export function Empty({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
   return (
-    <div className="text-faint flex flex-col items-center gap-2 px-3 pt-24 text-center">
+    <div className="text-faint flex flex-col items-center gap-2 px-3 pt-16 text-center">
       <Icon className="text-label size-5" />
       {text}
     </div>
@@ -331,7 +333,7 @@ export function FileList(props: Props) {
   const { changes, ...rest } = props
   const listed = sections(changes)
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-6">
       <Section {...rest} side="staged" label="Staged" files={listed.staged} />
       <Section {...rest} side="changes" label="Changes" files={listed.changes} />
     </div>

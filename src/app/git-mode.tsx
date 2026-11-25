@@ -73,7 +73,7 @@ export function GitMode({ changes, file, onSelect, path }: Props) {
 
   return (
     <div className="glass flex min-h-0 min-w-0 flex-1">
-      <div className="bg-side flex w-[340px] flex-none flex-col border-r">
+      <div className="bg-well flex w-[340px] flex-none flex-col border-r">
         <div className={bar}>
           <span className="flex min-w-0 flex-1 items-center gap-1 font-medium">
             Changes <span className={countClass}>{changes.length}</span>
@@ -102,7 +102,7 @@ export function GitMode({ changes, file, onSelect, path }: Props) {
             <span className="text-faint">No changes</span>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto font-mono text-[12.5px] leading-5 select-text">
+        <div className="min-h-0 flex-1 overflow-auto font-mono text-mono select-text">
           {lines.map((line, i) => (
             // oxlint-disable-next-line react/no-array-index-key -- diff lines are positional
             <div

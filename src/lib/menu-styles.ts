@@ -30,4 +30,4 @@ export const menuGroupLabelClass =
 export const menuSeparatorClass = 'bg-border -mx-1 my-1 h-px shrink-0'
 
 /** A shortcut at the end of a row: a plain glyph, as `Kbd` draws it. */
-export const menuShortcutClass = 'text-faint ml-auto pl-4 text-xs tracking-[0.02em]'
+export const menuShortcutClass = 'text-faint ml-auto pl-4 text-xs tracking-wide'

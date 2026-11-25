@@ -40,6 +40,7 @@ import {
 import { Blocks, type Zoom, ZoomedShot } from '../report/blocks'
 import { type BlockActions, Mark } from '../report/blocks/primitives'
 import { pageOf, type PageSection, trailingEmpty } from '../report/from-report'
+import { EnterScope, In } from './enter'
 import { ProjectAvatar, useNow } from './sidebar'
 import { Dot, type Tone } from './status-dot'
 import { chatSignal, type ChatTab } from './use-chats'
@@ -74,7 +75,7 @@ export function ReportDot({ label, state }: { state: ReportState; label?: string
       <span
         role={label === undefined ? undefined : 'img'}
         aria-label={label}
-        className="ring-warn size-[7px] flex-none rounded-full ring-[1.5px] ring-inset"
+        className="ring-warn size-1.5 flex-none rounded-full ring-[1.5px] ring-inset"
       />
     )
   }
@@ -136,30 +137,29 @@ function StateLine({
   }
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={title}>
-      <span
-        key={word}
-        className="animate-in fade-in grid size-3 flex-none place-items-center duration-160 ease-out"
-      >
+      <In as="span" key={word} enter={SWAP_IN} className="grid size-3 flex-none place-items-center">
         {mark}
-      </span>
-      <span
-        key={`w-${word}`}
-        className={cn('animate-in fade-in flex-none font-medium duration-160 ease-out', ink)}
-      >
+      </In>
+      <In as="span" key={`w-${word}`} enter={SWAP_IN} className={cn('flex-none font-medium', ink)}>
         {word}
-      </span>
+      </In>
       {step !== '' && (
-        <span
+        <In
+          as="span"
           key={`s-${step}`}
-          className="text-muted-foreground animate-in fade-in min-w-0 truncate duration-160 ease-out"
+          enter={SWAP_IN}
+          className="text-muted-foreground min-w-0 truncate"
         >
           · {step}
-        </span>
+        </In>
       )}
       {age}
     </span>
   )
 }
+
+/** A status that changes cross-fades in; one already there draws still. */
+const SWAP_IN = 'animate-in fade-in duration-160 ease-out'
 
 /** The page's ticket, in mono: a link when the page links it. */
 export function TicketRef({ links, ticket }: { ticket: string; links: readonly ReportLink[] }) {
@@ -245,7 +245,7 @@ export function ReportHead({
   openTip?: string
 }) {
   return (
-    <header className="block-in" style={{ '--i': 0 } as CSSProperties}>
+    <In as="header" enter="block-in" style={{ '--i': 0 } as CSSProperties}>
       <div className="flex flex-col-reverse gap-1 @min-[560px]/report:flex-row @min-[560px]/report:items-start @min-[560px]/report:gap-6">
         <h2 className="text-foreground text-title min-w-0 flex-1 font-semibold text-balance break-words select-text">
           {clampText(title, REPORT_LIMITS.title)}
@@ -268,7 +268,7 @@ export function ReportHead({
           Open chat
         </Button>
       </div>
-    </header>
+    </In>
   )
 }
 
@@ -294,7 +294,7 @@ function StepMark({ status, working }: { status: ReportProgress['status']; worki
         (working ? (
           <Dot tone="working" />
         ) : (
-          <span className="bg-foreground size-[7px] rounded-full" />
+          <span className="bg-foreground size-1.5 rounded-full" />
         ))}
     </span>
   )
@@ -305,10 +305,12 @@ function ProgressLine({ items, working }: { items: readonly ReportProgress[]; wo
   return (
     <ol className="flex flex-wrap gap-x-4 gap-y-2 text-sm leading-5">
       {items.map((p, i) => (
-        <li
+        <In
+          as="li"
           // oxlint-disable-next-line no-array-index-key -- the agent's steps, in order
           key={i}
-          className="block-in flex min-w-0 items-center gap-1.5"
+          enter="block-in"
+          className="flex min-w-0 items-center gap-1.5"
           style={{ '--i': i } as CSSProperties}
         >
           <StepMark status={p.status} working={working} />
@@ -325,7 +327,7 @@ function ProgressLine({ items, working }: { items: readonly ReportProgress[]; wo
             {p.text}
             <span className="sr-only"> ({STATUS_WORD[p.status]})</span>
           </span>
-        </li>
+        </In>
       ))}
     </ol>
   )
@@ -356,10 +358,12 @@ function Section({
     if (section.at !== undefined) setWashes((n) => n + 1)
   }
   return (
-    <section
+    <In
+      as="section"
       data-section={section.name}
       aria-label={section.label}
-      className={cn(ROW, 'block-in')}
+      enter="block-in"
+      className={ROW}
       style={{ '--i': index } as CSSProperties}
     >
       {washes > 0 && (
@@ -398,7 +402,7 @@ function Section({
           />
         )}
       </div>
-    </section>
+    </In>
   )
 }
 
@@ -423,14 +427,15 @@ function Sections({
         <Section key={s.name} section={s} actions={actions} index={start + i} working={working} />
       ))}
       {rest.length > 0 && (
-        <div
+        <In
           key={rest.map((s) => s.name).join()}
-          className={cn(ROW, 'block-in')}
+          enter="block-in"
+          className={ROW}
           style={{ '--i': start + shown.length } as CSSProperties}
         >
           <span className="text-muted-foreground text-sm leading-5 font-medium">Still to come</span>
           <p className="text-label text-sm leading-5">{rest.map((s) => s.label).join(' · ')}</p>
-        </div>
+        </In>
       )}
     </div>
   )
@@ -640,7 +645,9 @@ export function ReportPane({
         onScroll={remember}
         className="h-full [overflow-anchor:none] overflow-x-hidden overflow-y-auto px-5 pt-1 pb-6"
       >
-        {body}
+        {/* A page shown again, or another workspace's, draws at once: only what changes
+            while it is on screen rises in. */}
+        <EnterScope quiet={report?.workspaceId}>{body}</EnterScope>
       </div>
       {zoom !== null && report !== null && host !== null && (
         <ZoomedShot host={host} zoom={zoom} onZoom={setZoom} onClose={close} />

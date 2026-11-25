@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { PrRef } from '../../git/pr-link'
 import type { ReportBlock } from './types'
 
+import { In } from '../../app/enter'
 import { PrCards } from '../../cards/pr-card'
 import { placePrCards } from '../pr-cards'
 import { Callout } from './callout'
@@ -82,15 +83,16 @@ export function Blocks({
     <BlockContext value={actions}>
       <div className={cn('flex flex-col gap-6 @min-[520px]/report:gap-8', className)}>
         {placed.blocks.map((b, i) => (
-          <div
+          <In
             // oxlint-disable-next-line no-array-index-key -- the agent's order is the identity
             key={i}
-            className="block-in flex min-w-0 flex-col gap-3 empty:hidden"
+            enter="block-in"
+            className="flex min-w-0 flex-col gap-3 empty:hidden"
             style={{ '--i': i + start } as CSSProperties}
           >
             <Block block={b} />
             <PrCards links={placed.cards[i] ?? []} cwd={actions.cwd} />
-          </div>
+          </In>
         ))}
       </div>
     </BlockContext>

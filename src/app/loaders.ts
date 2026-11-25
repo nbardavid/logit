@@ -103,7 +103,7 @@ function columns() {
   return [...frames, grid(6, () => true), grid(6, () => false)]
 }
 
-/** Two dots chasing each other round one glyph. */
+/** Three dots chasing each other round one glyph. */
 function orbit() {
   const path: Dot[] = [
     [0, 0],
@@ -115,18 +115,12 @@ function orbit() {
     [2, 0],
     [1, 0],
   ]
-  return path.map((head, i) => braille(2, [head, path.at(i - 1) ?? head]))
+  return path.map((head, i) => braille(2, [head, path.at(i - 1) ?? head, path.at(i - 2) ?? head]))
 }
 
-/** One glyph filling and emptying. */
+/** One glyph filling and emptying, never below three dots: it never blinks out. */
 function breathe() {
   const stages: Dot[][] = [
-    [],
-    [[1, 0]],
-    [
-      [0, 1],
-      [2, 0],
-    ],
     [
       [0, 0],
       [1, 1],
@@ -200,21 +194,22 @@ function helix() {
   )
 }
 
-/** A square filling from the bottom, then draining. */
+/** A square filling from the bottom, then draining to its last row: it never empties. */
 const fillsweep = () => [
   ...[3, 2, 1, 0].map((row) => grid(4, (r) => r >= row)),
   grid(4, () => true),
   grid(4, () => true),
-  ...range(0, 4).map((row) => grid(4, (r) => r > row)),
-  grid(4, () => false),
+  ...range(0, 3).map((row) => grid(4, (r) => r > row)),
 ]
 
-/** A square wiped in and out on the diagonal. */
+/**
+ * A square wiped in and out on the diagonal, from one corner's three dots to the far corner's
+ * three: it keeps its mass, never a blank frame or a stray dot.
+ */
 const diagswipe = () => [
-  ...range(0, 7).map((d) => grid(4, (r, c) => r + c <= d)),
+  ...range(1, 7).map((d) => grid(4, (r, c) => r + c <= d)),
   grid(4, () => true),
-  ...range(0, 7).map((d) => grid(4, (r, c) => r + c > d)),
-  grid(4, () => false),
+  ...range(0, 5).map((d) => grid(4, (r, c) => r + c > d)),
 ]
 
 const fixed = (codes: number[][]) => codes.map((glyphs) => String.fromCodePoint(...glyphs))

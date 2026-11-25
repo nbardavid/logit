@@ -127,7 +127,7 @@ export function ServersPane(props: Props) {
   const shown = rows.find((a) => a.name === props.selected)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-none flex-col py-1">
+      <div className="flex flex-none flex-col py-2">
         {run?.preparing === true && (
           <Row
             on={props.selected === 'prepare'}
@@ -160,12 +160,12 @@ export function ServersPane(props: Props) {
             tabId={props.logTab}
             attach={props.attach}
             focus={false}
-            className="px-3 pt-2 pb-2"
+            className="px-4 pt-3 pb-3"
           />
         ) : (
           <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs">
             {shown?.detail != null ? (
-              <pre className="text-foreground max-h-full w-full overflow-auto text-left font-mono text-[11px] whitespace-pre-wrap">
+              <pre className="text-foreground max-h-full w-full overflow-auto text-left font-mono text-2xs whitespace-pre-wrap">
                 {shown.detail}
               </pre>
             ) : (
@@ -216,13 +216,13 @@ function Row(p: {
   return (
     <div
       className={cn(
-        'group/row flex h-7 items-center gap-2 px-3 text-xs transition-colors duration-120',
+        'group/row flex h-9 items-center gap-2.5 px-4 text-sm transition-colors duration-120',
         p.on ? 'bg-chrome' : 'hover:bg-chrome/60'
       )}
     >
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
         onClick={p.onClick}
       >
         <span className="grid size-[11px] flex-none place-items-center">
@@ -245,7 +245,7 @@ function Row(p: {
       {p.url != null && p.onOpen && (
         <button
           type="button"
-          className="text-muted-foreground hover:text-foreground truncate font-mono text-[11px] transition-colors duration-120"
+          className="text-muted-foreground hover:text-foreground truncate font-mono text-2xs transition-colors duration-120"
           onClick={p.onOpen}
           data-tip="Open in your browser"
           data-tip-side="top"
@@ -338,7 +338,7 @@ function ConfigEditor(p: {
         spellCheck={false}
         value={draft}
         aria-label="Dev servers declaration (JSON)"
-        className="bg-chrome text-foreground min-h-0 flex-1 resize-none rounded-md border p-2 font-mono text-[11px] outline-none focus-visible:border-tan"
+        className="bg-chrome text-foreground min-h-0 flex-1 resize-none rounded-md border p-2 font-mono text-2xs outline-none focus-visible:border-tan"
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && e.metaKey) {

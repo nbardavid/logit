@@ -1,4 +1,4 @@
-import { ArrowUpIcon, PencilIcon } from 'lucide-react'
+import { PencilIcon } from 'lucide-react'
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 import type { Permission, Question } from '../chat/model'
 
+import { useEnter } from './enter'
 import { overlayShown } from './overlay'
 
 /** What a question's picks send back: the labels (", " between), then what was typed. */
@@ -130,15 +131,16 @@ export interface CardHandle {
   numbers: (ns: number[]) => void
   /** Sends what is picked, if every question has an answer. */
   submit: () => void
-  /** A free answer from the composer: as "Something else…", then sent once complete. */
+  /** A free answer from the composer: a picked row of its own, then sent once complete. */
   type: (text: string) => void
 }
 
 /**
  * AskUserQuestion: Claude waits on a pick. One single-choice question answers on click;
  * otherwise the picks go with Send (⌘↩). Skip (⌘⌫) declines and Claude goes on without. In a
- * chat, the question reads in the text column, its options one grouped list ending on a
- * "Something else…" field; 1–9 pick from anywhere but a field, and the composer answers too: Enter alone sends the picks, a
+ * chat, the question reads in the text column, its options one grouped list, then a hint line
+ * with Skip (and Send when picks wait for it); 1–9 pick from anywhere but a field, and the
+ * composer is the free answer: Enter alone sends the picks, a
  * number ("2", "1 3") picks and sends, and words are a free answer (a row of its own until
  * the other questions are answered).
  */
@@ -266,70 +268,46 @@ export function QuestionCard({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const enter = useEnter()
   const several = questions.length > 1
   const done = Object.values(answers).filter((a) => a !== '').length
   const clearOther = (i: number) => setOther((all) => all.map((o, j) => (j === i ? '' : o)))
 
-  // The card's own free answer (the composer answers too, in a chat).
-  const [draft, setDraft] = useState('')
-  const commit = () => {
-    const text = draft.trim()
-    if (text === '') submit()
-    else {
-      type(text)
-      setDraft('')
-    }
-  }
-
-  let hint = ''
+  let hint = 'Pick one, or type your own answer below'
   if (disabled) hint = 'Claude is stopping…'
   else if (several) hint = `${done} of ${questions.length} answered`
+  else if (!instant) hint = 'Pick any, or type your own answer below'
 
-  // The free answer, Skip and send: the last row of the list. Nothing in it takes the focus on
-  // its own: a key meant for the composer never answers.
+  // Under the list: what to do, Skip as a quiet text action and, when the picks wait for it,
+  // Send. The composer is the only free answer: the card has no field of its own.
   const foot = (
-    <form
-      className="bg-background flex min-w-0 items-center gap-1.5 py-1.5 pr-1.5 pl-3.5"
-      onSubmit={(e) => {
-        e.preventDefault()
-        commit()
-      }}
-    >
-      <input
-        className="placeholder:text-faint h-8 min-w-0 flex-1 bg-transparent text-base outline-none select-text focus-visible:outline-none"
-        placeholder={hint === '' ? 'Something else…' : `${hint} · Something else…`}
-        aria-label="Something else"
-        value={draft}
-        disabled={disabled}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          // ↩ and ⌘↩ both send: what is written, else what is picked.
-          if (e.key !== 'Enter' || e.shiftKey) return
-          e.preventDefault()
-          commit()
-        }}
-      />
-      <Button
-        variant="ghost"
-        size="sm"
+    <div className="flex min-h-8 min-w-0 items-center gap-3 pl-0.5">
+      <span className="text-faint min-w-0 flex-1 truncate text-xs" aria-live="polite">
+        {hint}
+      </span>
+      <button
+        type="button"
+        className="text-faint hover:text-foreground flex h-7 flex-none items-center gap-1.5 rounded-md text-xs font-medium transition-[color] duration-120 disabled:pointer-events-none"
         disabled={disabled}
         aria-keyshortcuts="Meta+Backspace"
         onClick={() => onAnswer('deny')}
       >
         Skip
         <Kbd className="@max-[420px]:hidden">⌘⌫</Kbd>
-      </Button>
-      <Button
-        type="submit"
-        size="icon"
-        className="disabled:bg-line-strong rounded-md disabled:opacity-100"
-        aria-label="Send (⌘↩)"
-        aria-keyshortcuts="Meta+Enter"
-        disabled={disabled || (!complete && draft.trim() === '')}
-      >
-        <ArrowUpIcon strokeWidth={2} />
-      </Button>
-    </form>
+      </button>
+      {!instant && (
+        <Button
+          size="sm"
+          className="disabled:bg-line-strong flex-none disabled:opacity-100"
+          aria-keyshortcuts="Meta+Enter"
+          disabled={disabled || !complete}
+          onClick={submit}
+        >
+          Send
+          <Kbd className="text-white/60 @max-[420px]:hidden">⌘↩</Kbd>
+        </Button>
+      )}
+    </div>
   )
 
   return (
@@ -338,8 +316,10 @@ export function QuestionCard({
       className={cn(
         '@container flex flex-col transition-opacity duration-160 ease-out',
         disabled && 'opacity-60',
-        // It rises with the transcript.
-        'animate-in fade-in slide-in-from-bottom-[6px] gap-2 duration-280 ease-[var(--ease-settle)]'
+        'gap-2.5',
+        // It rises with the transcript; one already there when the chat came back draws still.
+        enter &&
+          'animate-in fade-in slide-in-from-bottom-[6px] duration-280 ease-[var(--ease-settle)]'
       )}
       aria-disabled={disabled || undefined}
       role="alertdialog"
@@ -380,7 +360,7 @@ export function QuestionCard({
                       description={o.description}
                       mark={
                         recommended ? (
-                          <span className="text-faint text-xs leading-[22px] whitespace-nowrap">
+                          <span className="text-faint text-xs leading-5.5 whitespace-nowrap">
                             Recommended
                           </span>
                         ) : undefined
@@ -402,12 +382,12 @@ export function QuestionCard({
                     />
                   </div>
                 )}
-                {i === questions.length - 1 && foot}
               </div>
             </fieldset>
           )
         })}
       </div>
+      {foot}
     </div>
   )
 }
