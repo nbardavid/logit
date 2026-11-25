@@ -4,9 +4,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import type { ChangedFile } from '../chat/model'
 
-/** A changed file under a finished exchange: its icon, its name, its +/−. */
-export const CHIP =
-  'group/chip inline-flex h-6 max-w-full items-center gap-1.5 rounded-md px-1.5 transition-colors duration-120 hover:bg-hover'
+/** A changed file under a finished exchange: its icon, its name, its +/−. A readout: it opens
+ * nothing; its full path shows on hover. */
+export const CHIP = 'inline-flex h-6 max-w-full items-center gap-1.5 rounded-md px-1.5'
 
 function FileIcon({ path }: { path: string }) {
   const cls = 'text-label size-[13px] flex-none'
@@ -17,14 +17,12 @@ function FileIcon({ path }: { path: string }) {
   return <FileCodeIcon className={cls} />
 }
 
-export function FileChip({ file, onOpen }: { file: ChangedFile; onOpen?: () => void }) {
+export function FileChip({ file }: { file: ChangedFile }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<button type="button" className={CHIP} onClick={onOpen} />}>
+      <TooltipTrigger render={<span className={CHIP} />}>
         <FileIcon path={file.path} />
-        <span className="text-muted-foreground group-hover/chip:text-foreground truncate text-xs transition-colors duration-120">
-          {file.path.split('/').pop()}
-        </span>
+        <span className="text-muted-foreground truncate text-xs">{file.path.split('/').pop()}</span>
         <span className="flex-none font-mono text-xs tabular-nums">
           {file.added > 0 && <span className="text-good">+{file.added}</span>}
           {file.added > 0 && file.removed > 0 && ' '}

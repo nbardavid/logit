@@ -16,7 +16,7 @@ interface Box {
 
 /** Whether the native page should be on screen. */
 export function browserShown(s: {
-  mode: 'normal' | 'git' | 'settings'
+  mode: 'normal' | 'settings'
   panelOpen: boolean
   view: PanelView
   covered: boolean
@@ -148,7 +148,7 @@ export function useBrowser(
     }
   }, [shown, url, id, placeholder])
 
-  // Leaving the screen (settings, git mode, no workspace): nothing native stays behind.
+  // Leaving the screen (settings, no workspace): nothing native stays behind.
   useEffect(() => () => void hideAll(), [])
 
   return id !== undefined && loaded.has(id)

@@ -164,7 +164,7 @@ export function Gallery() {
           <Row label="Tooltip · Menu · Context menu · Popover · Combobox · Dialog">
             <Tooltip>
               <TooltipTrigger render={<Button variant="outline" />}>Hover me</TooltipTrigger>
-              <TooltipContent>Review the diff · ⌘G</TooltipContent>
+              <TooltipContent>New workspace · ⌘N</TooltipContent>
             </Tooltip>
             <Menu>
               <MenuTrigger render={<Button variant="outline" />}>Menu</MenuTrigger>

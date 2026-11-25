@@ -152,17 +152,6 @@ pub fn git_status(path: String) -> Result<Vec<FileChange>, String> {
         .collect())
 }
 
-#[tauri::command(async)]
-pub fn git_diff(path: String, file: String, untracked: bool) -> Result<String, String> {
-    let args: &[&str] = if untracked {
-        &["diff", "--no-color", "--no-index", "--", "/dev/null", &file]
-    } else {
-        &["diff", "--no-color", "HEAD", "--", &file]
-    };
-    // `--no-index` exits 1 when the files differ, which is always: read stdout either way.
-    run("git", &path, args).map(|(_, out)| out)
-}
-
 /// How long `gh` may take: past it (a network gone quiet after sleep), it is killed, so the
 /// panel's polling never waits on a request that will not answer.
 const GH_TIMEOUT: Duration = Duration::from_secs(20);

@@ -49,7 +49,6 @@ export interface GitPanelProps {
    * refused (uncommitted changes) and the user said "Delete anyway".
    */
   cleanup: { label: string; run: (force: boolean) => Promise<void> } | null
-  onOpenFile: (file: FileChange) => void
   /** Something changed on disk or on GitHub: read it all again. */
   onChanged: () => void
   /** What failed ("Couldn't push"), and why. */
@@ -551,7 +550,7 @@ function Checks({ pr }: { pr: PullRequest }) {
 }
 
 export function GitPanel(props: GitPanelProps) {
-  const { changes, onOpenFile, path, pr, setup, width } = props
+  const { changes, path, pr, setup, width } = props
   let shown = props.view
   if (shown === 'report' && props.report === null) shown = 'changes'
   // Canvas folds the PR, its checks and the files into one Git view.
@@ -676,9 +675,7 @@ export function GitPanel(props: GitPanelProps) {
         )}
         <div className="flex flex-col gap-6 px-3 pt-4">
           {shown === 'changes' && pr && <Checks pr={pr} />}
-          {shown === 'changes' && changes && (
-            <FileList changes={changes} onOpen={onOpenFile} actions={actions} />
-          )}
+          {shown === 'changes' && changes && <FileList changes={changes} actions={actions} />}
           {shown === 'changes' && changes === null && (
             <Empty icon={FolderXIcon} text="Not a git repository" />
           )}

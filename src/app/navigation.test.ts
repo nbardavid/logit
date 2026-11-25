@@ -229,7 +229,6 @@ test('⌘P lists only the actions that apply, each with its shortcut', () => {
     'chat',
     'terminal',
     'workspace',
-    'diff',
     'sidebar',
     'panel',
     'settings',

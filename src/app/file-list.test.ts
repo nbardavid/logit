@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { FileChange } from './use-git'
 
-import { listOrder, squareOf } from './file-list'
+import { sections, squareOf } from './file-list'
 
 const f = (path: string, o: Partial<FileChange>): FileChange => ({
   add: 1,
@@ -15,23 +15,13 @@ const f = (path: string, o: Partial<FileChange>): FileChange => ({
   ...o,
 })
 
-test('arrows walk the files as the list shows them, each once', () => {
-  const order = listOrder([
-    f('new.md', { status: 'A', unstaged: false, untracked: true }),
-    f('both.ts', { staged: true }),
-    f('changed.ts', {}),
-    f('staged.ts', { staged: true, unstaged: false }),
-  ])
-  expect(order.map((x) => x.path)).toEqual(['both.ts', 'staged.ts', 'changed.ts', 'new.md'])
-})
-
 test('untracked files fold into Changes, after the tracked ones', () => {
-  const order = listOrder([
+  const listed = sections([
     f('new.md', { status: 'A', unstaged: false, untracked: true }),
     f('changed.ts', {}),
     f('gone.ts', { status: 'D' }),
   ])
-  expect(order.map((x) => x.path)).toEqual(['changed.ts', 'gone.ts', 'new.md'])
+  expect(listed.changes.map((x) => x.path)).toEqual(['changed.ts', 'gone.ts', 'new.md'])
 })
 
 test('the square says what happened: untracked reads as added, a copy as a rename', () => {

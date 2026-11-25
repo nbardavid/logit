@@ -545,6 +545,10 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       const text = promptText(content)
       const images = imagesOf(content)
       if (text === '' && images.length === 0) return state
+      // What the app wrote for Claude alone (a `logit-note`, a `!` command's context) shows as
+      // the transcript shows it, never as a prompt.
+      if (HARNESS_TEXT.test(text))
+        return harnessTurn(state, text, str(sent.uuid) || `u${state.turns.length}`)
       return sendTurn(state, text, str(sent.uuid) || `u${state.turns.length}`, images)
     }
     default: {

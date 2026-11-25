@@ -6,7 +6,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
-import { cn } from '@/lib/utils'
 
 import { notify, playChosenSound, waitingAttention } from './app/attention'
 import { browserId } from './app/browser-tabs'
@@ -17,12 +16,10 @@ import { ContextMenu, type MenuState, useNoBrowserMenu } from './app/context-men
 import { Dock } from './app/dock'
 import { DraftIntro, EMPTY_TITLE, NoWorkspace, QUIET } from './app/empty-states'
 import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
-import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
 import { McpPanel } from './app/mcp-panel'
 import { afterClose, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
-import { overlayShown } from './app/overlay'
 import { paletteList, runPaletteAction } from './app/palette'
 import { NEW_TAB, Picker } from './app/picker'
 import { PR_PROMPT, SETUP_PROMPT } from './app/prompts'
@@ -47,7 +44,7 @@ import { type AgentAsk, followUp, useAgentAsks } from './app/use-agent-asks'
 import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, turnsEnded, useChats } from './app/use-chats'
-import { type FileChange, useGit } from './app/use-git'
+import { useGit } from './app/use-git'
 import { HOST_BLOCKED, useHost } from './app/use-host'
 import { useLaunches } from './app/use-launches'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
@@ -78,9 +75,6 @@ const DRAFT: ChatState = { ...initialChat, status: 'idle' }
 
 // The shell's repeated pieces: the splash, the quiet empty states, the toasts.
 const SPLASH = 'text-muted-foreground grid h-full place-items-center p-6 text-center'
-// White sheets on the ground (DESIGN.md › Surfaces): the chat, and git mode's page.
-const SHEET =
-  'bg-background shadow-sheet my-gap mr-gap ml-[calc(var(--gap)-1px)] flex-col overflow-hidden rounded-xl'
 /** A key cap on the ink button. */
 const KBD_INK = 'text-white/60'
 
@@ -89,7 +83,6 @@ export function App() {
   const store = useCatalog(removing)
   const { catalog, project, projects, status, workspace: ws } = store
   const projectId = project?.id ?? null
-  const [mode, setMode] = useState<'normal' | 'git'>('normal')
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Bumped by ⌘P's Merge: the git panel's head asks its question.
   const [mergeAsk, setMergeAsk] = useState(0)
@@ -127,7 +120,6 @@ export function App() {
     stepWorkspace: (_step: 1 | -1) => {},
     toWorkspace: (_index: number) => {},
   })
-  const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<Notice | null>(null)
   /** Shows a failure as a toast titled with what was being done. */
   const fail = (title: string) => (error: unknown) => setNotice({ text: errorText(error), title })
@@ -143,10 +135,7 @@ export function App() {
     [catalog, removing]
   )
   useCardCleanup(catalog.workspaces, () => removal)
-  const selectWs = (pid: string, wid: string | null) => {
-    setMode('normal')
-    store.select(pid, wid)
-  }
+  const selectWs = (pid: string, wid: string | null) => store.select(pid, wid)
   const placeOf = (workspaceId: string) => {
     const w = catalog.workspaces.find((x) => x.id === workspaceId)
     const p = projects.find((x) => x.id === w?.projectId)
@@ -258,7 +247,7 @@ export function App() {
     if (here !== null) setVisited((v) => [here, ...v.filter((k) => k !== here)].slice(0, 20))
   }, [here])
   // The chat on screen asks something: ⌘↩ answers it, whatever toast is up.
-  const questionHere = mode === 'normal' && chat !== undefined && chat.state.pending.length > 0
+  const questionHere = chat !== undefined && chat.state.pending.length > 0
 
   const selectTab = (workspaceId: string, tabId: string) =>
     setActiveByWs((state) => ({ ...state, [workspaceId]: tabId }))
@@ -269,7 +258,7 @@ export function App() {
     if (chatOnScreen === undefined) return
     void chats.wake(chatOnScreen).catch(() => {})
   }, [chatOnScreen, chats])
-  useWatching(watching, mode === 'normal' ? (active?.id ?? null) : null, chats.seen)
+  useWatching(watching, active?.id ?? null, chats.seen)
 
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
@@ -285,11 +274,11 @@ export function App() {
     openPanel: () => update({ gitOpen: true }),
     reports,
     seeArtifact: store.seeArtifact,
-    visible: layout.gitOpen && mode === 'normal',
+    visible: layout.gitOpen,
     workspaceId: ws?.id,
   })
   publish.current = artifacts.published
-  reports.watch(artifacts.view === 'report' && layout.gitOpen && mode === 'normal')
+  reports.watch(artifacts.view === 'report' && layout.gitOpen)
   const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
     () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, diffStat(c)])),
@@ -298,18 +287,13 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // The diff is a page: Esc leaves it, unless something sits over it.
-        const over = overlay !== null || composeIn !== null || ctxMenu !== null
-        if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
-        setMode('normal')
-      } else if (e.ctrlKey && e.key === 'Tab')
+      if (e.ctrlKey && e.key === 'Tab')
         // In Settings, ⌃Tab steps through its panes.
         (settingsOpen ? stepPane : keys.current.stepTab)(e.shiftKey ? -1 : 1)
       // ⌃1–9: the tabs of this workspace; ⌘1–9: the workspaces, in sidebar order.
       else if (e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) {
         const tab = tabItems[Number(e.code.slice(5)) - 1]
-        if (tab === undefined || ws === undefined || mode !== 'normal') return
+        if (tab === undefined || ws === undefined) return
         selectTab(ws.id, tab.id)
       } else if (!e.metaKey) return
       else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -323,7 +307,6 @@ export function App() {
       else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
       else if (e.key === 'w') keys.current.close()
       else if (e.key === 'n') keys.current.compose()
-      else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
       else if (e.key === ',') setSettingsOpen((open) => !open)
       // ⌘O works on the splash too, before the rest of the keys are wired.
       else if (e.code === 'KeyO') void newProject()
@@ -350,7 +333,6 @@ export function App() {
     if (typeof path !== 'string') return
     try {
       await store.addProject(path)
-      setMode('normal')
     } catch (error) {
       fail("Couldn't open the folder")(error)
     }
@@ -403,10 +385,7 @@ export function App() {
       setNotice({ text: HOST_BLOCKED, title: `Couldn't open a ${kind}` })
       return
     }
-    if (w.id !== ws?.id) {
-      setMode('normal')
-      store.select(w.projectId, w.id)
-    }
+    if (w.id !== ws?.id) store.select(w.projectId, w.id)
     if (kind === 'chat') newChat(w, prompt)
     else selectTab(w.id, terminals.create({ cwd: w.path, workspaceId: w.id }))
   }
@@ -424,7 +403,6 @@ export function App() {
   /** The composer's Create: it closes at once, the workspace gets ready where its chat will be. */
   const startWork = async (pid: string, base: string | null, prompt: string) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
-    setMode('normal')
     launches.start(pid, base, prompt)
   }
 
@@ -547,7 +525,7 @@ export function App() {
   const needs = needsOf({
     catalog,
     chats: chats.chats,
-    here: mode === 'normal' && !settingsOpen ? (ws?.id ?? null) : null,
+    here: !settingsOpen ? (ws?.id ?? null) : null,
     mergedOf: git.mergedOf,
     order,
     reports,
@@ -563,7 +541,7 @@ export function App() {
       return true
     },
     close: () => {
-      if (active !== undefined && mode === 'normal') requestClose(active.id)
+      if (active !== undefined) requestClose(active.id)
     },
     compose: () => projectId !== null && setComposeIn(projectId),
     newTab: (kind: 'chat' | 'terminal') => createTab(kind),
@@ -586,7 +564,7 @@ export function App() {
         active?.id,
         step
       )
-      if (ws !== undefined && next !== undefined && mode === 'normal') selectTab(ws.id, next)
+      if (ws !== undefined && next !== undefined) selectTab(ws.id, next)
     },
     stepWorkspace: (step) => {
       const next = stepThrough(
@@ -595,15 +573,11 @@ export function App() {
         step
       )
       const target = order.find((w) => w.id === next)
-      if (target) {
-        setMode('normal')
-        store.select(target.projectId, target.id)
-      }
+      if (target) store.select(target.projectId, target.id)
     },
     toWorkspace: (index) => {
       const target = order[index]
       if (!target) return
-      setMode('normal')
       store.select(target.projectId, target.id)
     },
   }
@@ -687,7 +661,6 @@ export function App() {
 
   /** Takes you to a chat anywhere: its project, its workspace, its tab. */
   const goTo = (pid: string, wid: string, tabId: string) => {
-    setMode('normal')
     store.select(pid, wid)
     selectTab(wid, tabId)
   }
@@ -711,7 +684,6 @@ export function App() {
     runPaletteAction(id, {
       askForPr,
       askMerge: () => {
-        setMode('normal')
         update({ gitOpen: true })
         artifacts.setView('changes')
         setMergeAsk((n) => n + 1)
@@ -724,7 +696,6 @@ export function App() {
       panelOpen: layout.gitOpen,
       pr: git.pr,
       pushed: git.refresh,
-      showDiff: () => setMode('git'),
       sideOpen: layout.sideOpen,
       update,
       ws,
@@ -744,7 +715,6 @@ export function App() {
       if (c && pid !== undefined) goTo(pid, c.record.workspaceId, id)
       return
     }
-    setMode('normal')
     if (kind === 'project') store.select(id, null)
     else {
       const w = catalog.workspaces.find((x) => x.id === id)
@@ -752,29 +722,13 @@ export function App() {
     }
   }
 
-  const openFile = (file: FileChange) => {
-    setGitFile(file)
-    setMode('git')
-  }
-  /** A turn footer's file chip: git mode on that file, or on the whole diff (`null`). */
-  const openChangedFile = (path: string | null) => {
-    const file = changes?.find((c) => c.path === path)
-    if (file) setGitFile(file)
-    setMode('git')
-  }
-
-  const topBar = (title: string | undefined, gitOpen: boolean | null, tabsRow?: ReactNode) => (
+  const topBar = (gitOpen: boolean | null, tabsRow?: ReactNode) => (
     <TopBar
-      title={title}
-      place={mode === 'normal' ? ws?.name : undefined}
+      place={ws?.name}
       sideOpen={layout.sideOpen}
       gitOpen={gitOpen}
-      canDiff={ws !== undefined}
-      noChanges={mode === 'normal' && changes?.length === 0}
-      gitMode={mode === 'git'}
       onShowSide={() => update({ sideOpen: true })}
       onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
-      onGitMode={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
       tools={<UpdateButton update={appUpdate} />}
     >
       {tabsRow}
@@ -821,7 +775,6 @@ export function App() {
       {!layout.sideOpen && attentionToast}
     </div>
   )
-  const pageTitle = mode === 'git' ? `${ws?.name ?? ''} · Diff` : undefined
 
   const sideWidth = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
 
@@ -877,161 +830,141 @@ export function App() {
         </Slide>
         <div ref={content} className="relative flex min-w-0 flex-1 flex-col">
           <div className="absolute inset-x-0 top-0 h-gap" data-tauri-drag-region />
-          {mode !== 'normal' && toasts}
-          <div className={cn('flex min-h-0 flex-1', mode === 'normal' ? 'py-gap pr-gap' : SHEET)}>
-            {mode !== 'normal' && bars(topBar(pageTitle, null, null))}
-            {mode === 'normal' && (
-              <>
-                <main
-                  className="bg-background shadow-sheet relative ml-[calc(var(--gap)-1px)] flex min-h-0 min-w-[360px] flex-1 flex-col rounded-xl"
-                  data-zoom-host
-                >
-                  {bars(
-                    topBar(
-                      undefined,
-                      ws === undefined ? null : layout.gitOpen,
-                      ws !== undefined && (
-                        <TabBar
-                          items={tabItems}
-                          activeId={active?.id}
-                          armedId={armed}
-                          renamingId={renaming}
-                          onSelect={(item) => selectTab(ws.id, item.id)}
-                          onClose={(item) => requestClose(item.id)}
-                          onMenu={tabMenu}
-                          onRename={(item) => setRenaming(item.id)}
-                          onRenamed={(item, title) => {
-                            setRenaming(null)
-                            const tell = renameTells.current === item.id
-                            renameTells.current = null
-                            if (title === null || title === item.title) return
-                            if (!item.chat) terminals.rename(item.id, title)
-                            else {
-                              chats.rename(item.id, title)
-                              if (tell) void chats.send(item.id, `/rename ${title}`)
-                            }
-                          }}
-                          onNew={(at) => {
-                            setMenuAt(at)
-                            setOverlay('new-tab')
-                          }}
-                        />
-                      )
-                    )
-                  )}
-                  {launch}
-                  {launch === null && chat && (
-                    <ChatView
-                      above={toastsOverChat}
-                      id={chat.record.id}
-                      cwd={chat.cwd}
-                      state={chat.state}
-                      agent={agentOf(chat)}
-                      models={models}
-                      onAgent={(next, typed) => setAgent(chat, next, typed)}
-                      blocked={host.state.kind === 'blocked'}
-                      commands={availableCommands(chat.state.commands, appWideCommands)}
-                      onSend={(text, images) => void chats.send(chat.record.id, text, images)}
-                      onCommand={(name, args) => runCommand(chat, name, args)}
-                      onAnswer={(...answer) => void chats.answer(chat.record.id, ...answer)}
-                      onInterrupt={() => chats.interrupt(chat.record.id)}
-                      onUnqueue={(ids) => chats.unqueue(chat.record.id, ids)}
-                      onShell={(command) => chats.shell(chat.record.id, command)}
-                      onAskUsage={() => chats.askUsage(chat.record.id)}
-                      onStopTask={(task) => chats.stopTask(chat.record.id, task)}
-                      onOpenFile={openChangedFile}
-                      place={ws?.name}
-                    />
-                  )}
-                  {launch === null && term && (
-                    <TerminalView tabId={term.id} attach={terminals.attach} />
-                  )}
-                  {launch === null && ws === undefined && (
-                    <NoWorkspace
-                      name={project?.name ?? 'No project'}
-                      onNew={() => projectId !== null && setComposeIn(projectId)}
-                    />
-                  )}
-                  {launch === null && ws !== undefined && active === undefined && (
-                    // No tab yet: the chat composer itself, focused; the first Enter makes
-                    // the chat, on the model picked here (the one new chats start on).
-                    <ChatView
-                      above={toastsOverChat}
-                      id={`draft:${ws.id}`}
-                      cwd={ws.path}
-                      place={ws.name}
-                      state={DRAFT}
-                      agent={selection}
-                      models={models}
-                      onAgent={(next) => setSelection(next)}
-                      blocked={host.state.kind === 'blocked'}
-                      commands={appWideCommands}
-                      onSend={(text, images) => {
-                        if (host.state.kind === 'ready') newChat(ws, text, images)
-                        else setNotice({ text: HOST_BLOCKED, title: "Couldn't start a chat" })
+          <div className="py-gap pr-gap flex min-h-0 flex-1">
+            <main
+              className="bg-background shadow-sheet relative ml-[calc(var(--gap)-1px)] flex min-h-0 min-w-[360px] flex-1 flex-col rounded-xl"
+              data-zoom-host
+            >
+              {bars(
+                topBar(
+                  ws === undefined ? null : layout.gitOpen,
+                  ws !== undefined && (
+                    <TabBar
+                      items={tabItems}
+                      activeId={active?.id}
+                      armedId={armed}
+                      renamingId={renaming}
+                      onSelect={(item) => selectTab(ws.id, item.id)}
+                      onClose={(item) => requestClose(item.id)}
+                      onMenu={tabMenu}
+                      onRename={(item) => setRenaming(item.id)}
+                      onRenamed={(item, title) => {
+                        setRenaming(null)
+                        const tell = renameTells.current === item.id
+                        renameTells.current = null
+                        if (title === null || title === item.title) return
+                        if (!item.chat) terminals.rename(item.id, title)
+                        else {
+                          chats.rename(item.id, title)
+                          if (tell) void chats.send(item.id, `/rename ${title}`)
+                        }
                       }}
-                      onCommand={() => createTab('chat')}
-                      onAnswer={() => {}}
-                      onInterrupt={() => {}}
-                      intro={<DraftIntro onTerminal={() => createTab('terminal')} />}
+                      onNew={(at) => {
+                        setMenuAt(at)
+                        setOverlay('new-tab')
+                      }}
                     />
-                  )}
-                  {mode === 'normal' && !chat && active !== undefined && toasts}
-                  {ws === undefined && toasts}
-                </main>
-                <RightPanel
-                  open={layout.gitOpen && ws !== undefined}
-                  split={reports.has}
-                  layout={layout}
-                  update={update}
-                  artifacts={artifacts}
-                  panel={
-                    ws && {
-                      branch: git.branch,
-                      changes,
-                      claude: claudeHere,
-                      cleanup,
-                      mergeAsk,
-                      onAskPr: () => askForPr(ws),
-                      onChanged: git.refresh,
-                      onError: (title, error) => fail(title)(error),
-                      onOpenFile: openFile,
-                      path: ws.path,
-                      pr: git.pr,
-                      report: reportTab(reports, wsChats, git.pr, (id) => selectTab(ws.id, id), {
-                        colour: colourWord(ws.path),
-                        project: project?.name,
-                      }),
-                      setup: (
-                        <Dock
-                          ws={ws}
-                          projectName={project?.name ?? ''}
-                          terminals={terminals}
-                          hostReady={host.state.kind === 'ready'}
-                          onBlocked={(title) => setNotice({ text: HOST_BLOCKED, title })}
-                          fail={fail}
-                          runSetup={runSetup}
-                          onWriteSetup={(script) => newChat(ws, SETUP_PROMPT(script))}
-                          onAskAgent={(prompt) => newChat(ws, prompt)}
-                        />
-                      ),
-                      wsBranch: ws.branch,
-                    }
-                  }
+                  )
+                )
+              )}
+              {launch}
+              {launch === null && chat && (
+                <ChatView
+                  above={toastsOverChat}
+                  id={chat.record.id}
+                  cwd={chat.cwd}
+                  state={chat.state}
+                  agent={agentOf(chat)}
+                  models={models}
+                  onAgent={(next, typed) => setAgent(chat, next, typed)}
+                  blocked={host.state.kind === 'blocked'}
+                  commands={availableCommands(chat.state.commands, appWideCommands)}
+                  onSend={(text, images) => void chats.send(chat.record.id, text, images)}
+                  onCommand={(name, args) => runCommand(chat, name, args)}
+                  onAnswer={(...answer) => void chats.answer(chat.record.id, ...answer)}
+                  onInterrupt={() => chats.interrupt(chat.record.id)}
+                  onUnqueue={(ids) => chats.unqueue(chat.record.id, ids)}
+                  onShell={(command) => chats.shell(chat.record.id, command)}
+                  onAskUsage={() => chats.askUsage(chat.record.id)}
+                  onStopTask={(task) => chats.stopTask(chat.record.id, task)}
+                  place={ws?.name}
                 />
-              </>
-            )}
-            {mode === 'git' && ws !== undefined && (
-              <GitMode
-                path={ws.path}
-                changes={changes ?? []}
-                file={changes?.find((f) => f.path === gitFile?.path)}
-                onSelect={setGitFile}
-              />
-            )}
-            {mode === 'git' && ws === undefined && (
-              <div className={QUIET}>No workspace selected</div>
-            )}
+              )}
+              {launch === null && term && (
+                <TerminalView tabId={term.id} attach={terminals.attach} />
+              )}
+              {launch === null && ws === undefined && (
+                <NoWorkspace
+                  name={project?.name ?? 'No project'}
+                  onNew={() => projectId !== null && setComposeIn(projectId)}
+                />
+              )}
+              {launch === null && ws !== undefined && active === undefined && (
+                // No tab yet: the chat composer itself, focused; the first Enter makes
+                // the chat, on the model picked here (the one new chats start on).
+                <ChatView
+                  above={toastsOverChat}
+                  id={`draft:${ws.id}`}
+                  cwd={ws.path}
+                  place={ws.name}
+                  state={DRAFT}
+                  agent={selection}
+                  models={models}
+                  onAgent={(next) => setSelection(next)}
+                  blocked={host.state.kind === 'blocked'}
+                  commands={appWideCommands}
+                  onSend={(text, images) => {
+                    if (host.state.kind === 'ready') newChat(ws, text, images)
+                    else setNotice({ text: HOST_BLOCKED, title: "Couldn't start a chat" })
+                  }}
+                  onCommand={() => createTab('chat')}
+                  onAnswer={() => {}}
+                  onInterrupt={() => {}}
+                  intro={<DraftIntro onTerminal={() => createTab('terminal')} />}
+                />
+              )}
+              {!chat && active !== undefined && toasts}
+              {ws === undefined && toasts}
+            </main>
+            <RightPanel
+              open={layout.gitOpen && ws !== undefined}
+              split={reports.has}
+              layout={layout}
+              update={update}
+              artifacts={artifacts}
+              panel={
+                ws && {
+                  branch: git.branch,
+                  changes,
+                  claude: claudeHere,
+                  cleanup,
+                  mergeAsk,
+                  onAskPr: () => askForPr(ws),
+                  onChanged: git.refresh,
+                  onError: (title, error) => fail(title)(error),
+                  path: ws.path,
+                  pr: git.pr,
+                  report: reportTab(reports, wsChats, git.pr, (id) => selectTab(ws.id, id), {
+                    colour: colourWord(ws.path),
+                    project: project?.name,
+                  }),
+                  setup: (
+                    <Dock
+                      ws={ws}
+                      projectName={project?.name ?? ''}
+                      terminals={terminals}
+                      hostReady={host.state.kind === 'ready'}
+                      onBlocked={(title) => setNotice({ text: HOST_BLOCKED, title })}
+                      fail={fail}
+                      runSetup={runSetup}
+                      onWriteSetup={(script) => newChat(ws, SETUP_PROMPT(script))}
+                      onAskAgent={(prompt) => newChat(ws, prompt)}
+                    />
+                  ),
+                  wsBranch: ws.branch,
+                }
+              }
+            />
           </div>
         </div>
       </div>
