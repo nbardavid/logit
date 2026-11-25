@@ -93,13 +93,26 @@ export function seedPr(ref: PrRef, pr: PullRequest) {
   update(ref.key, { at: Date.now(), error: null, pr })
 }
 
-const merged = new Set<() => void>()
-/** A card merged a PR: the git panel reads its own again. */
-export function onPrMerged(fn: () => void): () => void {
+/** A PR the user merged in the app: where (the workspace the button was in) and which. */
+export interface Merged {
+  /** The worktree the Merge was pressed from (a card's chat or page, the git panel). */
+  cwd: string
+  number: number
+  url: string
+}
+
+const merged = new Set<(m: Merged) => void>()
+/** The user merged a PR: the git panel reads its own again, the workspace's chat is told. */
+export function onPrMerged(fn: (m: Merged) => void): () => void {
   merged.add(fn)
   return () => {
     merged.delete(fn)
   }
+}
+
+/** Says a merge happened (the git panel's merges come in here too). */
+export function announceMerged(m: Merged) {
+  for (const fn of merged) fn(m)
 }
 
 /**
@@ -116,7 +129,7 @@ export async function mergePr(ref: PrRef, cwd: string | undefined, head: string)
   await inflight.get(ref.key)
   const shown = prEntry(ref.key).pr
   if (shown) update(ref.key, { pr: { ...shown, state: 'Merged' } })
-  for (const fn of merged) fn()
+  announceMerged({ cwd: cwd ?? '', number: ref.number, url: ref.url })
   void loadPr(ref, cwd, 0)
 }
 

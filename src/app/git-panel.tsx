@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 
 import type { BranchState, FileChange } from './use-git'
 
+import { announceMerged } from '../cards/pr-store'
 import {
   type Check,
   confirmWords,
@@ -393,8 +394,11 @@ function Head({
                 action === 'merge'
                   ? `Couldn't merge #${pr.number}`
                   : `Couldn't ${(cleanup?.label ?? 'clean up').toLowerCase()}`,
-                async () =>
-                  action === 'merge' ? invoke('pr_merge', { path }) : cleanup?.run(refused)
+                async () => {
+                  if (action !== 'merge') return cleanup?.run(refused)
+                  await invoke('pr_merge', { path })
+                  announceMerged({ cwd: path, number: pr.number, url: pr.url })
+                }
               )
             }
           >

@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
 
-import { addShellTurn, initialChat, reduceLine, replayTranscript, shellContextLine } from './model'
+import {
+  addShellTurn,
+  appNote,
+  contextLine,
+  initialChat,
+  reduceLine,
+  replayTranscript,
+  shellContext,
+} from './model'
 import { shellOutput, shellsDone } from './shell'
 
 const row = (content: string) =>
@@ -59,9 +67,15 @@ test('a result without a turn (the output told to Claude) ends nothing', () => {
 })
 
 test('Claude is told of the command without a turn', () => {
-  const line = JSON.parse(shellContextLine('ls', 'a.ts', 1)) as Record<string, unknown>
+  const line = JSON.parse(contextLine(shellContext('ls', 'a.ts', 1))) as Record<string, unknown>
   expect(line.shouldQuery).toBe(false)
   expect((line.message as { content: string }).content).toBe(
     '<bash-input>ls</bash-input>\n<bash-stdout>a.ts</bash-stdout><bash-stderr></bash-stderr><bash-exit-code>1</bash-exit-code>'
   )
+})
+
+test('an app note (a merge) is not drawn when the chat comes back from its transcript', () => {
+  const note = appNote('I merged pull request #3.')
+  const row = JSON.stringify({ message: { content: note, role: 'user' }, type: 'user', uuid: 'n1' })
+  expect(replayTranscript([row]).turns).toEqual([])
 })
