@@ -505,18 +505,8 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
   )
 }
 
-/** A prompt: the user's words in medium ink, left in the column like the rest, under "You". */
-const USER = `text-base font-medium text-foreground whitespace-pre-wrap wrap-anywhere`
-
-/** "You", over a prompt: who speaks, in small faint ink. */
-function You({ children, enter }: { children: ReactNode; enter: boolean }) {
-  return (
-    <div className={cn('flex min-w-0 flex-col gap-0.5', enter && ENTER)}>
-      <span className="text-faint text-xs select-none">You</span>
-      {children}
-    </div>
-  )
-}
+/** A prompt: the user's words in a bubble at the right of the column. */
+const USER = `max-w-[80%] self-end rounded-lg bg-bubble px-3.5 py-[11px] text-base text-ink-soft whitespace-pre-wrap wrap-anywhere`
 
 /** What a prompt says, as one line of text: the ruler's tooltip. */
 export function promptText(turn: Turn): string {
@@ -531,9 +521,9 @@ export function promptText(turn: Turn): string {
 const imagesIn = (turn: Turn) =>
   turn.blocks.flatMap((b) => (b.kind === 'image' ? [{ data: b.data, mediaType: b.mediaType }] : []))
 
-/** A prompt's images, under "You", over its words. */
+/** A prompt's images, over its bubble, at the bubble's right edge. */
 const PromptImages = ({ turn }: { turn: Turn }) => (
-  <ImageStrip images={imagesIn(turn)} className="mt-1 mb-1.5" />
+  <ImageStrip images={imagesIn(turn)} className="max-w-[80%] justify-end self-end" />
 )
 
 /** A `!` command: what was typed, at the right like a prompt; what it printed, under it. */
@@ -543,11 +533,9 @@ function ShellTurn({ block }: { block: Extract<Block, { kind: 'shell' }> }) {
   const enter = useEnter()
   return (
     <div className="flex flex-col gap-2">
-      <You enter={enter}>
-        <div className={cn(USER, 'font-mono text-mono font-normal')}>
-          <span className="text-faint">!</span> {block.command}
-        </div>
-      </You>
+      <div className={cn(USER, 'text-mono font-mono', enter && ENTER)}>
+        <span className="text-faint">!</span> {block.command}
+      </div>
       {block.output === null ? (
         <div className="text-faint flex h-7 items-center gap-2.5 text-base">
           <BrailleSpinner loader={loaders.working} className="text-md" />
@@ -573,22 +561,20 @@ function UserTurn({ turn }: { turn: Turn }) {
   if (first?.kind === 'shell') return <ShellTurn block={first} />
   if (first?.kind === 'command') {
     return (
-      <You enter={enter}>
-        <div className={cn(USER, 'text-ink-soft font-mono text-mono font-normal')}>
-          <span className="text-foreground font-semibold">/{first.name}</span>
-          {first.args !== '' && ` ${first.args}`}
-        </div>
-      </You>
+      <div className={cn(USER, 'text-mono font-mono', enter && ENTER)}>
+        <span className="text-foreground font-semibold">/{first.name}</span>
+        {first.args !== '' && ` ${first.args}`}
+      </div>
     )
   }
   // The ruler marks the images and the words as one prompt.
   return (
-    <You enter={enter}>
+    <div className={cn('flex flex-col gap-2', enter && ENTER)}>
       {turn.blocks.some((b) => b.kind === 'image') && <PromptImages turn={turn} />}
       {(turn.blocks.some((b) => b.kind === 'text') || imagesIn(turn).length === 0) && (
         <div className={USER}>{promptText(turn)}</div>
       )}
-    </You>
+    </div>
   )
 }
 

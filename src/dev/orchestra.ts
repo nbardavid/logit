@@ -11,7 +11,16 @@ const KIDS = [
   { colour: 'sage', minutes: 25, parent: 'chat-menus', task: 'workspace_stop in the MCP server' },
   { colour: 'ochre', minutes: 20, parent: 'chat-menus', task: 'Hide child workspaces' },
   { colour: 'plum', minutes: 8, parent: 'chat-coral', task: 'Tests for the agent tree' },
+  // In atlas, under cobalt: a second folder, in cobalt's blue.
+  { colour: 'iris', minutes: 14, parent: 'chat-cobalt', task: 'Refund emails' },
 ]
+
+/** Each starting chat's workspace and project. */
+const PARENTS: Record<string, { workspace: string; project: string }> = {
+  'chat-cobalt': { project: 'p-atlas', workspace: 'ws-cobalt' },
+  'chat-coral': { project: 'p-logit', workspace: 'ws-coral' },
+  'chat-menus': { project: 'p-logit', workspace: 'ws-amber' },
+}
 
 const kidChats = (now: number): ChatRecord[] =>
   KIDS.map((k) => ({
@@ -25,7 +34,7 @@ const kidChats = (now: number): ChatRecord[] =>
     workspaceId: `ws-${k.colour}`,
   }))
 
-const kidWorkspaces = (now: number, amber: string): Workspace[] =>
+const kidWorkspaces = (now: number, catalog: Catalog): Workspace[] =>
   KIDS.map((k) => ({
     base: 'origin/main',
     branch: `logit/${k.colour}`,
@@ -33,9 +42,11 @@ const kidWorkspaces = (now: number, amber: string): Workspace[] =>
     id: `ws-${k.colour}`,
     name: k.colour,
     parentChat: k.parent,
-    parentWorkspace: k.parent === 'chat-menus' ? 'ws-amber' : 'ws-coral',
-    path: amber.replace(/amber$/, k.colour),
-    projectId: 'p-logit',
+    parentWorkspace: PARENTS[k.parent]?.workspace,
+    path: (
+      catalog.workspaces.find((w) => w.id === PARENTS[k.parent]?.workspace)?.path ?? ''
+    ).replace(/[^/]+$/, k.colour),
+    projectId: PARENTS[k.parent]?.project ?? 'p-logit',
     setup: null,
   }))
 
@@ -46,6 +57,7 @@ export const KID_HOST_CHATS = [
   { alive: true, historyLen: 0, id: 'chat-sage', unread: true, waiting: false, working: false },
   { alive: true, historyLen: 0, id: 'chat-ochre', unread: false, waiting: true, working: true },
   { alive: true, historyLen: 0, id: 'chat-plum', unread: true, waiting: false, working: false },
+  { alive: true, historyLen: 0, id: 'chat-iris', unread: false, waiting: false, working: true },
 ]
 
 /** The parents folded on a first visit (until the viewer unfolds one). */
@@ -58,7 +70,7 @@ export function withKids(catalog: Catalog, now: number): Catalog {
   return {
     ...catalog,
     chats: [...catalog.chats, ...kidChats(now)],
-    workspaces: [...catalog.workspaces, ...kidWorkspaces(now, amber.path)],
+    workspaces: [...catalog.workspaces, ...kidWorkspaces(now, catalog)],
   }
 }
 
