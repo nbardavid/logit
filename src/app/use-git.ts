@@ -116,8 +116,8 @@ export function useGit(activePath: string | undefined, paths: string[], settled 
     }
   }, [activePath, tick, settled])
 
-  // A PR card merged something: the panel reads its PR (and the branch) again.
-  useEffect(() => onPrMerged(refresh), [refresh])
+  // A PR merged in the app: the panel reads its PR (and the branch) again.
+  useEffect(() => onPrMerged(() => refresh()), [refresh])
 
   /** Whether a worktree's PR was last seen merged. */
   const mergedOf = useCallback((path: string) => prs.current.get(path)?.state === 'Merged', [])

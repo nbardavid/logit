@@ -55,23 +55,30 @@ export function withShellOutput(state: ChatState, text: string): ChatState {
 }
 
 /**
- * A `!` command and its output, as the conversation keeps them: added to it without a
- * turn (`shouldQuery: false`), so Claude reads them with the next prompt, as in the TUI.
+ * Something the user did, added to the conversation without a turn (`shouldQuery: false`), so
+ * Claude reads it with the next prompt, as the TUI does with a `!` command. Sent while Claude
+ * works, Claude Code would slip it into a tool's result, where Claude takes it for an injection:
+ * it goes once the turn is over (`useChats`' `tell`).
  */
-export function shellContextLine(command: string, output: string, exitCode: number | null) {
-  const code =
-    exitCode === null || exitCode === 0 ? '' : `<bash-exit-code>${exitCode}</bash-exit-code>`
+export function contextLine(content: string) {
   return JSON.stringify({
-    message: {
-      content: `<bash-input>${command}</bash-input>\n<bash-stdout>${output}</bash-stdout><bash-stderr></bash-stderr>${code}`,
-      role: 'user',
-    },
+    message: { content, role: 'user' },
     parent_tool_use_id: null,
     session_id: '',
     shouldQuery: false,
     type: 'user',
   })
 }
+
+/** A `!` command and its output, as the conversation keeps them. */
+export function shellContext(command: string, output: string, exitCode: number | null) {
+  const code =
+    exitCode === null || exitCode === 0 ? '' : `<bash-exit-code>${exitCode}</bash-exit-code>`
+  return `<bash-input>${command}</bash-input>\n<bash-stdout>${output}</bash-stdout><bash-stderr></bash-stderr>${code}`
+}
+
+/** What logit tells Claude of an action taken in the app; the chat never draws it. */
+export const appNote = (text: string) => `<logit-note>${text}</logit-note>`
 
 /** The `!` commands whose output `line` just brought: Claude is to be told of them. */
 export function shellsDone(

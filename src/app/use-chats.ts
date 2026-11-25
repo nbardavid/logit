@@ -10,6 +10,7 @@ import {
   addShellTurn,
   blocksOf,
   type ChatState,
+  contextLine,
   contextUsageLine,
   type Image,
   initialChat,
@@ -25,7 +26,7 @@ import {
   resolvePermission,
   runningAgents,
   sendTurn,
-  shellContextLine,
+  shellContext,
   shellLine,
   shellsDone,
   STOP,
@@ -179,6 +180,8 @@ export function useChats(hooks: Hooks) {
   const hosted = useRef(new Map<string, HostChat>())
   /** Chats past their replay: only what arrives after it calls for attention. */
   const live = useRef(new Set<string>())
+  /** What Claude is to be told of the user's actions, held while its turn runs (`tell`). */
+  const held = useRef(new Map<string, string[]>())
   /** A cleared chat's old Claude, until it is gone: the new one waits for it. */
   const stopping = useRef(new Map<string, Promise<unknown>>())
   /** Queued prompts being taken back, by request id: their answer says if Claude let go. */
@@ -276,11 +279,20 @@ export function useChats(hooks: Hooks) {
           if (reportedSince(blocksOf(was), blocksOf(now))) {
             queueMicrotask(() => latest.current.hooks.onReport(next, !replaying))
           }
-          // A `!` command's output: into the conversation, for Claude's next prompt.
-          for (const shell of shellsDone(was, now)) {
-            if (replaying) continue
-            const told = shellContextLine(shell.command, shell.output ?? '', shell.exitCode)
-            queueMicrotask(() => void invoke('chat_send', { id, line: told }))
+          // A `!` command's output: into the conversation, for Claude's next prompt; held while
+          // Claude works (Claude Code would slip it into a tool's result), sent once it is done.
+          if (!replaying) {
+            const told = shellsDone(was, now).map((b) =>
+              shellContext(b.command, b.output ?? '', b.exitCode)
+            )
+            if (told.length > 0) held.current.set(id, [...(held.current.get(id) ?? []), ...told])
+            const waiting = held.current.get(id) ?? []
+            if (state.status !== 'working' && waiting.length > 0) {
+              held.current.delete(id)
+              for (const text of waiting) {
+                queueMicrotask(() => void invoke('chat_send', { id, line: contextLine(text) }))
+              }
+            }
           }
           // Just compacted: measure what is left, so the meter drops at once.
           const emptied = c.state.context !== null || c.state.usage !== null
@@ -526,6 +538,22 @@ export function useChats(hooks: Hooks) {
     [edit, write]
   )
 
+  /**
+   * Tells Claude of something the user did in the app (a merge…), without a turn: it reads it
+   * with the next prompt. Held while Claude works, sent when its turn ends.
+   */
+  const tell = useCallback(
+    (id: string, text: string) => {
+      const chat = latest.current.chats.find((c) => c.record.id === id)
+      if (chat?.state.status === 'working') {
+        held.current.set(id, [...(held.current.get(id) ?? []), text])
+        return
+      }
+      void write(id, contextLine(text)).catch(() => {})
+    },
+    [write]
+  )
+
   /** Esc: says "Stopping…" at once; the turn's result ends it. */
   const interrupt = useCallback(
     (id: string) => {
@@ -671,6 +699,7 @@ export function useChats(hooks: Hooks) {
       setModel,
       shell,
       stopTask,
+      tell,
       unqueue,
       wake,
     }),
@@ -692,6 +721,7 @@ export function useChats(hooks: Hooks) {
       setEffort,
       setModel,
       shell,
+      tell,
       unqueue,
       wake,
     ]

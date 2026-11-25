@@ -11,7 +11,7 @@ import { type Task, withTaskEvent } from './tasks'
 
 export { artifactUrl, newPublishes, type Published, publishedArtifacts } from './artifacts'
 export { type ContextUsage, contextUsageLine, USAGE } from './context-usage'
-export { addShellTurn, shellContextLine, shellLine, shellsDone } from './shell'
+export { addShellTurn, appNote, contextLine, shellContext, shellLine, shellsDone } from './shell'
 export { STOP_TASK, stopTaskLine, type Task } from './tasks'
 export { exitCode, numberedLines } from './tool-text'
 
@@ -586,7 +586,8 @@ export function modelSet(text: string): string | null {
 
 // What Claude Code writes in the transcript when Esc stopped a turn.
 const INTERRUPTED = /^\[Request interrupted by user/
-const HARNESS_TEXT = /^<(command-|local-command-|system-reminder|bash-)/
+// `logit-note`: what the app told Claude of the user's actions (`appNote`), never drawn.
+const HARNESS_TEXT = /^<(command-|local-command-|system-reminder|bash-|logit-note)/
 const COMMAND_NAME = /<command-name>\/?([^<]+)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
 const STDOUT = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/

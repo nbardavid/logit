@@ -54,8 +54,9 @@ import { useReports } from './app/use-reports'
 import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
 import { isDockTag } from './app/workspace-dock'
+import { onPrMerged } from './cards/pr-store'
 import { availableCommands } from './chat/commands'
-import { type ChatState, type Image, initialChat } from './chat/model'
+import { appNote, type ChatState, type Image, initialChat } from './chat/model'
 import {
   chatFlags,
   type ChatSettings,
@@ -170,6 +171,22 @@ export function App() {
     onReport: reports.arrived,
     onSent: store.unpause,
   })
+  // A merge pressed in the app (a PR card, the git panel): the workspace's chats are told, so
+  // the agent knows its PR landed without being asked.
+  const chatsNow = useRef(chats.chats)
+  chatsNow.current = chats.chats
+  const { tell } = chats
+  useEffect(
+    () =>
+      onPrMerged(({ cwd, number, url }) => {
+        const note = appNote(`I merged pull request #${number} (${url}) with logit's Merge button.`)
+        for (const c of chatsNow.current) {
+          if (c.cwd === cwd && c.record.sessionId !== null) tell(c.record.id, note)
+        }
+      }),
+    [tell]
+  )
+
   // The sidebar's ages and task titles: the open chats' live records over the saved ones.
   const sidebarChats = useMemo(() => {
     const live = new Map(chats.chats.map((c) => [c.record.id, c.record]))
