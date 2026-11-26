@@ -628,15 +628,12 @@ export function App() {
   const setAgent = (c: ChatTab, next: ChatSettings, typed: boolean) => {
     const now = agentOf(c)
     const id = c.record.id
+    const note = (text: string) => (typed ? undefined : text)
     if (next.model !== now.model) {
-      chats.setModel(id, next.model, typed ? undefined : `Model → ${modelName(next.model, models)}`)
+      chats.setModel(id, next.model, note(`Model → ${modelName(next.model, models)}`))
     }
     if (next.effort !== now.effort) {
-      chats.setEffort(
-        id,
-        next.effort,
-        typed ? undefined : `Intelligence → ${effortName(next.effort)}`
-      )
+      chats.setEffort(id, next.effort, note(`Intelligence → ${effortName(next.effort)}`))
     }
   }
 
@@ -838,7 +835,7 @@ export function App() {
       }}
       width={sideWidth}
       page={settingsOpen ? 'settings' : null}
-      foot={<Quotas cache={quotas.cache} error={quotas.error} picked={project?.accounts} />}
+      foot={<Quotas {...quotas} chosen={chat?.record.account} picked={project?.accounts} />}
       dock={layout.sideOpen && attentionToast}
       projects={projects}
       workspaces={lists}
@@ -931,6 +928,8 @@ export function App() {
                       agent={agentOf(chat)}
                       models={models}
                       onAgent={(next, typed) => setAgent(chat, next, typed)}
+                      account={{ chosen: chat.record.account, project: project?.accounts }}
+                      onAccount={(a, note) => chats.setAccount(chat.record.id, a, note)}
                       blocked={host.state.kind === 'blocked'}
                       commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text, images) => void chats.send(chat.record.id, text, images)}

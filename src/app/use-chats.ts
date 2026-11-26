@@ -63,8 +63,8 @@ interface Hooks {
   onReport: (chat: ChatTab, live: boolean) => void
   /** False while an old background host holds the chats: a second Claude would corrupt one. */
   canStart: () => boolean
-  /** The Claude account a new Claude of this workspace runs as. */
-  accountOf: (workspaceId: string) => Promise<string>
+  /** The Claude account a Claude of this workspace runs as, `chosen` its chat's pick. */
+  accountOf: (workspaceId: string, chosen?: string) => Promise<string>
   /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
   modelOf: (reported: string, current: string) => string
   /** A prompt went out in this workspace: a paused one is taken back up. */
@@ -364,7 +364,7 @@ export function useChats(hooks: Hooks) {
         }
         const account = host
           ? (host.account ?? DEFAULT_ACCOUNT)
-          : await latest.current.hooks.accountOf(chat.record.workspaceId)
+          : await latest.current.hooks.accountOf(chat.record.workspaceId, chat.record.account)
         accountOn.current.set(id, account)
         const begin = {
           account,
@@ -471,8 +471,8 @@ export function useChats(hooks: Hooks) {
   )
 
   /**
-   * Before a prompt: an idle chat whose account is no longer the one its project would pick
-   * (the project changed accounts, or this one is full) starts again on the right one, resumed
+   * Before a prompt: an idle chat whose account is no longer the one it should run as (picked
+   * in its footer, the project changed accounts, or this one is full) starts again on the right one, resumed
    * from its transcript, which every account shares.
    */
   const moveAccount = useCallback(
@@ -483,7 +483,10 @@ export function useChats(hooks: Hooks) {
       const host = hosted.current.get(id)
       const have = proc ? accountOn.current.get(id) : host && (host.account ?? DEFAULT_ACCOUNT)
       if (have === undefined) return
-      const want = await latest.current.hooks.accountOf(chat.record.workspaceId)
+      const want = await latest.current.hooks.accountOf(
+        chat.record.workspaceId,
+        chat.record.account
+      )
       if (want === have) return
       procs.current.delete(id)
       hosted.current.delete(id)
@@ -677,6 +680,20 @@ export function useChats(hooks: Hooks) {
     [command, edit]
   )
 
+  /**
+   * The account this chat runs as from its next prompt (`moveAccount`), none for its project's
+   * pick; a faint line says so.
+   */
+  const setAccount = useCallback(
+    (id: string, account: string | undefined, note: string) =>
+      edit(id, (c) => {
+        const { account: _, ...rest } = c.record
+        const record = account === undefined ? rest : { ...rest, account }
+        return { ...c, record, state: addNote(c.state, note, crypto.randomUUID()) }
+      }),
+    [edit]
+  )
+
   /** A fresh session in the same tab; the old one stays on disk for `/resume`. */
   const clear = useCallback(
     (id: string) => {
@@ -734,6 +751,7 @@ export function useChats(hooks: Hooks) {
       restore,
       seen,
       send,
+      setAccount,
       setEffort,
       setModel,
       shell,
@@ -757,6 +775,7 @@ export function useChats(hooks: Hooks) {
       restore,
       seen,
       send,
+      setAccount,
       setEffort,
       setModel,
       shell,

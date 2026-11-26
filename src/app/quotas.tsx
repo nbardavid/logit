@@ -1,7 +1,7 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-import { DEFAULT_ACCOUNT, pickAccount, quotaOf } from '../model/accounts'
+import { chatAccount, DEFAULT_ACCOUNT, quotaOf } from '../model/accounts'
 import { headline, type QuotaCache, type QuotaEntry, type UsageWindow } from '../model/quota'
 import { accountName } from './accounts-pane'
 import { useAccounts } from './use-accounts'
@@ -93,16 +93,20 @@ function QuotaWindows({
  */
 export function Quotas({
   cache,
+  chosen,
   error,
   picked,
 }: {
   cache: QuotaCache
   error: string | null
   /** The accounts the project on screen picked. */
+  /** The account picked for the chat on screen, if any. */
+  chosen?: string
   picked: string[] | undefined
 }) {
   const accounts = useAccounts()
-  const current = pickAccount(
+  const current = chatAccount(
+    chosen,
     picked ?? [],
     accounts.map((a) => a.id),
     cache

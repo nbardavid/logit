@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { QuotaCache, QuotaEntry } from './quota'
 
-import { DEFAULT_ACCOUNT, pickAccount } from './accounts'
+import { chatAccount, DEFAULT_ACCOUNT, pickAccount } from './accounts'
 
 const at = (session: number, weekly = 0): QuotaEntry =>
   ({
@@ -37,5 +37,22 @@ describe('pickAccount', () => {
 
   test('accounts removed since fall back to the default one', () => {
     expect(pickAccount(['gone'], ['default'], {})).toBe(DEFAULT_ACCOUNT)
+  })
+})
+
+describe('chatAccount', () => {
+  test('a chat runs on the account picked for it while it has room', () => {
+    expect(
+      chatAccount('b', ['a'], ['default', 'a', 'b'], { accounts: { a: at(0), b: at(80) } })
+    ).toBe('b')
+  })
+  test('a picked account that is full hands over to the project pick', () => {
+    expect(
+      chatAccount('b', ['a'], ['default', 'a', 'b'], { accounts: { a: at(10), b: at(100) } })
+    ).toBe('a')
+  })
+  test('nothing picked, or a picked account gone, is the project pick', () => {
+    expect(chatAccount(undefined, ['a'], ['default', 'a'], {})).toBe('a')
+    expect(chatAccount('gone', ['a'], ['default', 'a'], {})).toBe('a')
   })
 })
