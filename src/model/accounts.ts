@@ -23,6 +23,23 @@ export function fullness(entry: QuotaEntry | undefined): number | null {
 }
 
 /**
+ * The account a chat runs as: the one picked for it while it has room, else its project's
+ * (`pickAccount`). A picked account that fills up hands over until it has room again.
+ */
+export function chatAccount(
+  chosen: string | undefined,
+  project: string[],
+  known: string[],
+  cache: QuotaCache
+): string {
+  if (chosen !== undefined && known.includes(chosen)) {
+    const full = fullness(quotaOf(cache, chosen))
+    if (full === null || full < 100) return chosen
+  }
+  return pickAccount(project, known, cache)
+}
+
+/**
  * The account a new Claude of a project runs as: among the project's (the default one when it
  * names none, or none of them exists any more), the one with the most quota left; ties and
  * unknown quotas go by the project's order, a full account only when all are.

@@ -97,6 +97,9 @@ pub struct ChatRecord {
     /// When a turn last started or ended (ms): the sidebar's age. 0 in older catalogs.
     #[serde(default)]
     pub active_at: u64,
+    /// The Claude account picked for this chat; none, its project's pick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

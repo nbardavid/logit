@@ -58,6 +58,8 @@ export interface ChatRecord {
   createdAt: number
   /** When a turn last started or ended (ms): the sidebar's age. Absent in older catalogs. */
   activeAt?: number
+  /** The Claude account picked for this chat (`chatAccount`); absent, its project's pick. */
+  account?: string
 }
 
 export interface Catalog {

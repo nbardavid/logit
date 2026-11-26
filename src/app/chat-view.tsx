@@ -37,6 +37,7 @@ import {
   cycleEffort,
   type ModelInfo,
 } from '../model/agents'
+import { AccountSelect } from './account-select'
 import { ModelSelect } from './agent-select'
 import { AgentBar, RunningAgents } from './agents'
 import { CommandHint, CommandMenu } from './command-menu'
@@ -105,6 +106,10 @@ interface Props {
   models: ModelInfo[]
   /** A model or effort picked in the footer or by ⇧⌘/, or `typed` as `/model`, `/effort`. */
   onAgent: (next: ChatSettings, typed: boolean) => void
+  /** The account picked for this chat (none: Auto) and its project's, for the footer. */
+  account?: { chosen: string | undefined; project: string[] | undefined }
+  /** An account picked in the footer, and the faint line the chat shows for it. */
+  onAccount?: (account: string | undefined, note: string) => void
   /** An old background host holds the chats: the transcript shows, nothing runs. */
   blocked: boolean
   /** What the `/` menu offers: the app's commands and this chat's Claude's. */
@@ -263,6 +268,7 @@ function keepDraft(id: string, text: string, images: Image[]) {
 
 export function ChatView({
   above,
+  account,
   agent,
   blocked,
   commands,
@@ -270,6 +276,7 @@ export function ChatView({
   id,
   intro,
   models,
+  onAccount,
   onAgent,
   onAnswer,
   onAskUsage,
@@ -826,6 +833,9 @@ export function ChatView({
                   finalFocus={field}
                   onChange={(next) => onAgent(next, false)}
                 />
+              )}
+              {!off && account && onAccount && (
+                <AccountSelect {...account} onChange={onAccount} finalFocus={field} />
               )}
               <span className="min-w-0 flex-1" />
               <ContextMeter
