@@ -838,7 +838,7 @@ export function App() {
       }}
       width={sideWidth}
       page={settingsOpen ? 'settings' : null}
-      foot={<Quotas cache={quotas.cache} error={quotas.error} />}
+      foot={<Quotas cache={quotas.cache} error={quotas.error} picked={project?.accounts} />}
       dock={layout.sideOpen && attentionToast}
       projects={projects}
       workspaces={lists}

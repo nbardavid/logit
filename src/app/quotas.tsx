@@ -1,7 +1,10 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-import { headline, type QuotaCache, type UsageWindow } from '../model/quota'
+import { DEFAULT_ACCOUNT, pickAccount, quotaOf } from '../model/accounts'
+import { headline, type QuotaCache, type QuotaEntry, type UsageWindow } from '../model/quota'
+import { accountName } from './accounts-pane'
+import { useAccounts } from './use-accounts'
 
 function barTone(percent: number) {
   if (percent >= 85) return 'bg-critical'
@@ -51,30 +54,68 @@ function WindowRow({ window }: { window: UsageWindow }) {
   )
 }
 
-/** Every window of Claude's quota. */
-function QuotaWindows({ cache }: { cache: QuotaCache }) {
-  const entry = cache.claude
-  if (!entry) return null
+/** Every window of one account's quota, under who it is. */
+function QuotaWindows({
+  entry,
+  here,
+  name,
+  plan,
+}: {
+  entry: QuotaEntry | undefined
+  name: string
+  plan: string
+  /** The account the workspace on screen runs on. */
+  here: boolean
+}) {
+  const tier = entry?.snapshot.planTier ?? plan
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex justify-between text-sm font-semibold">
-        <span>Claude</span>
-        <span className="text-faint text-xs font-normal">
-          {ago(entry.fetchedAt)}
-          {entry.snapshot.planTier !== null && ` · ${entry.snapshot.planTier}`}
+      <div className="flex items-baseline justify-between gap-3 text-sm font-semibold">
+        <span className="min-w-0 truncate">
+          {name}
+          {here && <span className="text-faint ml-2 text-xs font-normal">This workspace</span>}
+        </span>
+        <span className="text-faint flex-none text-xs font-normal">
+          {entry ? ago(entry.fetchedAt) : 'No quota yet'}
+          {tier !== '' && ` · ${tier}`}
         </span>
       </div>
-      {entry.snapshot.windows.map((w) => (
+      {entry?.snapshot.windows.map((w) => (
         <WindowRow key={w.kind} window={w} />
       ))}
     </div>
   )
 }
 
-/** The 5-hour session (or a weekly window about to block), for the sidebar's foot; a click shows every window. */
-export function Quotas({ cache, error }: { cache: QuotaCache; error: string | null }) {
-  const tight = headline(cache)
-  if (cache.claude === undefined && error === null) return null
+/**
+ * The session of the account the workspace on screen runs on (or a weekly window about to
+ * block), for the sidebar's foot; a click shows every account's windows, that one first.
+ */
+export function Quotas({
+  cache,
+  error,
+  picked,
+}: {
+  cache: QuotaCache
+  error: string | null
+  /** The accounts the project on screen picked. */
+  picked: string[] | undefined
+}) {
+  const accounts = useAccounts()
+  const current = pickAccount(
+    picked ?? [],
+    accounts.map((a) => a.id),
+    cache
+  )
+  const entry = quotaOf(cache, current)
+  const tight = headline({ claude: entry })
+  if (entry === undefined && error === null) return null
+  const listed =
+    accounts.length > 0 ? accounts : [{ email: 'Claude', id: DEFAULT_ACCOUNT, plan: '' }]
+  const ordered = [
+    ...listed.filter((a) => a.id === current),
+    ...listed.filter((a) => a.id !== current),
+  ]
   return (
     <div className="flex min-w-0 flex-[0_1_auto]">
       <Popover>
@@ -98,11 +139,20 @@ export function Quotas({ cache, error }: { cache: QuotaCache; error: string | nu
           side="top"
           sideOffset={10}
           aria-label="Quotas"
-          className="w-[340px] gap-4 px-4 pt-3.5 pb-4"
+          className="max-h-[min(560px,80vh)] w-[340px] gap-0 divide-y overflow-y-auto px-4 py-0"
         >
-          <QuotaWindows cache={cache} />
+          {ordered.map((a) => (
+            <div key={a.id} className="py-3.5">
+              <QuotaWindows
+                entry={quotaOf(cache, a.id)}
+                name={accounts.length > 1 ? accountName(a) : 'Claude'}
+                plan={a.plan}
+                here={accounts.length > 1 && a.id === current}
+              />
+            </div>
+          ))}
           {error !== null && (
-            <div className="text-critical-ink text-xs [overflow-wrap:anywhere]">{error}</div>
+            <div className="text-critical-ink py-3 text-xs [overflow-wrap:anywhere]">{error}</div>
           )}
         </PopoverContent>
       </Popover>
