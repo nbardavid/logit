@@ -14,6 +14,7 @@ import {
 import { useSyncExternalStore } from 'react'
 
 import { SECTIONS } from '../settings/schema'
+import { currentProjects } from './project-look'
 
 export interface Pane {
   id: string
@@ -39,18 +40,42 @@ const FIRST: Pane = { icon: PaletteIcon, id: 'appearance', label: 'Appearance' }
 let current = FIRST.id
 const listeners = new Set<() => void>()
 
+/** A project's own pane, under Projects in the nav. */
+export const projectPane = (id: string) => `project:${id}`
+export const paneProject = (pane: string) =>
+  pane.startsWith('project:') ? pane.slice('project:'.length) : null
+
+/** Every pane in the nav's order: the app's, then one per project. */
+const allPanes = () => [
+  ...PANES.map((p) => p.id),
+  ...currentProjects().map((p) => projectPane(p.id)),
+]
+
 export const currentPane = () => current
 
 export function setPane(id: string) {
-  if (id === current || !PANES.some((p) => p.id === id)) return
+  if (id === current || !allPanes().includes(id)) return
   current = id
   for (const listener of listeners) listener()
 }
 
 /** Moves `by` panes, wrapping: ⌃Tab and the nav's arrows. */
 export function stepPane(by: number) {
-  const i = PANES.findIndex((p) => p.id === current)
-  setPane(PANES[(i + by + PANES.length) % PANES.length]?.id ?? current)
+  const ids = allPanes()
+  const i = ids.indexOf(current)
+  setPane(ids[(i + by + ids.length) % ids.length] ?? current)
+}
+
+/** The pane on screen; a project's comes back as its id (`paneProject` reads it). */
+export function usePaneId(): string {
+  const id = useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    () => current
+  )
+  return paneProject(id) !== null || PANES.some((p) => p.id === id) ? id : FIRST.id
 }
 
 export function usePane(): Pane {

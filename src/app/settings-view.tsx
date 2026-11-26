@@ -1,12 +1,23 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ArrowUpRightIcon, CopyIcon, PlayIcon, RotateCcwIcon } from 'lucide-react'
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  ArrowUpRightIcon,
+  CheckIcon,
+  CopyIcon,
+  ImageIcon,
+  PlayIcon,
+  PlusIcon,
+  RotateCcwIcon,
+} from 'lucide-react'
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+
+import type { Project } from '../model/catalog'
 
 import {
   changedRows,
@@ -21,9 +32,18 @@ import { playSettingsSound } from './attention'
 import { previewCleanup } from './cleanup-effect'
 import { ContextMenu, type MenuState } from './context-menu'
 import { GROUND_SETTING } from './ground'
-import { GroundSwatch } from './ground-picker'
+import { GroundSwatch, ToneField } from './ground-picker'
 import { noteGroundSetting } from './ground-store'
 import { noteLoaderSetting } from './loader-choice'
+import { isImageIcon, readPicture, SquareCrop } from './project-image'
+import {
+  currentProjects,
+  nameTone,
+  noteProjects,
+  PROJECT_ICONS,
+  PROJECT_TONES,
+  useProjects,
+} from './project-look'
 import { EDIT_BACKGROUND_PROMPT, NEW_BACKGROUND_PROMPT } from './prompts'
 import {
   BackgroundTiles,
@@ -35,7 +55,17 @@ import {
   Switch,
   TextField,
 } from './settings-controls'
-import { currentPane, PANES, setPane, stepPane, usePane } from './settings-pane'
+import {
+  currentPane,
+  paneProject,
+  PANES,
+  projectPane,
+  setPane,
+  stepPane,
+  usePane,
+  usePaneId,
+} from './settings-pane'
+import { ProjectAvatar } from './sidebar'
 import { DEFAULT_FONT, noteTerminalSetting } from './terminal-font'
 import { devBuild, type Update } from './update-button'
 import { deleteScene, noteWallpaperSetting, useWallpaperState } from './wallpaper'
@@ -494,6 +524,306 @@ function AboutPane({ path, update }: { update: Update; path: string }) {
   )
 }
 
+export interface ProjectLook {
+  name: string
+  color: string
+  icon: string
+}
+
+/** The folder's own name: what an emptied name falls back to. */
+const folderName = (path: string) => path.slice(path.lastIndexOf('/') + 1) || path
+
+const swatch =
+  'grid size-7 place-items-center rounded-full outline-2 outline-offset-2 outline-transparent transition-[outline-color,transform] duration-120 ease-out hover:scale-110 aria-checked:outline-foreground focus-visible:outline-[color-mix(in_srgb,var(--tan)_70%,transparent)] motion-reduce:hover:scale-100'
+const iconTile =
+  'text-muted-foreground hover:bg-hover hover:text-foreground aria-checked:bg-active aria-checked:text-foreground grid size-8 place-items-center rounded-md text-xs font-bold transition-[background-color,color] duration-120 ease-out outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--tan)_70%,transparent)]'
+
+/** Every hue round the Custom dot until a colour of its own is picked. */
+const RAINBOW =
+  'conic-gradient(from 90deg, #c2554d, #b8913a, #6f9a4a, #3f8f8a, #4a6fb0, #7a5aa8, #b0508a, #c2554d)'
+
+/**
+ * The last colour dot: a colour of the user's own, picked on the window colour's field. The
+ * sidebar folder and avatars follow the drag; the release keeps it.
+ */
+function CustomTone({
+  onCommit,
+  project,
+  value,
+}: {
+  project: Project
+  /** The custom colour in use, or '' while it is one of the ten or the name's. */
+  value: string
+  onCommit: (hex: string) => void
+}) {
+  const preview = (color: string) =>
+    noteProjects(currentProjects().map((p) => (p.id === project.id ? { ...p, color } : p)))
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value !== ''}
+            aria-label="Custom colour"
+            data-tip="Custom…"
+            className={cn(swatch, 'text-white')}
+            style={{ background: value === '' ? RAINBOW : value }}
+          >
+            {value === '' ? (
+              <PlusIcon
+                className="size-3.5 drop-shadow-[0_0_1px_rgb(0_0_0/0.4)]"
+                strokeWidth={2.5}
+              />
+            ) : (
+              <CheckIcon className="size-3.5" strokeWidth={2.5} />
+            )}
+          </button>
+        }
+      />
+      <PopoverContent align="start" className="w-[290px] p-3">
+        <ToneField
+          value={value === '' ? (project.color ?? nameTone(project.name)) : value}
+          onLive={preview}
+          onCommit={onCommit}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** Settings › one project: its name, its tone and icon, its folder and setup script. */
+function ProjectPane({
+  onUpdate,
+  project,
+}: {
+  project: Project
+  onUpdate: (look: ProjectLook) => void
+}) {
+  const [copied, setCopied] = useState(false)
+  // A picture that isn't square, being cut square below the icons.
+  const [cropping, setCropping] = useState<string | null>(null)
+  const [pictureError, setPictureError] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const stopCropping = useCallback(() => setCropping(null), [])
+  const cropBox = useRef<HTMLDivElement>(null)
+  // The cropper comes into view once it has slid open, under the icons.
+  const opened = cropping !== null
+  useEffect(() => {
+    if (!opened) return
+    const timer = setTimeout(
+      () => cropBox.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+      180
+    )
+    return () => clearTimeout(timer)
+  }, [opened])
+  const look: ProjectLook = {
+    color: project.color ?? '',
+    icon: project.icon ?? '',
+    name: project.name,
+  }
+  const set = (change: Partial<ProjectLook>) => onUpdate({ ...look, ...change })
+  const initial = project.name.slice(0, 1).toUpperCase()
+  // A colour of its own, not one of the ten: the Custom dot holds it.
+  const custom = look.color !== '' && !PROJECT_TONES.some((t) => t.id === look.color)
+  const pick = (file: File) => {
+    setPictureError(null)
+    if (!file.type.startsWith('image/')) return setPictureError('Pick a picture: PNG, JPEG, SVG…')
+    readPicture(file).then(
+      (read) => ('square' in read ? set({ icon: read.square }) : setCropping(read.crop)),
+      () => setPictureError("Couldn't read this picture.")
+    )
+  }
+  return (
+    <>
+      <section>
+        <h2 className={groupTitle}>Project</h2>
+        <div className={cardClass}>
+          <div className={rowClass}>
+            <Label label="Name" help="In the sidebar, ⌘P and the composer." />
+            <TextField
+              label="Name"
+              value={project.name}
+              placeholder={folderName(project.path)}
+              onChange={(name) => set({ name })}
+            />
+          </div>
+          <div className={rowClass}>
+            <Label
+              label="Folder"
+              help={
+                <span className="block truncate font-mono" title={project.path}>
+                  {project.path}
+                </span>
+              }
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Copy the path"
+              data-tip={copied ? 'Copied' : 'Copy the path'}
+              onClick={() => {
+                void navigator.clipboard.writeText(project.path).then(() => setCopied(true))
+              }}
+              onMouseLeave={() => setCopied(false)}
+            >
+              <CopyIcon />
+            </Button>
+          </div>
+        </div>
+        <p className={groupFoot}>An empty name gives the folder&apos;s back.</p>
+      </section>
+      <section>
+        <h2 className={groupTitle}>Look</h2>
+        <div className={cardClass}>
+          <div className="flex flex-col gap-3 px-4 py-3.5">
+            <Label label="Colour" help="Its avatar and its folder in the sidebar." />
+            <div className="flex flex-wrap gap-2.5" role="radiogroup" aria-label="Colour">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={look.color === ''}
+                aria-label="From its name"
+                data-tip="From its name"
+                className={cn(swatch, 'text-2xs font-bold text-white')}
+                style={{ background: nameTone(project.name) }}
+                onClick={() => set({ color: '' })}
+              >
+                A
+              </button>
+              {PROJECT_TONES.map((tone) => (
+                <button
+                  type="button"
+                  key={tone.id}
+                  role="radio"
+                  aria-checked={look.color === tone.id}
+                  aria-label={tone.label}
+                  data-tip={tone.label}
+                  className={cn(swatch, 'text-white')}
+                  style={{ background: tone.id }}
+                  onClick={() => set({ color: tone.id })}
+                >
+                  {look.color === tone.id && <CheckIcon className="size-3.5" strokeWidth={2.5} />}
+                </button>
+              ))}
+              <CustomTone
+                project={project}
+                value={custom ? look.color : ''}
+                onCommit={(color) => set({ color })}
+              />
+            </div>
+          </div>
+          <div
+            className="flex flex-col gap-3 px-4 py-3.5"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              const file = e.dataTransfer.files[0]
+              if (file !== undefined) pick(file)
+            }}
+          >
+            <Label
+              label="Icon"
+              help="Its avatar; the initial by default. Drop a picture here, or pick one."
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file !== undefined) pick(file)
+              }}
+            />
+            <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Icon">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={look.icon === ''}
+                aria-label="Initial"
+                data-tip="Initial"
+                className={iconTile}
+                onClick={() => set({ icon: '' })}
+              >
+                {initial}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={isImageIcon(look.icon)}
+                aria-label="Picture…"
+                data-tip={isImageIcon(look.icon) ? 'Another picture…' : 'Picture…'}
+                className={iconTile}
+                onClick={() => fileInput.current?.click()}
+              >
+                {isImageIcon(look.icon) ? (
+                  <img src={look.icon} alt="" className="size-5 rounded-[4px] object-cover" />
+                ) : (
+                  <ImageIcon className="size-4" />
+                )}
+              </button>
+              {Object.entries(PROJECT_ICONS).map(([id, Icon]) => (
+                <button
+                  type="button"
+                  key={id}
+                  role="radio"
+                  aria-checked={look.icon === id}
+                  aria-label={id}
+                  className={iconTile}
+                  onClick={() => set({ icon: id })}
+                >
+                  <Icon className="size-4" />
+                </button>
+              ))}
+            </div>
+            {pictureError !== null && (
+              <span className={cn(fieldError, 'animate-in fade-in')}>{pictureError}</span>
+            )}
+          </div>
+          <Reveal open={cropping !== null}>
+            <div className="border-t px-4 py-3.5" ref={cropBox}>
+              {cropping !== null && (
+                <SquareCrop
+                  src={cropping}
+                  onCancel={stopCropping}
+                  onDone={(icon) => {
+                    setCropping(null)
+                    set({ icon })
+                  }}
+                />
+              )}
+            </div>
+          </Reveal>
+        </div>
+      </section>
+      <section>
+        <h2 className={groupTitle}>Workspaces</h2>
+        <div className={cardClass}>
+          <div className={rowClass}>
+            <Label
+              label="Setup script"
+              help="Runs in each new workspace: dependencies, .env, caches."
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void invoke('edit_setup_script', { projectId: project.id }).catch(() => {})
+              }
+            >
+              Edit
+              <ArrowUpRightIcon />
+            </Button>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
 /** Puts a pane's settings back to their defaults; asks twice. */
 function RestoreDefaults({ changed, onRestore }: { changed: number; onRestore: () => void }) {
   const [armed, setArmed] = useState(false)
@@ -536,10 +866,13 @@ export function SettingsView({
   onAsk,
   onClose,
   onRestartHost,
+  onUpdateProject,
   terminals,
   update,
 }: {
   onClose: () => void
+  /** Settings › Projects: a project's name, tone or icon changed. */
+  onUpdateProject: (id: string, look: ProjectLook) => void
   /** Opens a chat on this prompt in the workspace on screen: Settings closes for it. */
   onAsk: (prompt: string) => void
   /** The app's update, which About checks and installs. */
@@ -555,6 +888,10 @@ export function SettingsView({
   const [error, setError] = useState<string | null>(null)
   const page = useRef<HTMLDivElement>(null)
   const pane = usePane()
+  const paneId = usePaneId()
+  const projects = useProjects()
+  const projectId = paneProject(paneId)
+  const project = projects.find((p) => p.id === projectId)
 
   useEffect(() => {
     void invoke<{ path: string; settings: Stored }>('read_settings').then(
@@ -572,7 +909,7 @@ export function SettingsView({
   // A new pane starts at its top.
   useEffect(() => {
     page.current?.scrollTo({ top: 0 })
-  }, [pane.id])
+  }, [paneId])
 
   const write = (id: string, value: SettingValue | null) => {
     invoke('write_setting', { id, value })
@@ -605,8 +942,15 @@ export function SettingsView({
         <SettingsNav />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-12 flex-none items-center justify-between gap-4 pr-4 pl-8">
-            <DialogTitle className="text-base">{pane.label}</DialogTitle>
-            {section !== undefined && (
+            {project === undefined ? (
+              <DialogTitle className="text-base">{pane.label}</DialogTitle>
+            ) : (
+              <DialogTitle className="flex min-w-0 items-center gap-2 text-base">
+                <ProjectAvatar name={project.name} />
+                <span className="truncate">{project.name}</span>
+              </DialogTitle>
+            )}
+            {section !== undefined && project === undefined && (
               <RestoreDefaults
                 changed={changed.length}
                 onRestore={() => {
@@ -618,11 +962,17 @@ export function SettingsView({
           <div ref={page} className="min-h-0 flex-1 overflow-auto px-8 pt-2 pb-8">
             {/* The pane fades in and rises a hair; the old one leaves at once. */}
             <div
-              key={pane.id}
+              key={paneId}
               className="animate-in fade-in slide-in-from-bottom-1 flex flex-col gap-6 duration-160 ease-out"
             >
               {error !== null && <div className={cn(fieldError, 'px-1')}>{error}</div>}
-              {section !== undefined && stored !== null && (
+              {project !== undefined && (
+                <ProjectPane
+                  project={project}
+                  onUpdate={(look) => onUpdateProject(project.id, look)}
+                />
+              )}
+              {project === undefined && section !== undefined && stored !== null && (
                 <SectionPane
                   section={section}
                   stored={stored}
@@ -631,10 +981,12 @@ export function SettingsView({
                   onAsk={onAsk}
                 />
               )}
-              {pane.id === 'host' && (
+              {project === undefined && pane.id === 'host' && (
                 <HostPane chats={chats} terminals={terminals} onRestart={onRestartHost} />
               )}
-              {pane.id === 'about' && <AboutPane update={update} path={path} />}
+              {project === undefined && pane.id === 'about' && (
+                <AboutPane update={update} path={path} />
+              )}
             </div>
           </div>
         </div>
@@ -643,12 +995,32 @@ export function SettingsView({
   )
 }
 
-/** The sections, down the window's left side. ↑/↓ step through them, as ⌃Tab does. */
+const navTab =
+  'hover:bg-hover text-muted-foreground aria-selected:bg-active aria-selected:text-foreground flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color,color] duration-120 outline-none'
+
+/** The sections, then one per project, down the window's left side. ↑/↓ step through them,
+ * as ⌃Tab does. */
 function SettingsNav() {
-  const pane = usePane()
+  const paneId = usePaneId()
+  const projects = useProjects()
+  const tab = (id: string, icon: ReactNode, label: string) => (
+    <button
+      type="button"
+      key={id}
+      role="tab"
+      data-pane={id}
+      aria-selected={paneId === id}
+      tabIndex={paneId === id ? 0 : -1}
+      className={navTab}
+      onClick={() => setPane(id)}
+    >
+      {icon}
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+    </button>
+  )
   return (
     <div
-      className="bg-well border-border flex w-[200px] flex-none flex-col gap-0.5 border-r p-2 pt-3"
+      className="bg-well border-border flex w-[200px] flex-none flex-col gap-0.5 overflow-y-auto border-r p-2 pt-3"
       role="tablist"
       aria-orientation="vertical"
       aria-label="Settings"
@@ -656,28 +1028,27 @@ function SettingsNav() {
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
         e.preventDefault()
         stepPane(e.key === 'ArrowDown' ? 1 : -1)
-        const tabs = e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')
-        tabs[PANES.findIndex((p) => p.id === currentPane())]?.focus()
+        e.currentTarget
+          .querySelector<HTMLElement>(`[data-pane="${CSS.escape(currentPane())}"]`)
+          ?.focus()
       }}
     >
       <span className="text-label px-2.5 pb-2 text-xs font-medium">Settings</span>
-      {PANES.map(({ icon: Icon, id, label }) => {
-        const here = pane.id === id
-        return (
-          <button
-            type="button"
-            key={id}
-            role="tab"
-            aria-selected={here}
-            tabIndex={here ? 0 : -1}
-            className="hover:bg-hover text-muted-foreground aria-selected:bg-active aria-selected:text-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color,color] duration-120 outline-none"
-            onClick={() => setPane(id)}
-          >
-            <Icon className={cn('size-4 shrink-0', here ? 'text-foreground' : 'text-faint')} />
-            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-          </button>
+      {PANES.map(({ icon: Icon, id, label }) =>
+        tab(
+          id,
+          <Icon
+            className={cn('size-4 shrink-0', paneId === id ? 'text-foreground' : 'text-faint')}
+          />,
+          label
         )
-      })}
+      )}
+      {projects.length > 0 && (
+        <span className="text-label px-2.5 pt-4 pb-2 text-xs font-medium">Projects</span>
+      )}
+      {projects.map((p) =>
+        tab(projectPane(p.id), <ProjectAvatar name={p.name} size="sm" className="mx-px" />, p.name)
+      )}
     </div>
   )
 }

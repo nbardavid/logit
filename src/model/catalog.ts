@@ -5,6 +5,10 @@ export interface Project {
   name: string
   path: string
   lastOpenedAt: number
+  /** The tone picked in Settings › Projects; absent follows the name. */
+  color?: string
+  /** The avatar's icon picked there; absent shows the initial. */
+  icon?: string
 }
 
 export interface Workspace {

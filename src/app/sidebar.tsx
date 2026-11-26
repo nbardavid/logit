@@ -8,7 +8,14 @@ import {
   SearchIcon,
   SettingsIcon,
 } from 'lucide-react'
-import { type CSSProperties, type MouseEvent, type ReactNode, useEffect, useState } from 'react'
+import {
+  createElement,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -21,6 +28,7 @@ import type { FileChange } from './use-git'
 import { EnterScope, In } from './enter'
 import { GroundButton } from './ground-picker'
 import { rowTone, type Stop, STOP_WORD } from './needs'
+import { projectIcon, projectImage, projectTone, useProjects } from './project-look'
 import { useReorder } from './reorder'
 import { type TreeRow, treeRows } from './sidebar-tree'
 import { Dot, type Tone } from './status-dot'
@@ -105,16 +113,9 @@ interface Props {
   dock?: ReactNode
 }
 
-const AVATAR_TONES = ['#525890', '#5b7a5e', '#8a5a44', '#6b5b8a', '#44707f', '#8a6d2f']
+export { projectTone }
 
-/** A project's tone, picked from its name so it keeps it: its avatar, its sidebar folder. */
-export function projectTone(name: string): string {
-  let hash = 0
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
-  return AVATAR_TONES[hash % AVATAR_TONES.length] ?? '#525890'
-}
-
-/** A project's initial on its tone. */
+/** A project's initial, or the icon picked for it, on its tone. */
 export function ProjectAvatar({
   className,
   name,
@@ -125,6 +126,21 @@ export function ProjectAvatar({
   /** `md` 18px (the sidebar's projects), `sm` 16px (inline in a row or a meta line). */
   size?: 'sm' | 'md'
 }) {
+  useProjects()
+  const icon = projectIcon(name)
+  const image = projectImage(name)
+  if (image !== null)
+    return (
+      <img
+        src={image}
+        alt=""
+        className={cn(
+          'flex-none object-cover shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)]',
+          size === 'md' ? 'size-[18px] rounded-[5px]' : 'size-4 rounded-sm',
+          className
+        )}
+      />
+    )
   return (
     <span
       className={cn(
@@ -135,7 +151,12 @@ export function ProjectAvatar({
       style={{ background: projectTone(name) }}
       aria-hidden="true"
     >
-      {name.slice(0, 1).toUpperCase()}
+      {icon === null
+        ? name.slice(0, 1).toUpperCase()
+        : createElement(icon, {
+            className: size === 'md' ? 'size-3' : 'size-2.5',
+            strokeWidth: 2.25,
+          })}
     </span>
   )
 }

@@ -772,6 +772,16 @@ function handle(cmd: string, args: Args): unknown {
       store.workspaces = store.workspaces.toSorted((a, b) => rank(a.id) - rank(b.id))
       return null
     }
+    case 'project_update': {
+      const project = store.projects.find((p) => p.id === args.id)
+      if (project === undefined) throw new Error('unknown project')
+      const name = str(args.name).trim()
+      project.name = name === '' ? project.path.slice(project.path.lastIndexOf('/') + 1) : name
+      project.color = str(args.color).trim() || undefined
+      project.icon = str(args.icon).trim() || undefined
+      store.projects = [...store.projects]
+      return { ...project }
+    }
     case 'project_remove':
       store.projects = store.projects.filter((p) => p.id !== args.id)
       return null
