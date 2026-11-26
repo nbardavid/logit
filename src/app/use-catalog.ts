@@ -158,6 +158,15 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
     [reload]
   )
 
+  /** The Claude accounts its new chats run as; empty is the default one. */
+  const setProjectAccounts = useCallback(
+    async (id: string, accounts: string[]) => {
+      await invoke('project_set_accounts', { accounts, id })
+      await reload()
+    },
+    [reload]
+  )
+
   /** Its display name; the branch and folder keep their colour. Empty gives the colour back. */
   const renameWorkspace = useCallback(
     async (id: string, name: string) => {
@@ -249,6 +258,7 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
     saveChat,
     seeArtifact,
     select,
+    setProjectAccounts,
     status,
     unpause,
     updateProject,

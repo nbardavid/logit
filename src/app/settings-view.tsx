@@ -28,6 +28,7 @@ import {
   SECTIONS,
   type SettingValue,
 } from '../settings/schema'
+import { AccountsPane, ProjectAccounts } from './accounts-pane'
 import { playSettingsSound } from './attention'
 import { previewCleanup } from './cleanup-effect'
 import { ContextMenu, type MenuState } from './context-menu'
@@ -595,11 +596,13 @@ function CustomTone({
 
 /** Settings › one project: its name, its tone and icon, its folder and setup script. */
 function ProjectPane({
+  onSetAccounts,
   onUpdate,
   project,
 }: {
   project: Project
   onUpdate: (look: ProjectLook) => void
+  onSetAccounts: (accounts: string[]) => void
 }) {
   const [copied, setCopied] = useState(false)
   // A picture that isn't square, being cut square below the icons.
@@ -799,6 +802,7 @@ function ProjectPane({
           </Reveal>
         </div>
       </section>
+      <ProjectAccounts picked={project.accounts ?? []} onChange={onSetAccounts} />
       <section>
         <h2 className={groupTitle}>Workspaces</h2>
         <div className={cardClass}>
@@ -866,11 +870,14 @@ export function SettingsView({
   onAsk,
   onClose,
   onRestartHost,
+  onSetProjectAccounts,
   onUpdateProject,
   terminals,
   update,
 }: {
   onClose: () => void
+  /** Settings › a project: the Claude accounts its chats run as. */
+  onSetProjectAccounts: (id: string, accounts: string[]) => Promise<void>
   /** Settings › Projects: a project's name, tone or icon changed. */
   onUpdateProject: (id: string, look: ProjectLook) => void
   /** Opens a chat on this prompt in the workspace on screen: Settings closes for it. */
@@ -970,6 +977,11 @@ export function SettingsView({
                 <ProjectPane
                   project={project}
                   onUpdate={(look) => onUpdateProject(project.id, look)}
+                  onSetAccounts={(accounts) =>
+                    void onSetProjectAccounts(project.id, accounts).catch(() =>
+                      setError("Couldn't save the project's accounts.")
+                    )
+                  }
                 />
               )}
               {project === undefined && section !== undefined && stored !== null && (
@@ -981,6 +993,7 @@ export function SettingsView({
                   onAsk={onAsk}
                 />
               )}
+              {project === undefined && pane.id === 'accounts' && <AccountsPane />}
               {project === undefined && pane.id === 'host' && (
                 <HostPane chats={chats} terminals={terminals} onRestart={onRestartHost} />
               )}

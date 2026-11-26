@@ -25,6 +25,9 @@ pub struct Project {
     /// The icon the user picked for its avatar; none shows its initial.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// The Claude accounts its chats run as (`accounts.rs`); empty is the default one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -396,6 +399,25 @@ pub fn project_update(
     icon: String,
 ) -> Result<Project, String> {
     edit(&store, |c| update_project(c, &id, &name, &color, &icon))
+}
+
+/// Settings › a project: the Claude accounts its chats run as, in the user's order; empty
+/// gives the default one back.
+#[tauri::command]
+pub fn project_set_accounts(
+    store: State<'_, Store>,
+    id: String,
+    accounts: Vec<String>,
+) -> Result<Project, String> {
+    edit(&store, |c| {
+        let p = c
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or("unknown project")?;
+        p.accounts = accounts;
+        Ok(p.clone())
+    })
 }
 
 #[tauri::command]

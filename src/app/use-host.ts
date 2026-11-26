@@ -12,6 +12,8 @@ export interface HostChat {
   unread: boolean
   /** How many transcript lines Claude was resumed from: the replay covers the rest. */
   historyLen: number
+  /** The Claude account it runs as; absent or null is the default one. */
+  account?: string | null
 }
 
 export interface HostTerm {

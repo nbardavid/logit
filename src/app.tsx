@@ -43,6 +43,7 @@ import { TerminalView } from './app/terminal-view'
 import { type Attention, AttentionToast, errorText, type Notice, NoticeToast } from './app/toast'
 import { TopBar } from './app/top-bar'
 import { UpdateButton, useUpdate } from './app/update-button'
+import { accountFor } from './app/use-accounts'
 import { type AgentAsk, followUp, useAgentAsks } from './app/use-agent-asks'
 import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
@@ -159,6 +160,7 @@ export function App() {
   const publish = useRef<ReturnType<typeof useArtifacts>['published']>(() => {})
   const reports = useReports(ws?.id)
   const chats = useChats({
+    accountOf: accountFor,
     canStart: () => host.state.kind === 'ready',
     modelOf: (reported, current) => reportedModel(reported, current, models),
     onArtifact: (chat, artifact, live) =>
@@ -836,7 +838,7 @@ export function App() {
       }}
       width={sideWidth}
       page={settingsOpen ? 'settings' : null}
-      foot={<Quotas cache={quotas.cache} error={quotas.error} />}
+      foot={<Quotas cache={quotas.cache} error={quotas.error} picked={project?.accounts} />}
       dock={layout.sideOpen && attentionToast}
       projects={projects}
       workspaces={lists}
@@ -1041,6 +1043,7 @@ export function App() {
           chats={chats.chats.filter((c) => c.state.status === 'working').length}
           terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
           onRestartHost={host.restart}
+          onSetProjectAccounts={store.setProjectAccounts}
           onUpdateProject={(id, look) =>
             void store.updateProject(id, look).catch(fail("Couldn't save the project"))
           }

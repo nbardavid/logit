@@ -20,7 +20,7 @@ use crate::{pty, store};
 
 /// Bumped by hand whenever a message or behaviour changes incompatibly. `hello`, `list` and
 /// `shutdown` keep their shape in every version, so any app can always talk that much.
-pub const HOST_PROTOCOL: u32 = 4;
+pub const HOST_PROTOCOL: u32 = 5;
 
 /// How long an `ask` waits for a window to answer.
 const ASK_WAIT: Duration = Duration::from_secs(60);
@@ -106,6 +106,9 @@ pub struct ChatStart {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub history_len: usize,
+    /// The Claude account it runs as (`accounts.rs`); none is the default one.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +136,9 @@ pub struct HostChat {
     pub waiting: bool,
     pub unread: bool,
     pub history_len: usize,
+    /// The Claude account it runs as; none is the default one.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,6 +274,8 @@ struct ChatProc {
     subs: Vec<UnixStream>,
     flags: ChatFlags,
     history_len: usize,
+    /// The Claude account it was started as; none is the default one.
+    account: Option<String>,
     ended: bool,
     /// The last line either way, for the idle compaction.
     last_activity: Instant,
@@ -560,6 +568,7 @@ fn peek(state: &Shared) -> Vec<HostChat> {
             waiting: c.flags.waiting,
             unread: c.flags.unread,
             history_len: c.history_len,
+            account: c.account.clone(),
         })
         .collect()
 }
@@ -602,6 +611,7 @@ fn list(state: &Shared) -> HostList {
                 waiting: c.flags.waiting,
                 unread: c.flags.unread,
                 history_len: c.history_len,
+                account: c.account.clone(),
             };
             c.flags.unread = false;
             chat
@@ -614,6 +624,7 @@ fn list(state: &Shared) -> HostList {
         waiting: false,
         unread: true,
         history_len: 0,
+        account: None,
     }));
     let terms = s.terms.values().map(|t| t.info.clone()).collect();
     HostList { chats, terms }
@@ -633,7 +644,7 @@ fn chat_open(
             start.model.as_deref(),
             start.effort.as_deref(),
         );
-        let mut child = match spawn_claude(&start.cwd, args, Some(&id)) {
+        let mut child = match spawn_claude(&start.cwd, args, Some(&id), start.account.as_deref()) {
             Ok(child) => child,
             Err(e) => return writeln!(stream, "{}", serde_json::json!({ "error": e })),
         };
@@ -671,6 +682,7 @@ fn chat_open(
                 subs: Vec::new(),
                 flags: ChatFlags::default(),
                 history_len: start.history_len,
+                account: start.account.clone(),
                 ended: false,
                 last_activity: Instant::now(),
                 compacted: true,
@@ -1423,6 +1435,7 @@ mod tests {
             subs: Vec::new(),
             flags: ChatFlags::default(),
             history_len: 0,
+            account: None,
             ended: false,
             last_activity: Instant::now() - CHAT_COMPACT,
             compacted: true,
