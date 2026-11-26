@@ -24,7 +24,7 @@ export function SidePeek({ children, width }: { width: string; children: ReactNo
       {/* The edge that calls it: below the traffic lights' row, the window's whole height. */}
       <div
         aria-hidden
-        className="fixed top-10 bottom-0 left-0 z-40 w-2"
+        className="fixed top-[calc(var(--gap)+var(--bar))] bottom-0 left-0 z-40 w-2"
         onMouseEnter={stay}
         onMouseLeave={leave}
       />

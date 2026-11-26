@@ -54,7 +54,12 @@ export function TopBar(props: Props) {
         data-tauri-drag-region
       >
         <div className="min-w-0 overflow-hidden" data-tauri-drag-region>
-          <div className="flex items-center gap-1.5 pr-1.5 pl-16" data-tauri-drag-region>
+          {/* Its toggle starts where the sidebar's does: the sheet sits a gap less 1px in, the
+              header's own padding (12px) after it. */}
+          <div
+            className="flex items-center gap-1.5 pr-1.5 pl-[calc(var(--lights)-var(--gap)+1px-12px)]"
+            data-tauri-drag-region
+          >
             <Button
               variant="ghost"
               size="icon"

@@ -108,6 +108,11 @@
   --bar: 44px;
   /* The gap around and between the sheets. */
   --gap: 10px;
+  /* Where the first control after the window's traffic lights starts (they end at 82px).
+     The lights (tauri.conf.json's trafficLightPosition) sit on the top bars' centre line,
+     31.5px down (the gap, then a 44px bar less its 1px border, halved): a light is 14px
+     tall and 9px off its title bar's bottom, so its y is 31.5 + 2. */
+  --lights: 88px;
   --mono: 'Geist Mono', ui-monospace, monospace;
   --shadow-popover: 0 0 0 1px rgb(43 40 38 / 0.06), 0 12px 32px -12px rgb(43 40 38 / 0.3);
   --shadow-dialog: 0 24px 64px -24px rgb(43 40 38 / 0.32);
