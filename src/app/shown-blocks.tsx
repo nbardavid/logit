@@ -94,9 +94,7 @@ export function ShownBlocks({
   }, [cwd, paths])
 
   const [zoom, setZoom] = useState<Zoom | null>(null)
-  const [host, setHost] = useState<HTMLElement | null>(null)
   const from = useRef<HTMLButtonElement | null>(null)
-  useEffect(() => setHost(document.querySelector<HTMLElement>('[data-zoom-host]')), [])
   const url = (p: string | undefined) => {
     const shot: Shot = p === undefined ? { state: 'loading' } : shotOf(cwd, p)
     return shot.state === 'ready' ? shot.url : undefined
@@ -116,26 +114,21 @@ export function ShownBlocks({
         actions={{
           cwd,
           image: (p) => shotOf(cwd, p),
-          onZoom:
-            host === null
-              ? undefined
-              : (z, button) => {
-                  from.current = button
-                  setZoom({
-                    ...z,
-                    steps: z.steps.map((s) => ({
-                      ...s,
-                      after: url(s.after),
-                      before: url(s.before),
-                    })),
-                  })
-                },
+          onZoom: (z, button) => {
+            from.current = button
+            setZoom({
+              ...z,
+              steps: z.steps.map((s) => ({
+                ...s,
+                after: url(s.after),
+                before: url(s.before),
+              })),
+            })
+          },
         }}
       />
       <PrCards links={cards} cwd={cwd} />
-      {zoom !== null && host !== null && (
-        <ZoomedShot host={host} zoom={zoom} onZoom={setZoom} onClose={close} />
-      )}
+      {zoom !== null && <ZoomedShot zoom={zoom} onZoom={setZoom} onClose={close} />}
     </div>
   )
 }

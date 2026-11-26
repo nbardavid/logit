@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 
+import type { Image } from '../chat/model'
 import type { Workspace } from '../model/catalog'
 
 import { LaunchSteps, type Step } from './launch-steps'
@@ -27,7 +28,7 @@ interface Deps {
   runSetup: (w: Workspace) => Promise<unknown>
   /** The setup script couldn't start: said in a toast, Claude goes on. */
   setupFailed: (error: unknown) => void
-  startChat: (w: Workspace, prompt: string) => void
+  startChat: (w: Workspace, prompt: string, images: readonly Image[]) => void
   reopenComposer: (projectId: string) => void
 }
 
@@ -51,7 +52,8 @@ export function useLaunches() {
     reopenComposer: (pid: string) => need().reopenComposer(pid),
     runSetup: (w: Workspace) => need().runSetup(w),
     setupFailed: (error: unknown) => need().setupFailed(error),
-    startChat: (w: Workspace, prompt: string) => need().startChat(w, prompt),
+    startChat: (w: Workspace, prompt: string, images: readonly Image[]) =>
+      need().startChat(w, prompt, images),
   }
   const need = () => {
     if (depsRef.current === null) throw new Error('The app is not ready yet.')
@@ -66,7 +68,12 @@ export function useLaunches() {
     }))
   const drop = (key: string) => setLaunches((all) => all.filter((l) => l.key !== key))
 
-  const start = (projectId: string, base: string | null, prompt: string) => {
+  const start = (
+    projectId: string,
+    base: string | null,
+    prompt: string,
+    images: readonly Image[] = []
+  ) => {
     const key = crypto.randomUUID()
     const steps: Step[] = [
       {
@@ -98,7 +105,7 @@ export function useLaunches() {
       void invoke<{ exists: boolean }>('setup_status', { projectId })
         .then((setup) => (setup.exists ? deps.runSetup(w) : undefined))
         .catch(deps.setupFailed)
-      deps.startChat(w, prompt)
+      deps.startChat(w, prompt, images)
       step(key, 'claude', 'done')
       // Claude already works; the steps leave once they have played to the end (`settled`).
       patch(key, () => ({ done: true }))

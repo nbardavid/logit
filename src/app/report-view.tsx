@@ -539,15 +539,6 @@ function useSectionAnchor(scroller: RefObject<HTMLDivElement | null>, at: number
   return measure
 }
 
-/** The element a zoomed screen covers: the app's main area, else the panel itself. */
-function useZoomHost(fallback: RefObject<HTMLElement | null>) {
-  const [host, setHost] = useState<HTMLElement | null>(null)
-  useEffect(() => {
-    setHost(document.querySelector<HTMLElement>('[data-zoom-host]') ?? fallback.current)
-  }, [fallback])
-  return host
-}
-
 /** The Report tab's body: the page, its loading and its failure, and a screen zoomed. */
 export function ReportPane({
   ask,
@@ -574,9 +565,7 @@ export function ReportPane({
 }) {
   const [zoom, setZoom] = useState<Zoom | null>(null)
   const from = useRef<HTMLButtonElement | null>(null)
-  const pane = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const host = useZoomHost(pane)
   const report = entry?.report ?? null
   // A new version of the page may drop the screen zoomed: the zoom closes.
   const at = report?.at
@@ -639,7 +628,7 @@ export function ReportPane({
   }
 
   return (
-    <div ref={pane} className="relative min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1">
       <div
         ref={scroller}
         onScroll={remember}
@@ -649,8 +638,8 @@ export function ReportPane({
             while it is on screen rises in. */}
         <EnterScope quiet={report?.workspaceId}>{body}</EnterScope>
       </div>
-      {zoom !== null && report !== null && host !== null && (
-        <ZoomedShot host={host} zoom={zoom} onZoom={setZoom} onClose={close} />
+      {zoom !== null && report !== null && (
+        <ZoomedShot zoom={zoom} onZoom={setZoom} onClose={close} />
       )}
     </div>
   )

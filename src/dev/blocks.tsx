@@ -1,7 +1,7 @@
 // Every report block (src/report/blocks) with realistic content, for screenshots:
 // `bun run web:dev`, then http://localhost:1420/?blocks. Each kind at a report's width and at
 // the narrow panel's, in its usual states (empty and long where they matter). Dev only.
-import { type ReactNode, useRef, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import type { ReportBlock } from '../report/blocks/types'
 
@@ -406,10 +406,9 @@ function Variant({
 
 export function BlocksGallery() {
   const [zoom, setZoom] = useState<Zoom | null>(null)
-  const host = useRef<HTMLDivElement>(null)
   const zoomTo = (z: Zoom) => setZoom(z)
   return (
-    <div ref={host} className="bg-background relative h-dvh">
+    <div className="bg-background relative h-dvh">
       <div className="h-full overflow-y-auto">
         <div className="mx-auto flex max-w-[1200px] flex-col gap-14 px-8 py-8">
           <header>
@@ -435,14 +434,7 @@ export function BlocksGallery() {
           ))}
         </div>
       </div>
-      {zoom !== null && host.current !== null && (
-        <ZoomedShot
-          host={host.current}
-          zoom={zoom}
-          onZoom={setZoom}
-          onClose={() => setZoom(null)}
-        />
-      )}
+      {zoom !== null && <ZoomedShot zoom={zoom} onZoom={setZoom} onClose={() => setZoom(null)} />}
     </div>
   )
 }

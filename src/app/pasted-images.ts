@@ -1,3 +1,5 @@
+import type { ClipboardEvent } from 'react'
+
 import type { Image } from '../chat/model'
 
 /** Claude scales anything longer down to this; sending more only costs bytes. */
@@ -42,6 +44,16 @@ export async function readImage(file: File): Promise<Image> {
   let blob = await canvas.convertToBlob()
   if (blob.size > MAX_BYTES) blob = await canvas.convertToBlob({ quality: 0.9, type: 'image/jpeg' })
   return { data: await base64(blob), mediaType: blob.type }
+}
+
+/** A paste with images on it keeps them (`add`), not their file names as text. */
+export function pasteImages(e: ClipboardEvent, add: (images: Image[]) => void) {
+  const files = clipboardImages(e.clipboardData)
+  if (files.length === 0) return
+  e.preventDefault()
+  void Promise.allSettled(files.map(readImage)).then((read) =>
+    add(read.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])))
+  )
 }
 
 export const imageUrl = (image: Image) => `data:${image.mediaType};base64,${image.data}`

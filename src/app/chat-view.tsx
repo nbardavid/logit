@@ -44,7 +44,7 @@ import { CommandHint, CommandMenu } from './command-menu'
 import { ContextMeter } from './context-meter'
 import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
-import { clipboardImages, readImage } from './pasted-images'
+import { pasteImages } from './pasted-images'
 import { PixelWipe } from './pixel-wipe'
 import { type CardHandle, numbersOf, QuestionCard } from './question-card'
 import { Dot } from './status-dot'
@@ -568,15 +568,8 @@ export function ChatView({
     edit('')
   }
 
-  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = clipboardImages(e.clipboardData)
-    if (files.length === 0) return
-    e.preventDefault()
-    void Promise.allSettled(files.map(readImage)).then((read) => {
-      const ok = read.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
-      setImages((prev) => [...prev, ...ok])
-    })
-  }
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) =>
+    pasteImages(e, (ok) => setImages((prev) => [...prev, ...ok]))
 
   /** A command with arguments waits for them; one without runs. */
   const accept = (command: SlashCommand) => {
