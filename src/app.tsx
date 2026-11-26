@@ -424,10 +424,10 @@ export function App() {
   }
 
   /** The composer's Create: it closes at once, the workspace gets ready where its chat will be. */
-  const startWork = async (pid: string, base: string | null, prompt: string) => {
+  const startWork = async (...launch: Parameters<typeof launches.start>) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
     setMode('normal')
-    launches.start(pid, base, prompt)
+    launches.start(...launch)
   }
 
   /** An agent's ask (logit's MCP): a workspace as the composer makes one, or a follow-up. */
@@ -881,10 +881,7 @@ export function App() {
             {mode !== 'normal' && bars(topBar(pageTitle, null, null))}
             {mode === 'normal' && (
               <>
-                <main
-                  className="bg-background shadow-sheet relative ml-[calc(var(--gap)-1px)] flex min-h-0 min-w-[360px] flex-1 flex-col rounded-xl"
-                  data-zoom-host
-                >
+                <main className="bg-background shadow-sheet relative ml-[calc(var(--gap)-1px)] flex min-h-0 min-w-[360px] flex-1 flex-col rounded-xl">
                   {bars(
                     topBar(
                       undefined,

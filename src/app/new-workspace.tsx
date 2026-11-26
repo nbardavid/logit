@@ -8,11 +8,14 @@ import { Kbd } from '@/components/ui/kbd'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
 
+import type { Image } from '../chat/model'
 import type { Project } from '../model/catalog'
 
 import { type ChatSettings, cycleEffort, type ModelInfo } from '../model/agents'
 import { ModelSelect } from './agent-select'
 import { Combo, type ComboOption } from './combo'
+import { ImageStrip } from './image-strip'
+import { pasteImages } from './pasted-images'
 import { ProjectAvatar } from './sidebar'
 
 interface Props {
@@ -21,7 +24,12 @@ interface Props {
   selection: ChatSettings
   models: ModelInfo[]
   onSelection: (s: ChatSettings) => void
-  onCreate: (projectId: string, base: string | null, prompt: string) => Promise<void>
+  onCreate: (
+    projectId: string,
+    base: string | null,
+    prompt: string,
+    images: readonly Image[]
+  ) => Promise<void>
   onClose: () => void
 }
 
@@ -108,6 +116,8 @@ export function NewWorkspace(props: Props) {
       saveDrafts(next)
       return next
     })
+  // Pasted images, shown over the prompt and sent with it (kept in memory only: too big).
+  const [images, setImages] = useState<Image[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -133,7 +143,7 @@ export function NewWorkspace(props: Props) {
     setBusy(true)
     setError(null)
     if (base !== null) rememberBase(projectId, base)
-    props.onCreate(projectId, base, prompt.trim()).then(
+    props.onCreate(projectId, base, prompt.trim(), images).then(
       () => {
         // Sent: this project's draft is done with.
         const rest = { ...loadDrafts() }
@@ -209,6 +219,14 @@ export function NewWorkspace(props: Props) {
             />
           )}
         </div>
+        <ImageStrip
+          images={images}
+          className="px-4 pt-4"
+          onRemove={(i) => {
+            setImages(images.filter((_, j) => j !== i))
+            field.current?.focus()
+          }}
+        />
         <textarea
           ref={field}
           className="text-foreground placeholder:text-label max-h-[50vh] min-h-32 resize-none border-0 bg-transparent p-4 text-md outline-none select-text"
@@ -216,10 +234,16 @@ export function NewWorkspace(props: Props) {
           placeholder="What do you want to work on?"
           disabled={busy}
           onChange={(e) => setPrompt(e.target.value)}
+          onPaste={(e) => pasteImages(e, (ok) => setImages((prev) => [...prev, ...ok]))}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               create()
+            }
+            // ⌫ in an empty prompt takes back the last image pasted.
+            if (e.key === 'Backspace' && prompt === '' && images.length > 0) {
+              e.preventDefault()
+              setImages(images.slice(0, -1))
             }
           }}
         />
@@ -228,7 +252,9 @@ export function NewWorkspace(props: Props) {
           <ModelSelect value={props.selection} models={props.models} onChange={props.onSelection} />
           <span className="min-w-0 flex-1" />
           <span className="text-faint text-xs">
-            {prompt.trim() === '' ? 'Starts without a prompt' : '⇧↩ new line'}
+            {prompt.trim() === '' && images.length === 0
+              ? 'Starts without a prompt'
+              : '⇧↩ new line'}
           </span>
           <Button size="sm" disabled={busy} onClick={create}>
             {busy ? 'Creating…' : 'Create'}
