@@ -332,8 +332,12 @@ export function Sidebar(props: Props) {
         aria-label="Projects"
         style={{ width: props.width }}
       >
-        {/* The window's traffic lights sit on the left of this row; the row drags the window. */}
-        <div className="flex h-bar flex-none items-center pl-20" data-tauri-drag-region>
+        {/* The window's traffic lights sit on the left of this row, on the same line as the
+            sheet's top bar beside it (the gap above, then a bar); the row drags the window. */}
+        <div
+          className="pt-gap flex h-[calc(var(--gap)+var(--bar))] flex-none items-center border-b border-transparent pl-(--lights)"
+          data-tauri-drag-region
+        >
           <Button
             variant="ghost"
             size="icon"
