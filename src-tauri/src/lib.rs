@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod backgrounds;
 pub mod blocks;
 pub mod browser;
@@ -172,6 +173,7 @@ pub fn run() {
             store::project_remove,
             store::project_open,
             store::project_update,
+            store::project_set_accounts,
             store::catalog_reorder,
             store::workspace_create,
             store::workspace_remove,
@@ -198,6 +200,9 @@ pub fn run() {
             quota::read_quota_cache,
             quota::write_quota_cache,
             quota::fetch_claude_usage,
+            accounts::accounts_list,
+            accounts::account_add,
+            accounts::account_remove,
             git::git_status,
             git::git_diff,
             git::git_branches,

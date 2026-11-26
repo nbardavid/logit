@@ -38,6 +38,7 @@ import {
   userLine,
 } from '../chat/model'
 import { reportedSince } from '../chat/reports'
+import { DEFAULT_ACCOUNT } from '../model/accounts'
 import { HOST_BLOCKED, type HostChat } from './use-host'
 
 export interface ChatTab {
@@ -62,6 +63,8 @@ interface Hooks {
   onReport: (chat: ChatTab, live: boolean) => void
   /** False while an old background host holds the chats: a second Claude would corrupt one. */
   canStart: () => boolean
+  /** The Claude account a new Claude of this workspace runs as. */
+  accountOf: (workspaceId: string) => Promise<string>
   /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
   modelOf: (reported: string, current: string) => string
   /** A prompt went out in this workspace: a paused one is taken back up. */
@@ -184,6 +187,8 @@ export function useChats(hooks: Hooks) {
   const held = useRef(new Map<string, string[]>())
   /** A cleared chat's old Claude, until it is gone: the new one waits for it. */
   const stopping = useRef(new Map<string, Promise<unknown>>())
+  /** The Claude account each running chat was started as. */
+  const accountOn = useRef(new Map<string, string>())
   /** Queued prompts being taken back, by request id: their answer says if Claude let go. */
   const unqueues = useRef(new Map<string, (cancelled: boolean) => void>())
   /** `/mcp`'s requests in flight, by request id. */
@@ -357,7 +362,12 @@ export function useChats(hooks: Hooks) {
         channel.onmessage = (line) => {
           if (procs.current.get(id) === proc) onLine(id, line)
         }
+        const account = host
+          ? (host.account ?? DEFAULT_ACCOUNT)
+          : await latest.current.hooks.accountOf(chat.record.workspaceId)
+        accountOn.current.set(id, account)
         const begin = {
+          account,
           cwd: chat.cwd,
           effort,
           historyLen: historyLength(lines),
@@ -460,9 +470,38 @@ export function useChats(hooks: Hooks) {
     [add]
   )
 
+  /**
+   * Before a prompt: an idle chat whose account is no longer the one its project would pick
+   * (the project changed accounts, or this one is full) starts again on the right one, resumed
+   * from its transcript, which every account shares.
+   */
+  const moveAccount = useCallback(
+    async (id: string) => {
+      const chat = latest.current.chats.find((c) => c.record.id === id)
+      if (chat?.state.status !== 'idle' || chat.record.sessionId === null) return
+      const proc = procs.current.get(id)
+      const host = hosted.current.get(id)
+      const have = proc ? accountOn.current.get(id) : host && (host.account ?? DEFAULT_ACCOUNT)
+      if (have === undefined) return
+      const want = await latest.current.hooks.accountOf(chat.record.workspaceId)
+      if (want === have) return
+      procs.current.delete(id)
+      hosted.current.delete(id)
+      accountOn.current.delete(id)
+      const stopped = (proc ?? Promise.resolve())
+        .catch(() => {})
+        .then(async () => invoke('chat_stop', { id }))
+        .catch(() => {})
+      stopping.current.set(id, stopped)
+      await wake(id)
+    },
+    [wake]
+  )
+
   /** Sends a prompt: settles once the host has it, rejecting with its error. */
   const send = useCallback(
     async (id: string, text: string, images: readonly Image[] = []) => {
+      await moveAccount(id).catch(() => {})
       const uuid = crypto.randomUUID()
       edit(id, (c) => {
         queueMicrotask(() => latest.current.hooks.onSent(c.record.workspaceId))
@@ -481,7 +520,7 @@ export function useChats(hooks: Hooks) {
       // Claude Code fills in its own session id; an empty one is accepted.
       return write(id, userLine(text, null, uuid, images))
     },
-    [edit, write]
+    [edit, moveAccount, write]
   )
 
   /** Answers a permission or a question: settles once the host has it, as `send`. */

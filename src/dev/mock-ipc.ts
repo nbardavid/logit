@@ -69,6 +69,7 @@ import type { ReportBlock } from '../report/blocks/types'
 import kitesScene from '../../src-tauri/backgrounds/kites.js?raw'
 import koiScene from '../../src-tauri/backgrounds/koi.js?raw'
 import { KIDS_FOLDED_KEY } from '../app/sidebar'
+import { claudeSnapshot } from '../model/quota'
 import {
   ATLAS_ASKED,
   ATLAS_HOST_CHATS,
@@ -622,6 +623,23 @@ let scenes = [
   { code: koiScene, id: 'koi', name: 'Koi' },
 ]
 
+/** Settings › Accounts: the default one, then two added. */
+const ACCOUNTS = [
+  { email: 'dev@example.com', id: 'default', plan: 'max_5x' },
+  { email: 'work@example.com', id: 'a-work', plan: 'max_20x' },
+  { email: 'side@example.com', id: 'a-side', plan: 'pro' },
+]
+
+/** An added account's quota, its session `percent` full. */
+function usage(percent: number) {
+  const at = Date.now()
+  const resets_at = new Date(at + 3_600_000).toISOString()
+  return {
+    fetchedAt: at,
+    snapshot: claudeSnapshot({ five_hour: { resets_at, utilization: percent } }, at),
+  }
+}
+
 function handle(cmd: string, args: Args): unknown {
   const path = str(args.path)
   if (cmd.startsWith('servers_') || cmd === 'set_servers_config') return serversAnswer(cmd, args)
@@ -782,6 +800,34 @@ function handle(cmd: string, args: Args): unknown {
       store.projects = [...store.projects]
       return { ...project }
     }
+    case 'project_set_accounts': {
+      const project = store.projects.find((p) => p.id === args.id)
+      if (project === undefined) throw new Error('unknown project')
+      const accounts = args.accounts as string[]
+      project.accounts = accounts.length === 0 ? undefined : accounts
+      store.projects = [...store.projects]
+      return { ...project }
+    }
+    case 'accounts_list':
+      return structuredClone(ACCOUNTS)
+    case 'account_add':
+      // The browser sign-in, as long as a person takes.
+      return new Promise((resolve, reject) =>
+        setTimeout(() => {
+          if (flags.has('fail')) return reject(new Error('Sign-in did not finish.'))
+          const n = ACCOUNTS.length
+          const account = { email: `new${n}@example.com`, id: `a-${Date.now()}`, plan: 'pro' }
+          ACCOUNTS.push(account)
+          resolve(account)
+        }, 2500)
+      )
+    case 'account_remove': {
+      const i = ACCOUNTS.findIndex((a) => a.id === args.id)
+      if (i > 0) ACCOUNTS.splice(i, 1)
+      return null
+    }
+    case 'fetch_claude_usage':
+      throw new Error('the preview reads quotas from its cache')
     case 'project_remove':
       store.projects = store.projects.filter((p) => p.id !== args.id)
       return null
@@ -839,7 +885,7 @@ function handle(cmd: string, args: Args): unknown {
       if (flags.has('fail')) throw new Error('Could not write .logit/setup.sh: permission denied')
       return `${path}/.logit/setup.sh`
     case 'read_quota_cache':
-      return quotaCache()
+      return { ...quotaCache(), accounts: { 'a-side': usage(12), 'a-work': usage(100) } }
     case 'read_settings':
       return SETTINGS
     case 'window_ground':

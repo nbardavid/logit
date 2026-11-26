@@ -8,10 +8,6 @@ use serde_json::Value;
 
 use crate::store::{data_dir, write_atomic};
 
-fn home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default())
-}
-
 fn quota_cache() -> PathBuf {
     data_dir().join("quota.json")
 }
@@ -30,21 +26,16 @@ pub fn write_quota_cache(cache: Value) -> Result<(), String> {
     write_atomic(&quota_cache(), &cache.to_string())
 }
 
-fn claude_token() -> Result<String, String> {
+fn claude_token(account: &str) -> Result<String, String> {
+    let service = crate::accounts::keychain_service(account);
     let keychain = Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "Claude Code-credentials",
-            "-w",
-        ])
+        .args(["find-generic-password", "-s", &service, "-w"])
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
-    let claude_home = std::env::var("CLAUDE_CONFIG_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home().join(".claude"));
+    let claude_home =
+        crate::accounts::config_dir(account).unwrap_or_else(crate::accounts::default_dir);
     let raw = keychain
         .or_else(|| std::fs::read_to_string(claude_home.join(".credentials.json")).ok())
         .ok_or("no Claude credentials — run `claude` to sign in")?;
@@ -56,10 +47,11 @@ fn claude_token() -> Result<String, String> {
         .ok_or_else(|| "no Claude OAuth token".into())
 }
 
-/// `GET /api/oauth/usage`, raw body. The token stays on this side: curl reads it from stdin.
+/// `GET /api/oauth/usage` for `account` (none: the default one), raw body. The token stays on
+/// this side: curl reads it from stdin.
 #[tauri::command(async)]
-pub fn fetch_claude_usage() -> Result<Value, String> {
-    let token = claude_token()?;
+pub fn fetch_claude_usage(account: Option<String>) -> Result<Value, String> {
+    let token = claude_token(account.as_deref().unwrap_or(crate::accounts::DEFAULT))?;
     let mut curl = Command::new("curl")
         .args([
             "-sS",

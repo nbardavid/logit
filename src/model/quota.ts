@@ -40,9 +40,15 @@ export interface UsageSnapshot {
   stale?: boolean
 }
 
-export type QuotaCache = Partial<
-  Record<'claude' | 'codex', { fetchedAt: number; snapshot: UsageSnapshot }>
->
+export interface QuotaEntry {
+  fetchedAt: number
+  snapshot: UsageSnapshot
+}
+
+/** `claude` is the default account; `accounts` the ones added in Settings › Accounts, by id. */
+export type QuotaCache = Partial<Record<'claude' | 'codex', QuotaEntry>> & {
+  accounts?: Record<string, QuotaEntry>
+}
 
 interface RawWindow {
   utilization?: number | null
@@ -178,7 +184,7 @@ export function claudeSnapshot(raw: RawClaudeUsage, now = Date.now()): UsageSnap
 
 /** What the sidebar's chip shows: the 5-hour session, unless a weekly window is about to block. */
 export function headline(cache: QuotaCache): UsageWindow | null {
-  const windows = Object.values(cache).flatMap((e) => e?.snapshot.windows ?? [])
+  const windows = [cache.claude, cache.codex].flatMap((e) => e?.snapshot.windows ?? [])
   const blocking = windows.find((w) => w.kind !== 'session' && (w.percent ?? 0) >= 90)
   return blocking ?? windows.find((w) => w.kind === 'session') ?? windows[0] ?? null
 }

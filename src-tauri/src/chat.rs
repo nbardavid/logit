@@ -61,7 +61,13 @@ fn logit_mcp(chat: Option<&str>) -> Vec<String> {
 }
 
 /// `chat`: the logit chat it runs, which then gets logit's MCP server.
-pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<Child, String> {
+/// `account`: the Claude account it runs as (`accounts.rs`); none is the default one.
+pub fn spawn_claude(
+    cwd: &str,
+    args: Vec<String>,
+    chat: Option<&str>,
+    account: Option<&str>,
+) -> Result<Child, String> {
     let mut cmd = Command::new("claude");
     cmd.args(args)
         .args(logit_mcp(chat))
@@ -81,6 +87,10 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<
     // window ~2x faster for the same tokens (anthropics/claude-code#97074; Orca does the same).
     // Set after the CLAUDE_CODE_* scrub above so it sticks.
     cmd.env("CLAUDE_CODE_ENTRYPOINT", "logit");
+    if let Some(dir) = account.and_then(crate::accounts::config_dir) {
+        crate::accounts::link_shared(&dir);
+        cmd.env("CLAUDE_CONFIG_DIR", dir);
+    }
     // Compacts by itself past the size Settings picked, instead of filling the 1M window.
     if let Some(tokens) = crate::store::compact_window() {
         cmd.env("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tokens.to_string());
@@ -94,7 +104,7 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<
 pub fn claude_models() -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     // Its stderr pipe is never read: the little it prints before the answer fits the buffer.
-    let mut child = spawn_claude(&home, claude_args(None, None, None), None)?;
+    let mut child = spawn_claude(&home, claude_args(None, None, None), None, None)?;
     let mut stdin = child.stdin.take().ok_or("claude: no stdin")?;
     let stdout = child.stdout.take().ok_or("claude: no stdout")?;
     let asked = writeln!(

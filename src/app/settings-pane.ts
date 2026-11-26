@@ -10,6 +10,7 @@ import {
   PaletteIcon,
   ServerCogIcon,
   SquareTerminalIcon,
+  UsersIcon,
 } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
 
@@ -32,6 +33,7 @@ const ICONS: Record<string, LucideIcon> = {
 
 export const PANES: Pane[] = [
   ...SECTIONS.map((s) => ({ icon: ICONS[s.id] ?? InfoIcon, id: s.id, label: s.label })),
+  { icon: UsersIcon, id: 'accounts', label: 'Accounts' },
   { icon: ServerCogIcon, id: 'host', label: 'Background process' },
   { icon: InfoIcon, id: 'about', label: 'About' },
 ]

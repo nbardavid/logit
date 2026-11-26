@@ -9,6 +9,8 @@ export interface Project {
   color?: string
   /** The avatar's icon picked there; absent shows the initial. */
   icon?: string
+  /** The Claude accounts its chats run as, picked in its settings; absent is the default one. */
+  accounts?: string[]
 }
 
 export interface Workspace {
