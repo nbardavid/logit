@@ -182,6 +182,7 @@ fn tools() -> Value {
                     "base": { "type": "string", "description": "Branch to fork from (default: the repo's default branch)." },
                     "model": { "type": "string", "description": "Claude Code model alias or id (default: the user's last pick)." },
                     "effort": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] },
+                    "machine": { "type": "string", "enum": ["local", "boat"], "description": "Where its agent runs: this Mac (default), or a Boat sandbox of its own when the project has Boat on." },
                 },
                 "required": ["prompt"],
             },
@@ -350,11 +351,7 @@ fn here() -> Result<Here, String> {
 
 /// The workspace whose path is `dir` or holds it (the deepest, should they nest).
 fn workspace_of<'a>(catalog: &'a Catalog, dir: &str) -> Option<&'a Workspace> {
-    catalog
-        .workspaces
-        .iter()
-        .filter(|w| dir == w.path || dir.starts_with(&format!("{}/", w.path.trim_end_matches('/'))))
-        .max_by_key(|w| w.path.len())
+    store::workspace_at(catalog, dir)
 }
 
 impl Here {
@@ -523,6 +520,7 @@ fn workspace_create(chat: &str, args: &Value) -> Result<String, String> {
         "base": args["base"].as_str(),
         "model": args["model"].as_str(),
         "effort": args["effort"].as_str(),
+        "boat": args["machine"].as_str() == Some("boat"),
         "parentChat": chat,
     }}))?;
     Ok(json!({

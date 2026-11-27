@@ -11,6 +11,7 @@ import type { Workspace } from '../model/catalog'
 import type { SetupStatus } from './use-setup'
 import type { TerminalTab } from './use-terminals'
 
+import { BoatPane } from './boat-pane'
 import { Dot } from './status-dot'
 import { TerminalView } from './terminal-view'
 
@@ -24,7 +25,7 @@ export const isServerTag = (tag: string | undefined) => tag?.startsWith('server:
 export const isDockTag = (tag: string | undefined) =>
   tag !== undefined && (DOCK_TAGS.has(tag) || isServerTag(tag))
 
-type Pane = 'setup' | 'servers' | (string & {})
+type Pane = 'setup' | 'servers' | 'boat' | (string & {})
 
 interface Props {
   workspace: Workspace
@@ -70,6 +71,7 @@ export function WorkspaceDock(props: Props) {
   const [picked, setPicked] = useState(false)
   const setupTerm = terms.findLast((t) => t.tag === 'setup')
   const quick = terms.filter((t) => t.tag === 'dock')
+  const onBoat = workspace.boat !== null && workspace.boat !== undefined
 
   // A setup that starts shows itself; a terminal opened here too.
   const seen = useRef(new Set(terms.map((t) => t.id)))
@@ -84,7 +86,10 @@ export function WorkspaceDock(props: Props) {
     }
   }, [terms])
   const shown: Pane =
-    pane !== null && (pane === 'setup' || quick.some((t) => t.id === pane)) ? pane : 'servers'
+    pane !== null &&
+    (pane === 'setup' || (pane === 'boat' && onBoat) || quick.some((t) => t.id === pane))
+      ? pane
+      : 'servers'
 
   const show = (next: Pane) => {
     setPicked(true)
@@ -128,6 +133,7 @@ export function WorkspaceDock(props: Props) {
 
   let body: React.ReactNode = null
   if (open && shown === 'servers') body = props.servers
+  if (open && shown === 'boat') body = <BoatPane key={workspace.id} workspace={workspace} />
   else if (open && term)
     body = (
       <TerminalView
@@ -164,6 +170,9 @@ export function WorkspaceDock(props: Props) {
             {props.serversBusy && <Dot tone="working" />}
             {!props.serversBusy && props.serversRunning && <Dot tone="done" />}
           </DockTab>
+          {onBoat && (
+            <DockTab label="Boat" on={open && shown === 'boat'} onClick={() => show('boat')} />
+          )}
           {quick.map((t, i) => (
             <DockTab
               key={t.id}

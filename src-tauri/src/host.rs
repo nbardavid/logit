@@ -644,7 +644,18 @@ fn chat_open(
             start.model.as_deref(),
             start.effort.as_deref(),
         );
-        let mut child = match spawn_claude(&start.cwd, args, Some(&id), start.account.as_deref()) {
+        let catalog = crate::store::saved_catalog();
+        let boat = crate::store::workspace_at(&catalog, &start.cwd)
+            .filter(|w| w.boat.is_some())
+            .map(|w| w.id.clone());
+        let spawned = spawn_claude(
+            &start.cwd,
+            args,
+            Some(&id),
+            start.account.as_deref(),
+            boat.as_deref(),
+        );
+        let mut child = match spawned {
             Ok(child) => child,
             Err(e) => return writeln!(stream, "{}", serde_json::json!({ "error": e })),
         };

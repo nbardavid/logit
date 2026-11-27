@@ -62,7 +62,7 @@
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 
 import type { FileChange } from '../app/use-git'
-import type { Catalog, Workspace } from '../model/catalog'
+import type { Catalog, Project, Workspace } from '../model/catalog'
 import type { Report } from '../model/report'
 import type { ReportBlock } from '../report/blocks/types'
 
@@ -376,6 +376,9 @@ function nextTurn(chatId: string) {
 const startedLine = (p: Prompt) =>
   JSON.stringify({ command_uuid: p.uuid, state: 'started', type: 'command_lifecycle' })
 
+/** The Boat sandboxes stopped from the dock's Boat tab. */
+const boatStopped = new Set<string>()
+
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
 function createWorkspace(args: Args): Workspace {
@@ -390,6 +393,10 @@ function createWorkspace(args: Args): Workspace {
     path: `${project?.path ?? ''}-worktrees/${name}`,
     projectId: str(args.projectId),
     setup: null,
+  }
+  if (args.boat === true) {
+    if (!project?.boat) throw new Error('Boat is off for this project: turn it on in its settings')
+    ws.boat = { ...project.boat }
   }
   store.workspaces.push(ws)
   // A fresh worktree: nothing changed, its branch not on the remote yet.
@@ -800,6 +807,43 @@ function handle(cmd: string, args: Args): unknown {
       store.projects = [...store.projects]
       return { ...project }
     }
+    case 'project_set_boat': {
+      const project = store.projects.find((p) => p.id === args.id)
+      if (project === undefined) throw new Error('unknown project')
+      project.boat = (args.boat as Project['boat']) ?? undefined
+      store.projects = [...store.projects]
+      return { ...project }
+    }
+    case 'boat_orgs':
+      return [
+        { id: null, name: 'Personal' },
+        { id: 'team_rain', name: 'RainPath' },
+      ]
+    case 'boat_info': {
+      const stopped = boatStopped.has(str(args.workspaceId))
+      return {
+        error: null,
+        id: 'bx_7f3a9k2q',
+        info: {
+          memoryGB: 8,
+          region: 'Frankfurt',
+          startedAt: new Date(Date.now() - (13 * 60 + 40) * 60_000).toISOString(),
+          state: stopped ? 'stopped' : 'running',
+          type: 'default',
+          vcpu: 4,
+        },
+        ready: true,
+        usage: { costUsd: 0.49 },
+      }
+    }
+    case 'boat_stop':
+      boatStopped.add(str(args.workspaceId))
+      return null
+    case 'boat_resume':
+      boatStopped.delete(str(args.workspaceId))
+      return null
+    case 'app_exe':
+      return '/Applications/logit.app/Contents/MacOS/logit'
     case 'project_set_accounts': {
       const project = store.projects.find((p) => p.id === args.id)
       if (project === undefined) throw new Error('unknown project')

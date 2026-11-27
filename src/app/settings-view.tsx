@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-import type { Project } from '../model/catalog'
+import type { BoatTarget, Project } from '../model/catalog'
 
 import {
   changedRows,
@@ -30,6 +30,7 @@ import {
 } from '../settings/schema'
 import { AccountsPane, ProjectAccounts } from './accounts-pane'
 import { playSettingsSound } from './attention'
+import { BOAT_UNSAVED, ProjectBoat } from './boat-pane'
 import { previewCleanup } from './cleanup-effect'
 import { ContextMenu, type MenuState } from './context-menu'
 import { GROUND_SETTING } from './ground'
@@ -597,12 +598,14 @@ function CustomTone({
 /** Settings › one project: its name, its tone and icon, its folder and setup script. */
 function ProjectPane({
   onSetAccounts,
+  onSetBoat,
   onUpdate,
   project,
 }: {
   project: Project
   onUpdate: (look: ProjectLook) => void
   onSetAccounts: (accounts: string[]) => void
+  onSetBoat: (boat: BoatTarget | null) => void
 }) {
   const [copied, setCopied] = useState(false)
   // A picture that isn't square, being cut square below the icons.
@@ -803,6 +806,7 @@ function ProjectPane({
         </div>
       </section>
       <ProjectAccounts picked={project.accounts ?? []} onChange={onSetAccounts} />
+      <ProjectBoat value={project.boat} onChange={onSetBoat} />
       <section>
         <h2 className={groupTitle}>Workspaces</h2>
         <div className={cardClass}>
@@ -871,6 +875,7 @@ export function SettingsView({
   onClose,
   onRestartHost,
   onSetProjectAccounts,
+  onSetProjectBoat,
   onUpdateProject,
   terminals,
   update,
@@ -878,6 +883,8 @@ export function SettingsView({
   onClose: () => void
   /** Settings › a project: the Claude accounts its chats run as. */
   onSetProjectAccounts: (id: string, accounts: string[]) => Promise<void>
+  /** Settings › a project: whether its workspaces may run on Boat, and who pays. */
+  onSetProjectBoat: (id: string, boat: BoatTarget | null) => Promise<void>
   /** Settings › Projects: a project's name, tone or icon changed. */
   onUpdateProject: (id: string, look: ProjectLook) => void
   /** Opens a chat on this prompt in the workspace on screen: Settings closes for it. */
@@ -981,6 +988,9 @@ export function SettingsView({
                     void onSetProjectAccounts(project.id, accounts).catch(() =>
                       setError("Couldn't save the project's accounts.")
                     )
+                  }
+                  onSetBoat={(boat) =>
+                    void onSetProjectBoat(project.id, boat).catch(() => setError(BOAT_UNSAVED))
                   }
                 />
               )}

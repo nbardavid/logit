@@ -62,12 +62,28 @@ fn logit_mcp(chat: Option<&str>) -> Vec<String> {
 
 /// `chat`: the logit chat it runs, which then gets logit's MCP server.
 /// `account`: the Claude account it runs as (`accounts.rs`); none is the default one.
+/// `boat`: the workspace, when it runs on Boat: Claude then runs in its sandbox, signed in
+/// there, through `logit --boat-chat` (`boat.rs`), with the same stdio.
 pub fn spawn_claude(
     cwd: &str,
     args: Vec<String>,
     chat: Option<&str>,
     account: Option<&str>,
+    boat: Option<&str>,
 ) -> Result<Child, String> {
+    if let (Some(workspace), Some(chat)) = (boat, chat) {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        return Command::new(exe)
+            .args(["--boat-chat", workspace, chat, "--"])
+            .args(args)
+            .current_dir(cwd)
+            .env("PATH", tool_path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("logit --boat-chat: {e}"));
+    }
     let mut cmd = Command::new("claude");
     cmd.args(args)
         .args(logit_mcp(chat))
@@ -104,7 +120,7 @@ pub fn spawn_claude(
 pub fn claude_models() -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     // Its stderr pipe is never read: the little it prints before the answer fits the buffer.
-    let mut child = spawn_claude(&home, claude_args(None, None, None), None, None)?;
+    let mut child = spawn_claude(&home, claude_args(None, None, None), None, None, None)?;
     let mut stdin = child.stdin.take().ok_or("claude: no stdin")?;
     let stdout = child.stdout.take().ok_or("claude: no stdout")?;
     let asked = writeln!(
@@ -131,8 +147,26 @@ pub fn claude_models() -> Result<String, String> {
 /// The transcript Claude Code keeps for `session_id`, one JSON object per line, so a chat
 /// reopened after a restart shows what was said. Claude names the folder after the cwd.
 #[tauri::command(async)]
-pub fn chat_history(session_id: String) -> Result<Vec<String>, String> {
-    let file = transcript_file(&session_id)?;
+pub fn chat_history(
+    session_id: String,
+    workspace_id: Option<String>,
+) -> Result<Vec<String>, String> {
+    let file = match transcript_file(&session_id) {
+        Ok(file) => file,
+        // A chat on Boat keeps its transcript in its sandbox.
+        Err(e) => {
+            let on_boat = workspace_id.as_deref().and_then(crate::boat::load);
+            let (Some(_), Some(workspace)) = (on_boat, workspace_id.as_deref()) else {
+                return Err(e);
+            };
+            let raw = crate::boat::transcript(workspace, &session_id)?;
+            return Ok(raw
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(String::from)
+                .collect());
+        }
+    };
     let raw = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
     let mut lines: Vec<String> = raw
         .lines()
