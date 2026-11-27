@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { ChevronDownIcon, GitBranchIcon } from 'lucide-react'
+import { ChevronDownIcon, CloudIcon, GitBranchIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,8 @@ interface Props {
     projectId: string,
     base: string | null,
     prompt: string,
-    images: readonly Image[]
+    images: readonly Image[],
+    boat: boolean
   ) => Promise<void>
   onClose: () => void
 }
@@ -122,6 +123,9 @@ export function NewWorkspace(props: Props) {
   const [error, setError] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const project = props.projects.find((p) => p.id === projectId)
+  // On Boat, for a project that has it on: its agent runs on a sandbox of its own.
+  const [onBoat, setOnBoat] = useState(false)
+  const boat = onBoat && project?.boat !== null && project?.boat !== undefined
   const branches = useBranches(project?.path)
   const [picked, setPicked] = useState<{ projectId: string; base: string } | null>(null)
   const base = picked?.projectId === projectId ? picked.base : (branches?.default ?? null)
@@ -143,7 +147,7 @@ export function NewWorkspace(props: Props) {
     setBusy(true)
     setError(null)
     if (base !== null) rememberBase(projectId, base)
-    props.onCreate(projectId, base, prompt.trim(), images).then(
+    props.onCreate(projectId, base, prompt.trim(), images, boat).then(
       () => {
         // Sent: this project's draft is done with.
         const rest = { ...loadDrafts() }
@@ -250,6 +254,24 @@ export function NewWorkspace(props: Props) {
         {error !== null && <div className="text-critical-ink px-4 pb-2 text-sm">{error}</div>}
         <div className="flex h-12 flex-none items-center gap-3 pr-2.5 pl-2">
           <ModelSelect value={props.selection} models={props.models} onChange={props.onSelection} />
+          {project?.boat && (
+            <button
+              type="button"
+              aria-pressed={boat}
+              className={cn(
+                'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors duration-120',
+                boat ? 'bg-active text-foreground' : 'text-muted-foreground hover:bg-hover'
+              )}
+              data-tip="Run its agent on a Boat sandbox instead of this Mac"
+              onClick={() => {
+                setOnBoat(!onBoat)
+                field.current?.focus()
+              }}
+            >
+              <CloudIcon className="size-3.5" />
+              On Boat
+            </button>
+          )}
           <span className="min-w-0 flex-1" />
           <span className="text-faint text-xs">
             {prompt.trim() === '' && images.length === 0

@@ -39,7 +39,10 @@ mod tests {
         assert!(material("solid").unwrap().is_none());
         assert!(material("clear").unwrap().is_none());
         assert!(matches!(material("soft").unwrap(), Some(Effect::Sidebar)));
-        assert!(matches!(material("strong").unwrap(), Some(Effect::HudWindow)));
+        assert!(matches!(
+            material("strong").unwrap(),
+            Some(Effect::HudWindow)
+        ));
         assert!(material("frosted").is_err());
     }
 }

@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod backgrounds;
 pub mod blocks;
+pub mod boat;
 pub mod browser;
 pub mod chat;
 pub mod git;
@@ -20,6 +21,14 @@ pub mod update;
 
 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
+
+/// This binary's path: the app runs it with `--boat-setup` in a workspace's Setup terminal.
+#[tauri::command]
+fn app_exe() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
 
 /// macOS' default menu, less Close Window: ⌘W belongs to the app, which closes a tab with it.
 fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -174,6 +183,12 @@ pub fn run() {
             store::project_open,
             store::project_update,
             store::project_set_accounts,
+            store::project_set_boat,
+            boat::boat_info,
+            boat::boat_stop,
+            boat::boat_resume,
+            boat::boat_orgs,
+            app_exe,
             store::catalog_reorder,
             store::workspace_create,
             store::workspace_remove,

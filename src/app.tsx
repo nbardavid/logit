@@ -415,8 +415,8 @@ export function App() {
 
   const namesIn = (pid: string) => (workspaces[pid] ?? []).map((w) => w.name)
   launches.deps.current = {
-    createWorkspace: (pid, base, prompt) =>
-      store.createWorkspace(pid, nameCandidates(namesIn(pid)), base, null, prompt),
+    createWorkspace: (pid, base, prompt, boat) =>
+      store.createWorkspace(pid, nameCandidates(namesIn(pid)), base, null, prompt, boat),
     reopenComposer: setComposeIn,
     runSetup,
     setupFailed: (error) => fail('Setup did not start')(error),
@@ -443,10 +443,11 @@ export function App() {
       taken,
       ask.base,
       ask.parentChat,
-      ask.prompt
+      ask.prompt,
+      ask.boat === true
     )
     const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: w.projectId })
-    if (hasScript.exists) await runSetup(w)
+    if (hasScript.exists || w.boat) await runSetup(w)
     const flags = chatFlags(selection)
     const id = chats.create(w.id, w.path, {
       effort: ask.effort ?? flags.effort,
@@ -1040,6 +1041,7 @@ export function App() {
           terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
           onRestartHost={host.restart}
           onSetProjectAccounts={store.setProjectAccounts}
+          onSetProjectBoat={store.setProjectBoat}
           onUpdateProject={(id, look) =>
             void store.updateProject(id, look).catch(fail("Couldn't save the project"))
           }

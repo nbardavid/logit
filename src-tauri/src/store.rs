@@ -28,6 +28,17 @@ pub struct Project {
     /// The Claude accounts its chats run as (`accounts.rs`); empty is the default one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<String>,
+    /// Its workspaces may run on Boat (`boat.rs`), billed to this wallet; none is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boat: Option<BoatTarget>,
+}
+
+/// Where a Boat sandbox is billed: an organization's wallet, or the user's own (none).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoatTarget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -62,6 +73,9 @@ pub struct Workspace {
     /// Put aside by the user: drawn muted until a message is sent in it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub paused: bool,
+    /// Its Claude runs on a Boat sandbox (`boat.rs`), billed as the project said at creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boat: Option<BoatTarget>,
 }
 
 /// A published artifact: its claude.ai page, open as a tab of the right panel until closed.
@@ -423,6 +437,24 @@ pub fn project_set_accounts(
     })
 }
 
+/// Settings › a project: whether its workspaces may run on Boat, and which wallet pays.
+#[tauri::command]
+pub fn project_set_boat(
+    store: State<'_, Store>,
+    id: String,
+    boat: Option<BoatTarget>,
+) -> Result<Project, String> {
+    edit(&store, |c| {
+        let p = c
+            .projects
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or("unknown project")?;
+        p.boat = boat;
+        Ok(p.clone())
+    })
+}
+
 #[tauri::command]
 pub fn project_open(store: State<'_, Store>, id: String) -> Result<(), String> {
     edit(&store, |c| {
@@ -513,6 +545,7 @@ pub fn workspace_create(
     candidates: Vec<String>,
     base: Option<String>,
     parent_chat: Option<String>,
+    boat: Option<bool>,
 ) -> Result<Workspace, String> {
     let (project, names) = {
         let mut guard = store.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -531,9 +564,11 @@ pub fn workspace_create(
             .collect();
         (project, names)
     };
+    let on_boat = boat_target(&project, boat.unwrap_or(false))?;
     let (fetch, copy) = worktree_settings();
     let root = data_dir().join("worktrees").join(&project.id);
     let mut workspace = make_worktree(&project, &root, &names, &candidates, base, fetch, &copy)?;
+    workspace.boat = on_boat;
     edit(&store, |c| {
         workspace.parent_workspace = parent_chat
             .as_ref()
@@ -543,6 +578,24 @@ pub fn workspace_create(
         c.workspaces.push(workspace.clone());
         Ok(workspace.clone())
     })
+}
+
+/// The Boat wallet a new workspace runs on, when asked for: the project must have Boat on.
+fn boat_target(project: &Project, wanted: bool) -> Result<Option<BoatTarget>, String> {
+    match (&project.boat, wanted) {
+        (_, false) => Ok(None),
+        (Some(target), true) => Ok(Some(target.clone())),
+        (None, true) => Err("Boat is off for this project: turn it on in its settings".into()),
+    }
+}
+
+/// The workspace whose path is `dir` or holds it (the deepest, should they nest).
+pub fn workspace_at<'a>(catalog: &'a Catalog, dir: &str) -> Option<&'a Workspace> {
+    catalog
+        .workspaces
+        .iter()
+        .filter(|w| dir == w.path || dir.starts_with(&format!("{}/", w.path.trim_end_matches('/'))))
+        .max_by_key(|w| w.path.len())
 }
 
 /// The git side of a new workspace, under `root`: the branch, the worktree, its seed files.
@@ -648,6 +701,7 @@ pub fn make_worktree(
         parent_chat: None,
         parent_workspace: None,
         paused: false,
+        boat: None,
     })
 }
 
@@ -712,6 +766,9 @@ pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Res
             .ok_or("unknown project")?;
         (w, repo)
     };
+    if let Some(target) = &workspace.boat {
+        crate::boat::delete(&id, target.org.as_deref())?;
+    }
     remove_worktree(&repo, &workspace.path, force)?;
     crate::report::remove(&data_dir(), &id);
     edit(&store, |c| {
@@ -1012,6 +1069,24 @@ pub fn setup_ran(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_workspace_goes_on_boat_only_when_its_project_has_it_on() {
+        let off = Project::default();
+        assert_eq!(boat_target(&off, false), Ok(None));
+        assert!(boat_target(&off, true).is_err());
+        let on = Project {
+            boat: Some(BoatTarget {
+                org: Some("team_1".into()),
+            }),
+            ..Project::default()
+        };
+        assert_eq!(boat_target(&on, false), Ok(None));
+        assert_eq!(boat_target(&on, true), Ok(on.boat.clone()));
+        let old: Project =
+            serde_json::from_str(r#"{"id":"p","name":"n","path":"/p","lastOpenedAt":0}"#).unwrap();
+        assert_eq!(old.boat, None);
+    }
+
     #[test]
     fn reorder_follows_the_ids_and_keeps_the_rest() {
         let p = |id: &str| Project {
@@ -1352,6 +1427,7 @@ mod tests {
                 parent_chat: None,
                 parent_workspace: None,
                 paused: false,
+                boat: None,
             }],
             ..Catalog::default()
         };

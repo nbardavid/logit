@@ -22,9 +22,13 @@ export function useSetupRun(
   /** The script in `w`'s dock; how it ended is kept for the git panel. */
   const runSetup = async (w: Workspace) => {
     if (!ready) throw new Error(HOST_BLOCKED)
-    const script = await invoke<string>('ensure_setup_script', { projectId: w.projectId })
+    const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`
+    // On Boat, setup makes the sandbox, then runs the project's script there.
+    const command = w.boat
+      ? `${quote(await invoke<string>('app_exe'))} --boat-setup ${quote(w.id)}`
+      : `bash ${quote(await invoke<string>('ensure_setup_script', { projectId: w.projectId }))}`
     return terminals.create({
-      command: `bash '${script.replaceAll("'", "'\\''")}'`,
+      command,
       cwd: w.path,
       onExit: setupRan(w.id),
       tag: 'setup',

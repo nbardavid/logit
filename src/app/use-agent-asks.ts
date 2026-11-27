@@ -19,6 +19,8 @@ export type AgentAsk = { askId: number } & (
       model: string | null
       effort: string | null
       parentChat: string
+      /** Its agent runs on a Boat sandbox. */
+      boat?: boolean
     }
   | { op: 'chat_send'; chatId: string; text: string }
   | { op: 'chat_stop'; chatId: string }

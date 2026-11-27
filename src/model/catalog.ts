@@ -11,6 +11,13 @@ export interface Project {
   icon?: string
   /** The Claude accounts its chats run as, picked in its settings; absent is the default one. */
   accounts?: string[]
+  /** Its workspaces may run on Boat, billed to this wallet; absent is off. */
+  boat?: BoatTarget | null
+}
+
+/** Where a Boat sandbox is billed: an organization, or the user's own wallet (no org). */
+export interface BoatTarget {
+  org?: string | null
 }
 
 export interface Workspace {
@@ -31,6 +38,8 @@ export interface Workspace {
   parentWorkspace?: string
   /** Put aside by the user: muted in the sidebar until a message is sent in it. */
   paused?: boolean
+  /** Its Claude runs on a Boat sandbox of its own. */
+  boat?: BoatTarget | null
 }
 
 /** A published artifact: its claude.ai page, a tab of the right panel until closed. */

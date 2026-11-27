@@ -24,7 +24,12 @@ export interface Launch {
 }
 
 interface Deps {
-  createWorkspace: (projectId: string, base: string | null, prompt: string) => Promise<Workspace>
+  createWorkspace: (
+    projectId: string,
+    base: string | null,
+    prompt: string,
+    boat: boolean
+  ) => Promise<Workspace>
   runSetup: (w: Workspace) => Promise<unknown>
   /** The setup script couldn't start: said in a toast, Claude goes on. */
   setupFailed: (error: unknown) => void
@@ -47,8 +52,8 @@ export function useLaunches() {
   // Set by the app on every render: the launches call what it has now.
   const depsRef = useRef<Deps | null>(null)
   const deps = {
-    createWorkspace: (pid: string, base: string | null, prompt: string) =>
-      need().createWorkspace(pid, base, prompt),
+    createWorkspace: (pid: string, base: string | null, prompt: string, boat: boolean) =>
+      need().createWorkspace(pid, base, prompt, boat),
     reopenComposer: (pid: string) => need().reopenComposer(pid),
     runSetup: (w: Workspace) => need().runSetup(w),
     setupFailed: (error: unknown) => need().setupFailed(error),
@@ -72,7 +77,8 @@ export function useLaunches() {
     projectId: string,
     base: string | null,
     prompt: string,
-    images: readonly Image[] = []
+    images: readonly Image[] = [],
+    boat = false
   ) => {
     const key = crypto.randomUUID()
     const steps: Step[] = [
@@ -91,7 +97,7 @@ export function useLaunches() {
     void (async () => {
       let w: Workspace
       try {
-        w = await deps.createWorkspace(projectId, base, prompt)
+        w = await deps.createWorkspace(projectId, base, prompt, boat)
       } catch (error) {
         // Nothing made: the next composer reopens on this prompt.
         keepDraft(projectId, prompt)
@@ -101,9 +107,10 @@ export function useLaunches() {
       }
       patch(key, () => ({ ws: w }))
       step(key, 'worktree', 'done', w.branch)
-      // The setup script runs beside Claude, in the dock; how it ends shows there.
+      // The setup script runs beside Claude, in the dock; how it ends shows there. On Boat it
+      // always runs: it makes the sandbox, then runs the script there.
       void invoke<{ exists: boolean }>('setup_status', { projectId })
-        .then((setup) => (setup.exists ? deps.runSetup(w) : undefined))
+        .then((setup) => (setup.exists || w.boat ? deps.runSetup(w) : undefined))
         .catch(deps.setupFailed)
       deps.startChat(w, prompt, images)
       step(key, 'claude', 'done')

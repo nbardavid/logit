@@ -92,11 +92,7 @@ pub fn list_in(dir: &Path) -> Vec<Background> {
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
-            let id = path
-                .file_name()?
-                .to_str()?
-                .strip_suffix(".js")?
-                .to_string();
+            let id = path.file_name()?.to_str()?.strip_suffix(".js")?.to_string();
             let meta = entry.metadata().ok()?;
             if !valid_id(&id) || !meta.is_file() || meta.len() > MAX_SIZE {
                 return None;
@@ -146,7 +142,10 @@ mod tests {
 
     #[test]
     fn names_a_scene() {
-        assert_eq!(name_of("x", "// name: Night forest\np.sky([])"), "Night forest");
+        assert_eq!(
+            name_of("x", "// name: Night forest\np.sky([])"),
+            "Night forest"
+        );
         assert_eq!(name_of("night-forest", "p.sky([])"), "Night forest");
         assert_eq!(name_of("koi", SEEDS[1].1), "Koi");
     }

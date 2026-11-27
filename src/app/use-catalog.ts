@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import {
   arrange,
+  type BoatTarget,
   type Catalog,
   type ChatRecord,
   type Project,
@@ -119,10 +120,13 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
       // An agent's: it shows in the sidebar without taking the user there.
       parentChat: string | null = null,
       // Its first prompt: Claude names it (title and branch) in the background, as the TUI does.
-      prompt = ''
+      prompt = '',
+      // Its Claude runs on a Boat sandbox (the project must have Boat on).
+      boat = false
     ) => {
       const created = await invoke<Workspace>('workspace_create', {
         base,
+        boat,
         candidates,
         parentChat,
         projectId: projectId_,
@@ -162,6 +166,15 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
   const setProjectAccounts = useCallback(
     async (id: string, accounts: string[]) => {
       await invoke('project_set_accounts', { accounts, id })
+      await reload()
+    },
+    [reload]
+  )
+
+  /** Whether its workspaces may run on Boat, and the wallet that pays; null is off. */
+  const setProjectBoat = useCallback(
+    async (id: string, boat: BoatTarget | null) => {
+      await invoke('project_set_boat', { boat, id })
       await reload()
     },
     [reload]
@@ -259,6 +272,7 @@ export function useCatalog(leaving: ReadonlySet<string> = NONE) {
     seeArtifact,
     select,
     setProjectAccounts,
+    setProjectBoat,
     status,
     unpause,
     updateProject,

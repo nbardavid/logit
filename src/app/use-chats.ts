@@ -320,7 +320,7 @@ export function useChats(hooks: Hooks) {
       if (known) return known
       const chat = latest.current.chats.find((c) => c.record.id === id)
       if (!chat) throw new Error('no such chat')
-      const { effort, sessionId } = chat.record
+      const { effort, sessionId, workspaceId } = chat.record
       const host = hosted.current.get(id)
       hosted.current.delete(id)
       const start = async () => {
@@ -328,7 +328,7 @@ export function useChats(hooks: Hooks) {
         const history =
           sessionId === null
             ? []
-            : await invoke<string[]>('chat_history', { sessionId }).catch(() => [])
+            : await invoke<string[]>('chat_history', { sessionId, workspaceId }).catch(() => [])
         // The host replays everything since Claude started: the transcript gives what came before.
         const lines = host ? historyBefore(history, host.historyLen) : history
         // The transcript says which model the session was on last: it resumes on that one.

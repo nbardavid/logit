@@ -71,12 +71,20 @@ export function catalog(): Catalog {
       },
     ],
     projects: [
-      { id: 'p-logit', lastOpenedAt: now, name: 'logit', path: PATHS.main },
+      {
+        boat: { org: 'team_rain' },
+        id: 'p-logit',
+        lastOpenedAt: now,
+        name: 'logit',
+        path: PATHS.main,
+      },
       { id: 'p-pragma', lastOpenedAt: now - HOUR, name: 'pragma-once', path: PATHS.pragma },
     ],
     workspaces: [
       {
         base: 'origin/main',
+        // Its Claude runs on a Boat sandbox: the dock has a Boat tab.
+        boat: { org: 'team_rain' },
         branch: 'logit/amber',
         createdAt: now - 5 * HOUR,
         id: 'ws-amber',
