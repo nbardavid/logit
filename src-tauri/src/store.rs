@@ -801,7 +801,11 @@ pub fn workspace_rename(
     id: String,
     name: String,
 ) -> Result<Workspace, String> {
-    edit(&store, |c| rename_workspace(c, &id, &name))
+    let w = edit(&store, |c| rename_workspace(c, &id, &name))?;
+    if w.boat.is_some() {
+        std::thread::spawn(move || crate::boat::sync_name(&id));
+    }
+    Ok(w)
 }
 
 /// A workspace put aside (muted in the sidebar) or taken back up.

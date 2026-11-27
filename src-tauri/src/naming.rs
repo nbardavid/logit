@@ -180,7 +180,7 @@ pub fn workspace_autoname(
     let Some((title, branch)) = ask_claude(&prompt).as_deref().and_then(parse_naming) else {
         return Ok(None);
     };
-    edit(&store, |c| {
+    let named = edit(&store, |c| {
         let Some(w) = c.workspaces.iter_mut().find(|w| w.id == id) else {
             return Ok(None);
         };
@@ -203,7 +203,12 @@ pub fn workspace_autoname(
         }
         w.name = title;
         Ok(Some(w.clone()))
-    })
+    })?;
+    if let Some(w) = named.as_ref().filter(|w| w.boat.is_some()) {
+        let id = w.id.clone();
+        std::thread::spawn(move || crate::boat::sync_name(&id));
+    }
+    Ok(named)
 }
 
 #[cfg(test)]
