@@ -265,6 +265,51 @@ fn org_of(w: &Workspace) -> Option<String> {
     w.boat.as_ref().and_then(|b| b.org.clone())
 }
 
+/// How long a sandbox stays on after its agent's last turn before Boat stops it.
+const STAY_ON_HOURS: &str = "6";
+
+/// A sandbox's name on Boat: the workspace's, as a slug (`CSV export: bookings` →
+/// `csv-export-bookings`), at most 60 characters.
+pub fn sandbox_name(name: &str) -> String {
+    let mut slug = String::new();
+    for c in name.chars() {
+        if c.is_alphanumeric() {
+            slug.extend(c.to_lowercase());
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug: String = slug.chars().take(60).collect();
+    let slug = slug.trim_end_matches('-');
+    if slug.is_empty() {
+        name.to_string()
+    } else {
+        slug.to_string()
+    }
+}
+
+/// Names the workspace's sandbox after the workspace (Claude's name, or the user's), once it
+/// has one. Quiet: a name is cosmetic.
+pub fn sync_name(workspace: &str) {
+    let Ok((w, _)) = find_workspace(workspace) else {
+        return;
+    };
+    if w.boat.is_none() {
+        return;
+    }
+    if let Some(m) = load(workspace).filter(|m| !m.id.is_empty()) {
+        let _ = boat(
+            &["rename", &m.id, &sandbox_name(&w.name)],
+            org_of(&w).as_deref(),
+        );
+    }
+}
+
+/// Pushes Boat's auto-stop back to `STAY_ON_HOURS` from now: ssh does not count as activity.
+fn stay_on(id: &str, org: Option<&str>) {
+    let _ = boat(&["extend", id, "--hours", STAY_ON_HOURS], org);
+}
+
 /// `logit --boat-setup <workspace>`: the sandbox, the checkout, the project's setup script.
 /// Safe to run again: a ready sandbox returns at once, a made one is reused.
 pub fn setup(workspace: &str) -> i32 {
@@ -299,7 +344,8 @@ fn make(workspace: &str) -> Result<(), String> {
             .and_then(|_| std::fs::write(&bridge, BRIDGE))
             .map_err(|e| e.to_string())?;
         let file = format!("{BRIDGE_PATH}={}", bridge.display());
-        let mut new = vec!["new", "--no-auto-stop", "--name", &w.name, "--file", &file];
+        let name = sandbox_name(&w.name);
+        let mut new = vec!["new", "--name", &name, "--file", &file];
         // No org is the user's own wallet, even when Boat's active org is another one.
         if org.is_none() {
             new.push("--personal");
@@ -311,7 +357,9 @@ fn make(workspace: &str) -> Result<(), String> {
     } else {
         wake(&m.id, org.as_deref())?;
     }
-    // Claude may have named the workspace's branch meanwhile: check out the latest name.
+    stay_on(&m.id, org.as_deref());
+    // Claude may have named the workspace and its branch meanwhile: take the latest names.
+    sync_name(workspace);
     let (w, _) = find_workspace(workspace)?;
     let origin = git_out(&w.path, &["remote", "get-url", "origin"])
         .map_err(|_| "the project has no `origin` remote to clone in the sandbox".to_string())?;
@@ -483,7 +531,15 @@ pub fn chat(workspace: &str, chat: &str, args: Vec<String>) -> i32 {
 fn run_chat(workspace: &str, chat: &str, args: Vec<String>) -> Result<i32, String> {
     let (w, _) = find_workspace(workspace)?;
     let m = wait_ready(workspace, Duration::from_secs(600))?;
-    wake(&m.id, org_of(&w).as_deref())?;
+    let org = org_of(&w);
+    wake(&m.id, org.as_deref())?;
+    {
+        let (id, org, workspace) = (m.id.clone(), org.clone(), workspace.to_string());
+        std::thread::spawn(move || {
+            stay_on(&id, org.as_deref());
+            sync_name(&workspace);
+        });
+    }
     let relay = mcp_relay(&m.id, chat, &w.path);
     let mut claude = command()
         .args(["ssh", &m.id, "--", &remote_claude(chat, &args)])
@@ -504,8 +560,11 @@ fn run_chat(workspace: &str, chat: &str, args: Vec<String>) -> Result<i32, Strin
             let finished = line.contains("\"result\"")
                 && serde_json::from_str::<Value>(&line).is_ok_and(|v| v["type"] == "result");
             if finished {
-                let w = w.clone();
-                std::thread::spawn(move || follow_branch(&w));
+                let (w, id, org) = (w.clone(), m.id.clone(), org.clone());
+                std::thread::spawn(move || {
+                    stay_on(&id, org.as_deref());
+                    follow_branch(&w);
+                });
             }
         }
     }
@@ -629,6 +688,16 @@ pub fn boat_orgs() -> Result<Vec<BoatOrg>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sandboxes_are_named_after_their_workspace() {
+        use super::sandbox_name;
+        assert_eq!(sandbox_name("CSV export: bookings"), "csv-export-bookings");
+        assert_eq!(sandbox_name("  Réservations / PDF  "), "réservations-pdf");
+        assert_eq!(sandbox_name("amber"), "amber");
+        assert_eq!(sandbox_name("—"), "—");
+        assert_eq!(sandbox_name(&"a ".repeat(50)).chars().count(), 59);
+    }
+
     use super::*;
     use serde_json::json;
 

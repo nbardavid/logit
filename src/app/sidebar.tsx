@@ -1,5 +1,6 @@
 import {
   ChevronRightIcon,
+  CloudIcon,
   EllipsisIcon,
   FolderOpenIcon,
   InboxIcon,
@@ -665,6 +666,8 @@ function WorkspaceRow(
   const facts = workspaceFacts(ws, props.chats ?? [])
   const renaming = ws.id === props.renamingId
   const word = colourWord(ws.path)
+  // A workspace on Boat runs off this Mac: a cloud says so in place of its colour word.
+  const onBoat = ws.boat !== null && ws.boat !== undefined
   const title = ws.name === word ? (facts.task ?? ws.name) : ws.name
 
   const menu = (e: MouseEvent) => {
@@ -686,7 +689,8 @@ function WorkspaceRow(
   )
   const tip = [
     paused ? 'Parked' : null,
-    title === word ? null : word,
+    onBoat ? 'On Boat' : null,
+    onBoat || title === word ? null : word,
     diff && diff.add + diff.del > 0 ? `+${diff.add} −${diff.del}` : null,
     ws.branch,
   ].filter((part) => part !== null)
@@ -725,16 +729,23 @@ function WorkspaceRow(
           </span>
         </In>
       )}
-      {title !== word && (
-        <span
-          className={cn(
-            'flex min-w-0 items-center gap-1',
-            (shownStop !== null || kids > 0) && 'hidden @[20rem]:flex'
-          )}
-        >
-          <span className="truncate">{word}</span>
+      {onBoat ? (
+        <span className="flex flex-none items-center gap-1">
+          <CloudIcon aria-label="On Boat" className="size-3" />
           <span aria-hidden="true">·</span>
         </span>
+      ) : (
+        title !== word && (
+          <span
+            className={cn(
+              'flex min-w-0 items-center gap-1',
+              (shownStop !== null || kids > 0) && 'hidden @[20rem]:flex'
+            )}
+          >
+            <span className="truncate">{word}</span>
+            <span aria-hidden="true">·</span>
+          </span>
+        )
       )}
       <span className="flex-none">{status}</span>
     </span>

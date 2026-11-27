@@ -34,7 +34,7 @@ fills, logit's MCP tools working. The Mac stays on with logit running: no detach
 
 - Boat CLI 1.0.107 at `~/.ascii/bin/boat`, signed in. `boat ssh <id> -- <cmd>` passes stdio;
   it has no `-R`. `boat new --json` creates; `boat info/stop/resume/delete --json`.
-- exec/ssh do not extend Boat's 1 h auto-stop: create with `--no-auto-stop`, stop ourselves.
+- exec/ssh do not extend Boat's auto-stop: logit sets it to 6 h at creation, at each chat start and after each finished turn (`boat extend --hours 6`). The sandbox is named after the workspace (a slug of its name), renamed when Claude or the user names it.
 - The Boat AI profile already holds the user's Claude subscription: `claude` in the VM is signed
   in, and uses the same quotas.
 - The personal account has no plan (402 billing_required); only the RainPath org does.
@@ -59,7 +59,7 @@ fills, logit's MCP tools working. The Mac stays on with logit running: no detach
 
 - **Catalog**: `Workspace.boat: Option<BoatMachine { id, org }>` (serde default, old catalogs
   load). `boat.rs` wraps the CLI (`new`, `info`, `stop`, `resume`, `delete`, `push`, `ssh`).
-- **Create**: the local worktree and branch are made as today; then `boat new --no-auto-stop
+- **Create**: the local worktree and branch are made as today; then `boat new
   --name <workspace> [--org]`, `boat push <id> <worktree> --to /home/user/<folder>` (tracked
   files), and in the VM `git checkout -B <branch>` with origin set. The row shows the setup
   progress in the Setup tab as today.
